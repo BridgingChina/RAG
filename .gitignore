@@ -17,3 +17,10 @@ venv/
 
 # OS
 .DS_Store
+
+# Coverage
+.coverage
+htmlcov/
+
+# Testing
+.pytest_cache/
