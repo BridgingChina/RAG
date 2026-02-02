@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     database_url: str = "postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag"
     zhipu_api_key: str = ""
 
@@ -11,9 +13,6 @@ class Settings(BaseSettings):
 
     # Retrieval settings
     top_k: int = 5
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
