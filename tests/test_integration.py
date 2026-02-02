@@ -16,11 +16,11 @@ class MockProvider:
         embeddings = []
         for text in texts:
             if "赵州桥" in text or "石拱" in text:
-                embeddings.append([0.1] * 1024)
+                embeddings.append([0.1] * 2048)
             elif "卢沟桥" in text:
-                embeddings.append([0.3] * 1024)
+                embeddings.append([0.3] * 2048)
             else:
-                embeddings.append([0.15] * 1024)
+                embeddings.append([0.15] * 2048)
         return embeddings
 
     async def chat(self, messages):
@@ -67,14 +67,14 @@ def db_session():
                 content="赵州桥是一座石拱桥，跨度37米。",
                 lvl1="形制与技术",
                 bridge_id=bridge.id,
-                embedding=[0.1] * 1024,
+                embedding=[0.1] * 2048,
             ),
             Chunk(
                 source_id=source.id,
                 content="赵州桥建于隋代。",
                 lvl1="历史与演变",
                 bridge_id=bridge.id,
-                embedding=[0.12] * 1024,
+                embedding=[0.12] * 2048,
             ),
         ]
         session.add_all(chunks)

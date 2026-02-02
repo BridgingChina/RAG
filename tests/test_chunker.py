@@ -9,8 +9,8 @@ class MockProvider:
         embeddings = []
         for i, text in enumerate(texts):
             # Simple mock: use text hash to create pseudo-embedding
-            base = [0.1] * 1024
-            base[i % 1024] = 0.9
+            base = [0.1] * 2048
+            base[i % 2048] = 0.9
             embeddings.append(base)
         return embeddings
 

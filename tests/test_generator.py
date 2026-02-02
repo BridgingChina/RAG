@@ -8,7 +8,7 @@ from app.services.retriever import RetrievalResult
 
 class MockProvider:
     async def embed(self, texts):
-        return [[0.1] * 1024 for _ in texts]
+        return [[0.1] * 2048 for _ in texts]
 
     async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
         return ChatResponse(
@@ -34,7 +34,7 @@ def mock_evidence():
         source_id=1,
         content="赵州桥是一座石拱桥，采用敞肩式结构。",
         lvl1="形制与技术",
-        embedding=[0.1] * 1024,
+        embedding=[0.1] * 2048,
     )
     return [RetrievalResult(chunk=chunk, score=0.9)]
 

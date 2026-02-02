@@ -21,7 +21,7 @@ class Chunk(Base, TimestampMixin):
         ForeignKey("bridges.id"), nullable=True
     )
     page_range: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1024))
+    embedding: Mapped[list[float]] = mapped_column(Vector(2048))
 
     __table_args__ = (
         Index("ix_chunks_taxonomy", "lvl1", "lvl2", "lvl3"),

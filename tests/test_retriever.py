@@ -8,7 +8,7 @@ from app.services.retriever import Retriever, RetrievalContext
 
 class MockProvider:
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.1] * 1024 for _ in texts]
+        return [[0.1] * 2048 for _ in texts]
 
     async def chat(self, messages):
         pass
@@ -49,14 +49,14 @@ def db_session():
                 content="赵州桥是石拱桥",
                 lvl1="形制与技术",
                 bridge_id=bridges[0].id,
-                embedding=[0.1] * 1024,
+                embedding=[0.1] * 2048,
             ),
             Chunk(
                 source_id=source.id,
                 content="卢沟桥位于北京",
                 lvl1="地域与环境",
                 bridge_id=bridges[1].id,
-                embedding=[0.2] * 1024,
+                embedding=[0.2] * 2048,
             ),
         ]
         session.add_all(chunks)

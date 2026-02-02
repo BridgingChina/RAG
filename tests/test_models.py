@@ -35,7 +35,7 @@ def test_create_chunk_with_embedding(db_session):
     db_session.add(source)
     db_session.flush()
 
-    embedding = [0.1] * 1024
+    embedding = [0.1] * 2048
     chunk = Chunk(
         source_id=source.id,
         content="赵州桥是一座石拱桥",
@@ -46,4 +46,4 @@ def test_create_chunk_with_embedding(db_session):
     db_session.flush()
 
     assert chunk.id is not None
-    assert len(chunk.embedding) == 1024
+    assert len(chunk.embedding) == 2048

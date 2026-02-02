@@ -9,7 +9,7 @@ class MockProvider:
         self.response_content = response_content
 
     async def embed(self, texts):
-        return [[0.1] * 1024 for _ in texts]
+        return [[0.1] * 2048 for _ in texts]
 
     async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
         return ChatResponse(content=self.response_content, usage={})
