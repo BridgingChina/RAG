@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql://bridge:bridge@localhost:5433/bridge_rag"
+    database_url: str = "postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag"
     zhipu_api_key: str = ""
 
     # LLM settings
