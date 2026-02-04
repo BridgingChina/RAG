@@ -13,6 +13,7 @@ from app.api.schemas import (
 from app.core.database import get_db
 from app.providers import ZhipuProvider
 from app.services import Generator, Retriever, RetrievalContext
+from app.services.facet_extractor import FacetExtractor
 from app.services.hybrid_retriever import HybridRetriever, HybridRetrievalResult
 from app.services.tokenizer import Tokenizer
 
@@ -64,6 +65,7 @@ async def ask_v2(request: AskRequest, db: Session = Depends(get_db)):
     tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
     retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
     generator = Generator(provider=provider)
+    facet_extractor = FacetExtractor(provider=provider)
 
     degraded: list[str] = []
 
@@ -72,17 +74,34 @@ async def ask_v2(request: AskRequest, db: Session = Depends(get_db)):
     if not target_bridge_id and request.context:
         target_bridge_id = request.context.bridge_id
 
+    facet = None
+    try:
+        facet = await facet_extractor.extract(request.question)
+    except Exception:
+        degraded.append("facet")
+
     # Retrieve evidence
     try:
         evidence = await retriever.retrieve(
-            db, request.question, target_bridge_id=target_bridge_id
+            db,
+            request.question,
+            target_bridge_id=target_bridge_id,
+            facet=facet,
         )
-    except Exception as e:
-        # Fallback to empty result
+        degraded.extend(retriever.last_degraded)
+    except Exception:
+        # Fallback to empty result, but preserve any degraded marks from partial execution
         evidence = HybridRetrievalResult(
             anchor_chunks=[], concept_chunks=[], analogy_chunks=[]
         )
+        degraded.extend(retriever.last_degraded)  # Include any marks from before the exception
         degraded.append("retrieval")
+
+    if not evidence.all_chunks():
+        degraded.append("empty_evidence")
+
+    # Deduplicate while preserving order
+    degraded = list(dict.fromkeys(degraded))
 
     # Generate answer
     result = await generator.generate_v2(request.question, evidence)
