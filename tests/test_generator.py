@@ -63,3 +63,29 @@ def test_citation_structure():
     citation = Citation(chunk_id=1, source_title="来源", page_range="10-12")
     assert citation.chunk_id == 1
     assert citation.page_range == "10-12"
+
+
+@pytest.mark.asyncio
+async def test_generate_with_confidence():
+    from app.services.generator import Generator, GenerationResultV2
+    from app.services.hybrid_retriever import HybridRetrievalResult, RetrievedChunk
+
+    class MockProviderV2:
+        async def chat(self, messages):
+            from app.providers import ChatResponse
+            return ChatResponse(
+                content='{"summary": "要点", "details": "详细", "analogy": null, "confidence": {"level": "high", "reason": "证据充分"}}',
+                usage={"total_tokens": 100},
+            )
+
+    generator = Generator(provider=MockProviderV2())
+    evidence = HybridRetrievalResult(
+        anchor_chunks=[
+            RetrievedChunk(chunk_id=1, content="测试内容", bridge_id=1, bridge_name="赵州桥", score=0.9),
+        ],
+        concept_chunks=[],
+        analogy_chunks=[],
+    )
+    result = await generator.generate_v2("测试问题", evidence)
+    assert hasattr(result, "confidence")
+    assert result.confidence.level in ["high", "medium", "low"]

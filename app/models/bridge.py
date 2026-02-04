@@ -16,4 +16,5 @@ class Bridge(Base, TimestampMixin):
     era: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     bridge_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     material: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    function: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

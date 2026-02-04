@@ -1,10 +1,7 @@
 """Integration tests for the full RAG pipeline."""
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
-from app.core.config import settings
-from app.models import Base, Bridge, Chunk, Source
+from app.models import Bridge, Chunk, Source
 from app.services import Generator, Retriever, RetrievalContext
 
 
@@ -36,62 +33,45 @@ class MockProvider:
 
 
 @pytest.fixture
-def db_session():
-    engine = create_engine(settings.database_url)
+def seeded_db_session(db_session):
+    bridge = Bridge(name="赵州桥", location="河北赵县")
+    db_session.add(bridge)
+    db_session.flush()
 
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
+    source = Source(type="note", title="Test")
+    db_session.add(source)
+    db_session.flush()
 
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        # Setup test data
-        session.execute(text("DELETE FROM chunks"))
-        session.execute(text("DELETE FROM sources"))
-        session.execute(text("DELETE FROM bridges"))
-        session.commit()
-
-        # Create a bridge first
-        bridge = Bridge(name="赵州桥", location="河北赵县")
-        session.add(bridge)
-        session.flush()
-
-        source = Source(type="note", title="Test")
-        session.add(source)
-        session.flush()
-
-        chunks = [
-            Chunk(
-                source_id=source.id,
-                content="赵州桥是一座石拱桥，跨度37米。",
-                lvl1="形制与技术",
-                bridge_id=bridge.id,
-                embedding=[0.1] * 2048,
-            ),
-            Chunk(
-                source_id=source.id,
-                content="赵州桥建于隋代。",
-                lvl1="历史与演变",
-                bridge_id=bridge.id,
-                embedding=[0.12] * 2048,
-            ),
-        ]
-        session.add_all(chunks)
-        session.commit()
-
-        yield session
+    chunks = [
+        Chunk(
+            source_id=source.id,
+            content="赵州桥是一座石拱桥，跨度37米。",
+            lvl1="形制与技术",
+            bridge_id=bridge.id,
+            embedding=[0.1] * 2048,
+        ),
+        Chunk(
+            source_id=source.id,
+            content="赵州桥建于隋代。",
+            lvl1="历史与演变",
+            bridge_id=bridge.id,
+            embedding=[0.12] * 2048,
+        ),
+    ]
+    db_session.add_all(chunks)
+    db_session.flush()
+    return db_session
 
 
 @pytest.mark.asyncio
-async def test_full_rag_pipeline(db_session):
+async def test_full_rag_pipeline(seeded_db_session):
     """Test the complete RAG pipeline: retrieve -> generate."""
     provider = MockProvider()
     retriever = Retriever(provider=provider, top_k=5)
     generator = Generator(provider=provider)
 
     # Retrieve
-    results = await retriever.retrieve(db_session, "赵州桥是什么结构？")
+    results = await retriever.retrieve(seeded_db_session, "赵州桥是什么结构？")
     assert len(results) >= 1
 
     # Generate
@@ -102,14 +82,14 @@ async def test_full_rag_pipeline(db_session):
 
 
 @pytest.mark.asyncio
-async def test_filtered_retrieval(db_session):
+async def test_filtered_retrieval(seeded_db_session):
     """Test retrieval with context filters."""
     provider = MockProvider()
     retriever = Retriever(provider=provider, top_k=5)
 
     # Filter by lvl1
     context = RetrievalContext(lvl1="形制与技术")
-    results = await retriever.retrieve(db_session, "桥梁结构", context)
+    results = await retriever.retrieve(seeded_db_session, "桥梁结构", context)
 
     assert len(results) >= 1
     assert all(r.chunk.lvl1 == "形制与技术" for r in results)

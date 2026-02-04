@@ -1,24 +1,6 @@
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
-from app.models import Base, Bridge, Chunk, Source, TaxonomyNode
-
-
-@pytest.fixture
-def db_session():
-    engine = create_engine("postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag")
-
-    # Enable pgvector extension
-    with engine.connect() as conn:
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        conn.commit()
-
-    Base.metadata.create_all(engine)
-
-    with Session(engine) as session:
-        yield session
-        session.rollback()
+from app.models import Bridge, Chunk, Source
 
 
 def test_create_bridge(db_session):
