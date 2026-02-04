@@ -36,6 +36,8 @@ class GenerationResultV2:
     details: str
     analogy: Optional[str]  # Analogy from similar bridges
     confidence: Confidence
+    citations: list[Citation]
+    sources: list[str]
 
 
 class Generator:
@@ -165,13 +167,37 @@ class Generator:
         messages = [ChatMessage(role="user", content=prompt)]
         response = await self.provider.chat(messages)
 
-        return self._parse_v2_response(response.content)
+        # Build citations and sources from all chunks
+        citations = []
+        sources = []
+        seen_sources = set()
 
-    def _parse_v2_response(self, content: str) -> GenerationResultV2:
+        all_chunks = evidence.all_chunks()
+        for i, chunk in enumerate(all_chunks, 1):
+            source_title = chunk.bridge_name or f"来源{i}"
+            citations.append(Citation(
+                chunk_id=chunk.chunk_id,
+                source_title=source_title,
+                page_range=None,
+            ))
+            if source_title not in seen_sources:
+                sources.append(source_title)
+                seen_sources.add(source_title)
+
+        return self._parse_v2_response(response.content, citations, sources)
+
+    def _parse_v2_response(
+        self,
+        content: str,
+        citations: list[Citation],
+        sources: list[str],
+    ) -> GenerationResultV2:
         """Parse LLM response into GenerationResultV2.
 
         Args:
             content: Raw LLM response (should be JSON)
+            citations: List of citations from evidence chunks
+            sources: List of unique source titles
 
         Returns:
             GenerationResultV2 object
@@ -193,6 +219,8 @@ class Generator:
                         level=data.get("confidence", {}).get("level", "low"),
                         reason=data.get("confidence", {}).get("reason", "无法评估"),
                     ),
+                    citations=citations,
+                    sources=sources,
                 )
             else:
                 # Fallback if no JSON found
@@ -204,6 +232,8 @@ class Generator:
                         level="low",
                         reason="无法解析LLM响应格式",
                     ),
+                    citations=citations,
+                    sources=sources,
                 )
         except json.JSONDecodeError:
             # Fallback on JSON parse error
@@ -215,4 +245,6 @@ class Generator:
                     level="low",
                     reason="LLM响应格式错误",
                 ),
+                citations=citations,
+                sources=sources,
             )
