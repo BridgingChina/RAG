@@ -7,17 +7,10 @@ Analogy (similar bridges) retrieval channels.
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, or_, select, text
 from sqlalchemy.orm import Session
 
-from app.constants.facets import (
-    BRIDGE_TYPES,
-    ERAS,
-    FUNCTIONS,
-    MATERIALS,
-    REGIONS,
-)
-from app.models import Bridge
+from app.models import Bridge, Chunk
 from app.providers import LLMProvider
 from app.services.facet_extractor import Facet
 from app.services.ranker import ChunkScore, apply_diversity, rrf_merge
@@ -121,6 +114,11 @@ class HybridRetriever:
         """
         self.provider = provider
         self.tokenizer = tokenizer or Tokenizer()
+        self.last_degraded: list[str] = []
+
+    def _mark_degraded(self, key: str) -> None:
+        if key not in self.last_degraded:
+            self.last_degraded.append(key)
 
     async def retrieve(
         self,
@@ -142,6 +140,7 @@ class HybridRetriever:
         Returns:
             HybridRetrievalResult with chunks from each channel
         """
+        self.last_degraded = []
         anchor_quota, concept_quota, analogy_quota = quota
 
         # Get query embedding
@@ -244,8 +243,12 @@ class HybridRetriever:
             for cid, score in merged
         ]
 
-        # Apply diversity (max 1 per bridge for now)
-        diverse = apply_diversity(chunk_scores, max_per_bridge=1)
+        # Apply diversity only when retrieving across multiple bridges (analogy).
+        diverse = (
+            apply_diversity(chunk_scores, max_per_bridge=1)
+            if isinstance(bridge_filter, list)
+            else chunk_scores
+        )
 
         # Take top N and fetch full details
         top_ids = [c.chunk_id for c in diverse[:limit]]
@@ -265,32 +268,31 @@ class HybridRetriever:
             List of chunk_ids ranked by similarity
         """
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
-        raw_conn = db.connection()._dbapi_connection
-        cursor = raw_conn.cursor()
+        try:
+            sql = "SELECT id FROM chunks WHERE 1=1"
+            params: dict[str, object] = {"embedding": embedding_str, "limit": limit}
+            bind_params: list[object] = []
 
-        sql = "SELECT id FROM chunks WHERE 1=1"
-        params = []
+            if isinstance(bridge_filter, list):
+                if bridge_filter:
+                    sql += " AND bridge_id IN :bridge_ids"
+                    params["bridge_ids"] = bridge_filter
+                    bind_params.append(bindparam("bridge_ids", expanding=True))
+            elif isinstance(bridge_filter, int):
+                sql += " AND bridge_id = :bridge_id"
+                params["bridge_id"] = bridge_filter
 
-        if isinstance(bridge_filter, list):
-            if bridge_filter:
-                placeholders = ",".join(["%s"] * len(bridge_filter))
-                sql += f" AND bridge_id IN ({placeholders})"
-                params.extend(bridge_filter)
-        elif isinstance(bridge_filter, int):
-            sql += " AND bridge_id = %s"
-            params.append(bridge_filter)
+            if require_no_bridge_id:
+                sql += " AND bridge_id IS NULL"
 
-        if require_no_bridge_id:
-            sql += " AND bridge_id IS NULL"
-
-        sql += " ORDER BY embedding <=> %s::vector LIMIT %s"
-        params.extend([embedding_str, limit])
-
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        cursor.close()
-
-        return [row[0] for row in rows]
+            sql += " ORDER BY embedding <=> (:embedding)::vector LIMIT :limit"
+            stmt = text(sql)
+            if bind_params:
+                stmt = stmt.bindparams(*bind_params)
+            return db.execute(stmt, params).scalars().all()
+        except Exception:
+            self._mark_degraded("vector")
+            return []
 
     def _fts_search(
         self,
@@ -309,36 +311,38 @@ class HybridRetriever:
         if not tsquery:
             return []
 
-        raw_conn = db.connection()._dbapi_connection
-        cursor = raw_conn.cursor()
+        try:
+            # Search in both search_text and content
+            sql = """
+                SELECT id FROM chunks
+                WHERE tsv @@ to_tsquery('simple', :tsquery)
+            """
+            params: dict[str, object] = {"tsquery": tsquery, "limit": limit}
+            bind_params: list[object] = []
 
-        # Search in both search_text and content
-        sql = """
-            SELECT id FROM chunks
-            WHERE tsv @@ to_tsquery('simple', %s)
-        """
-        params = [tsquery]
+            if isinstance(bridge_filter, list):
+                if bridge_filter:
+                    sql += " AND bridge_id IN :bridge_ids"
+                    params["bridge_ids"] = bridge_filter
+                    bind_params.append(bindparam("bridge_ids", expanding=True))
+            elif isinstance(bridge_filter, int):
+                sql += " AND bridge_id = :bridge_id"
+                params["bridge_id"] = bridge_filter
 
-        if isinstance(bridge_filter, list):
-            if bridge_filter:
-                placeholders = ",".join(["%s"] * len(bridge_filter))
-                sql += f" AND bridge_id IN ({placeholders})"
-                params.extend(bridge_filter)
-        elif isinstance(bridge_filter, int):
-            sql += " AND bridge_id = %s"
-            params.append(bridge_filter)
+            if require_no_bridge_id:
+                sql += " AND bridge_id IS NULL"
 
-        if require_no_bridge_id:
-            sql += " AND bridge_id IS NULL"
-
-        sql += " ORDER BY ts_rank(tsv, to_tsquery('simple', %s)) DESC LIMIT %s"
-        params.extend([tsquery, limit])
-
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        cursor.close()
-
-        return [row[0] for row in rows]
+            sql += """
+                ORDER BY ts_rank(tsv, to_tsquery('simple', :tsquery)) DESC
+                LIMIT :limit
+            """
+            stmt = text(sql)
+            if bind_params:
+                stmt = stmt.bindparams(*bind_params)
+            return db.execute(stmt, params).scalars().all()
+        except Exception:
+            self._mark_degraded("fts")
+            return []
 
     def _select_candidate_bridges(
         self,
@@ -356,45 +360,36 @@ class HybridRetriever:
 
         facet_lists = facet.to_lists()
         conditions = []
-        params = []
 
         # Build facet matching conditions
-        for column, values in [
-            ("bridge_type", facet_lists["bridge_type"]),
-            ("material", facet_lists["material"]),
-            ("era", facet_lists["era"]),
-        ]:
-            if values:
-                placeholders = ",".join(["%s"] * len(values))
-                conditions.append(f"{column} IN ({placeholders})")
-                params.extend(values)
+        if facet_lists["bridge_type"]:
+            conditions.append(Bridge.bridge_type.in_(facet_lists["bridge_type"]))
+        if facet_lists["material"]:
+            conditions.append(Bridge.material.in_(facet_lists["material"]))
+        if facet_lists["era"]:
+            conditions.append(Bridge.era.in_(facet_lists["era"]))
 
         # Region uses LIKE matching (substring)
         if facet_lists["region"]:
-            region_conditions = []
-            for region in facet_lists["region"]:
-                region_conditions.append("location LIKE %s")
-                params.append(f"%{region}%")
-            if region_conditions:
-                conditions.append(f"({' OR '.join(region_conditions)})")
+            conditions.append(
+                or_(
+                    *[
+                        Bridge.location.like(f"%{region}%")
+                        for region in facet_lists["region"]
+                    ]
+                )
+            )
 
         if not conditions:
             return []
 
-        sql = "SELECT id FROM bridges WHERE " + " AND ".join(conditions)
+        stmt = select(Bridge.id).where(*conditions)
 
         # Exclude target bridge
         if target_bridge_id is not None:
-            sql += " AND id != %s"
-            params.append(target_bridge_id)
+            stmt = stmt.where(Bridge.id != target_bridge_id)
 
-        raw_conn = db.connection()._dbapi_connection
-        cursor = raw_conn.cursor()
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        cursor.close()
-
-        return [row[0] for row in rows]
+        return db.execute(stmt).scalars().all()
 
     def _fetch_chunk_bridges(
         self, db: Session, chunk_ids: list[int]
@@ -407,15 +402,9 @@ class HybridRetriever:
         if not chunk_ids:
             return {}
 
-        raw_conn = db.connection()._dbapi_connection
-        cursor = raw_conn.cursor()
-
-        placeholders = ",".join(["%s"] * len(chunk_ids))
-        sql = f"SELECT id, bridge_id FROM chunks WHERE id IN ({placeholders})"
-        cursor.execute(sql, chunk_ids)
-        rows = cursor.fetchall()
-        cursor.close()
-
+        rows = db.execute(
+            select(Chunk.id, Chunk.bridge_id).where(Chunk.id.in_(chunk_ids))
+        ).all()
         return {row[0]: row[1] for row in rows}
 
     def _fetch_retrieved_chunks(
@@ -440,33 +429,30 @@ class HybridRetriever:
         # Build score map
         score_map = {cid: score for cid, score in scored_results}
 
-        raw_conn = db.connection()._dbapi_connection
-        cursor = raw_conn.cursor()
+        try:
+            rows = db.execute(
+                select(Chunk.id, Chunk.content, Chunk.bridge_id, Bridge.name)
+                .select_from(Chunk)
+                .join(Bridge, Chunk.bridge_id == Bridge.id, isouter=True)
+                .where(Chunk.id.in_(chunk_ids))
+            ).all()
 
-        placeholders = ",".join(["%s"] * len(chunk_ids))
-        sql = f"""
-            SELECT c.id, c.content, c.bridge_id, b.name
-            FROM chunks c
-            LEFT JOIN bridges b ON c.bridge_id = b.id
-            WHERE c.id IN ({placeholders})
-        """
-        cursor.execute(sql, chunk_ids)
-        rows = cursor.fetchall()
-        cursor.close()
-
-        # Build result maintaining input order
-        id_to_row = {row[0]: row for row in rows}
-        result = []
-        for cid in chunk_ids:
-            if cid in id_to_row:
-                row = id_to_row[cid]
-                result.append(
-                    RetrievedChunk(
-                        chunk_id=row[0],
-                        content=row[1],
-                        bridge_id=row[2],
-                        bridge_name=row[3] or "",
-                        score=score_map.get(cid, 0.0),
+            # Build result maintaining input order
+            id_to_row = {row[0]: row for row in rows}
+            result = []
+            for cid in chunk_ids:
+                if cid in id_to_row:
+                    row = id_to_row[cid]
+                    result.append(
+                        RetrievedChunk(
+                            chunk_id=row[0],
+                            content=row[1],
+                            bridge_id=row[2],
+                            bridge_name=row[3] or "",
+                            score=score_map.get(cid, 0.0),
+                        )
                     )
-                )
-        return result
+            return result
+        except Exception:
+            self._mark_degraded("fetch_chunks")
+            return []
