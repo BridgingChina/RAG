@@ -53,4 +53,4 @@ class AskResponseV2(BaseModel):
     sources: list[str]
     confidence: ConfidenceResponse
     evidence_groups: EvidenceGroupsResponse | None = None
-    degraded: bool | None = None
+    degraded: list[str] | None = None
