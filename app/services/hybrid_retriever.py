@@ -5,7 +5,7 @@ Analogy (similar bridges) retrieval channels.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TypedDict
 
 from sqlalchemy import bindparam, or_, select, text
 from sqlalchemy.orm import Session
@@ -24,6 +24,12 @@ RRF_K = 60
 
 # Fetch multiplier for diversity filtering
 FETCH_MULTIPLIER = 3
+
+
+class _ChunkDetails(TypedDict):
+    content: str
+    bridge_id: Optional[int]
+    bridge_name: str
 
 
 @dataclass
@@ -229,19 +235,20 @@ class HybridRetriever:
         if not merged:
             return []
 
-        # Build ChunkScore objects for diversity filtering
-        # Fetch bridge_id for each chunk
         chunk_ids = [cid for cid, _ in merged]
-        chunk_bridge_map = self._fetch_chunk_bridges(db, chunk_ids)
+        details_by_id = self._fetch_chunk_details(db, chunk_ids)
 
-        chunk_scores = [
-            ChunkScore(
-                chunk_id=cid,
-                bridge_id=chunk_bridge_map.get(cid),
-                score=score,
+        # Build ChunkScore objects for diversity filtering
+        chunk_scores: list[ChunkScore] = []
+        for cid, score in merged:
+            details = details_by_id.get(cid)
+            chunk_scores.append(
+                ChunkScore(
+                    chunk_id=cid,
+                    bridge_id=details["bridge_id"] if details else None,
+                    score=score,
+                )
             )
-            for cid, score in merged
-        ]
 
         # Apply diversity only when retrieving across multiple bridges (analogy).
         diverse = (
@@ -252,7 +259,7 @@ class HybridRetriever:
 
         # Take top N and fetch full details
         top_ids = [c.chunk_id for c in diverse[:limit]]
-        return self._fetch_retrieved_chunks(db, top_ids, merged)
+        return self._build_retrieved_chunks(top_ids, merged, details_by_id)
 
     def _vector_search(
         self,
@@ -391,43 +398,16 @@ class HybridRetriever:
 
         return db.execute(stmt).scalars().all()
 
-    def _fetch_chunk_bridges(
+    def _fetch_chunk_details(
         self, db: Session, chunk_ids: list[int]
-    ) -> dict[int, Optional[int]]:
-        """Fetch bridge_id for multiple chunks.
+    ) -> dict[int, _ChunkDetails]:
+        """Fetch chunk content + bridge info for multiple chunks in one query.
 
         Returns:
-            Dict mapping chunk_id -> bridge_id
+            Dict mapping chunk_id -> {"content": str, "bridge_id": int|None, "bridge_name": str}
         """
         if not chunk_ids:
             return {}
-
-        rows = db.execute(
-            select(Chunk.id, Chunk.bridge_id).where(Chunk.id.in_(chunk_ids))
-        ).all()
-        return {row[0]: row[1] for row in rows}
-
-    def _fetch_retrieved_chunks(
-        self,
-        db: Session,
-        chunk_ids: list[int],
-        scored_results: list[tuple[int, float]],
-    ) -> list[RetrievedChunk]:
-        """Fetch full chunk details with bridge names.
-
-        Args:
-            db: Database session
-            chunk_ids: List of chunk_ids to fetch
-            scored_results: List of (chunk_id, score) for scoring
-
-        Returns:
-            List of RetrievedChunk objects
-        """
-        if not chunk_ids:
-            return []
-
-        # Build score map
-        score_map = {cid: score for cid, score in scored_results}
 
         try:
             rows = db.execute(
@@ -437,22 +417,41 @@ class HybridRetriever:
                 .where(Chunk.id.in_(chunk_ids))
             ).all()
 
-            # Build result maintaining input order
-            id_to_row = {row[0]: row for row in rows}
-            result = []
-            for cid in chunk_ids:
-                if cid in id_to_row:
-                    row = id_to_row[cid]
-                    result.append(
-                        RetrievedChunk(
-                            chunk_id=row[0],
-                            content=row[1],
-                            bridge_id=row[2],
-                            bridge_name=row[3] or "",
-                            score=score_map.get(cid, 0.0),
-                        )
-                    )
-            return result
+            return {
+                row[0]: {
+                    "content": row[1],
+                    "bridge_id": row[2],
+                    "bridge_name": row[3] or "",
+                }
+                for row in rows
+            }
         except Exception:
             self._mark_degraded("fetch_chunks")
+            return {}
+
+    def _build_retrieved_chunks(
+        self,
+        chunk_ids: list[int],
+        scored_results: list[tuple[int, float]],
+        details_by_id: dict[int, _ChunkDetails],
+    ) -> list[RetrievedChunk]:
+        if not chunk_ids:
             return []
+
+        score_map = {cid: score for cid, score in scored_results}
+
+        result: list[RetrievedChunk] = []
+        for cid in chunk_ids:
+            details = details_by_id.get(cid)
+            if not details:
+                continue
+            result.append(
+                RetrievedChunk(
+                    chunk_id=cid,
+                    content=details["content"],
+                    bridge_id=details["bridge_id"],
+                    bridge_name=details["bridge_name"],
+                    score=float(score_map.get(cid, 0.0)),
+                )
+            )
+        return result
