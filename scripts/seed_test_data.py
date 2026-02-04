@@ -31,18 +31,18 @@ def seed():
             Bridge(
                 name="赵州桥",
                 aliases="安济桥",
-                location="河北省赵县",
-                era="隋代",
+                location="河北省赵县 华北",
+                era="隋唐",
                 bridge_type="石拱桥",
-                material="石材",
+                material="石",
                 summary="中国现存最古老的石拱桥",
             ),
             Bridge(
                 name="卢沟桥",
-                location="北京市丰台区",
-                era="金代",
+                location="北京市丰台区 华北",
+                era="宋元",
                 bridge_type="石拱桥",
-                material="石材",
+                material="石",
                 summary="著名的联拱石桥",
             ),
         ]
@@ -63,7 +63,7 @@ def seed():
                 lvl1="形制与技术",
                 lvl2="结构体系",
                 bridge_id=bridges[0].id,
-                embedding=[0.1] * 1024,
+                embedding=[0.1] * 2048,
             ),
             Chunk(
                 source_id=source.id,
@@ -72,7 +72,7 @@ def seed():
                 lvl1="历史与演变",
                 lvl2="建造年代",
                 bridge_id=bridges[0].id,
-                embedding=[0.2] * 1024,
+                embedding=[0.2] * 2048,
             ),
             Chunk(
                 source_id=source.id,
@@ -81,7 +81,7 @@ def seed():
                 lvl1="地域与环境",
                 lvl2="水文地形",
                 bridge_id=bridges[1].id,
-                embedding=[0.3] * 1024,
+                embedding=[0.3] * 2048,
             ),
         ]
         session.add_all(chunks)
