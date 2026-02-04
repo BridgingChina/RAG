@@ -31,4 +31,11 @@ class Chunk(Base, TimestampMixin):
         Index("ix_chunks_taxonomy", "lvl1", "lvl2", "lvl3"),
         Index("ix_chunks_bridge", "bridge_id"),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
+        # pgvector HNSW index for cosine distance (<=>).
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
     )
