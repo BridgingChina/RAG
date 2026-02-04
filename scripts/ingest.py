@@ -13,6 +13,7 @@ Usage:
 import asyncio
 import sys
 from pathlib import Path
+from typing import Optional, TypedDict
 
 import click
 from sqlalchemy import create_engine
@@ -35,6 +36,18 @@ TAXONOMY_LVL2 = {
     "功能与社会": ["交通功能", "军事防御", "景观价值"],
     "历史与演变": ["建造年代", "修缮记录", "变迁历史"],
 }
+
+
+class IngestedChunk(TypedDict):
+    content: str
+    section_title: Optional[str]
+    contextual_text: str
+    search_text: str
+    lvl1: Optional[str]
+    lvl2: Optional[str]
+    lvl3: Optional[str]
+    bridge_id: Optional[int]
+    embedding: list[float]
 
 
 def get_or_create_bridge(session: Session, name: str) -> Bridge | None:
@@ -61,7 +74,7 @@ async def ingest_text(
     source_type: str = "note",
     source_title: str = "导入资料",
     session: Session | None = None,
-) -> list[Chunk]:
+) -> list[IngestedChunk]:
     """Ingest text into the database."""
     # Initialize provider and services
     provider = ZhipuProvider()
@@ -86,7 +99,7 @@ async def ingest_text(
 
     # Step 2: Tag each chunk and get embeddings
     print(f"正在生成上下文、标注和 embedding...")
-    chunks_to_save = []
+    chunks_to_save: list[IngestedChunk] = []
 
     for i, chunk_result in enumerate(chunk_results):
         # Step 2.1: Context enrich (best-effort, fall back to raw content)
