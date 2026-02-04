@@ -367,6 +367,7 @@ class HybridRetriever:
 
         facet_lists = facet.to_lists()
         conditions = []
+        function_condition = None
 
         # Build facet matching conditions
         if facet_lists["bridge_type"]:
@@ -375,6 +376,8 @@ class HybridRetriever:
             conditions.append(Bridge.material.in_(facet_lists["material"]))
         if facet_lists["era"]:
             conditions.append(Bridge.era.in_(facet_lists["era"]))
+        if facet_lists["function"]:
+            function_condition = Bridge.function.in_(facet_lists["function"])
 
         # Region uses LIKE matching (substring)
         if facet_lists["region"]:
@@ -387,16 +390,26 @@ class HybridRetriever:
                 )
             )
 
-        if not conditions:
+        if not conditions and function_condition is None:
             return []
 
-        stmt = select(Bridge.id).where(*conditions)
+        all_conditions = [*conditions, *([function_condition] if function_condition is not None else [])]
+        stmt = select(Bridge.id).where(*all_conditions)
 
         # Exclude target bridge
         if target_bridge_id is not None:
             stmt = stmt.where(Bridge.id != target_bridge_id)
 
-        return db.execute(stmt).scalars().all()
+        ids = db.execute(stmt).scalars().all()
+        # Best-effort fallback: if the DB has no/insufficient bridge.function data yet,
+        # avoid making analogy selection worse by dropping the function condition.
+        if not ids and function_condition is not None and conditions:
+            fallback_stmt = select(Bridge.id).where(*conditions)
+            if target_bridge_id is not None:
+                fallback_stmt = fallback_stmt.where(Bridge.id != target_bridge_id)
+            return db.execute(fallback_stmt).scalars().all()
+
+        return ids
 
     def _fetch_chunk_details(
         self, db: Session, chunk_ids: list[int]

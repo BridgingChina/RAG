@@ -31,11 +31,12 @@ class Chunk(Base, TimestampMixin):
         Index("ix_chunks_taxonomy", "lvl1", "lvl2", "lvl3"),
         Index("ix_chunks_bridge", "bridge_id"),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
-        # pgvector HNSW index for cosine distance (<=>).
+        # pgvector IVFFLAT index for cosine distance (<=>).
+        # Note: IVFFLAT supports dimensions > 2000 (HNSW limit is 2000).
         Index(
-            "ix_chunks_embedding_hnsw",
+            "ix_chunks_embedding_ivfflat",
             "embedding",
-            postgresql_using="hnsw",
+            postgresql_using="ivfflat",
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )
