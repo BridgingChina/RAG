@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.models import Base, Bridge, Chunk, Source
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
+from app.services.context_enricher import ContextEnricher
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer
 
@@ -64,6 +65,7 @@ async def ingest_text(
     """Ingest text into the database."""
     # Initialize provider and services
     provider = ZhipuProvider()
+    context_enricher = ContextEnricher(provider=provider)
     tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
     chunker = SemanticChunker(
         provider=provider,
@@ -83,10 +85,31 @@ async def ingest_text(
         return []
 
     # Step 2: Tag each chunk and get embeddings
-    print(f"正在标注和生成 embedding...")
+    print(f"正在生成上下文、标注和 embedding...")
     chunks_to_save = []
 
     for i, chunk_result in enumerate(chunk_results):
+        # Step 2.1: Context enrich (best-effort, fall back to raw content)
+        contextual_text = ""
+        try:
+            surrounding_chunks = None
+            if i > 0:
+                surrounding_chunks = [chunk_results[i - 1].content]
+            context_result = await context_enricher.enrich(
+                content=chunk_result.content,
+                source_title=source_title,
+                section_title=chunk_result.section_title,
+                page_range=None,
+                surrounding_chunks=surrounding_chunks,
+            )
+            contextual_text = (context_result.contextual_text or "").strip()
+        except Exception as e:
+            print(f"  警告: 第 {i+1} 个块上下文生成失败，将回退为原文用于 embedding: {e}")
+
+        search_text = chunk_result.content
+        if contextual_text:
+            search_text = f"{contextual_text}\n\n{chunk_result.content}"
+
         # Tag with metadata
         tag_result = await tagger.tag(chunk_result.content)
 
@@ -97,13 +120,15 @@ async def ingest_text(
             bridge_id = bridge.id if bridge else None
 
         # Get embedding
-        embedding = await provider.embed([chunk_result.content])
+        embedding = await provider.embed([search_text])
         chunk_embedding = embedding[0] if embedding else []
 
         chunks_to_save.append(
             {
                 "content": chunk_result.content,
                 "section_title": chunk_result.section_title,
+                "contextual_text": contextual_text,
+                "search_text": search_text,
                 "lvl1": tag_result.lvl1,
                 "lvl2": tag_result.lvl2,
                 "lvl3": tag_result.lvl3,
@@ -129,6 +154,8 @@ async def ingest_text(
                 source_id=source.id,
                 content=chunk_data["content"],
                 section_title=chunk_data["section_title"],
+                contextual_text=chunk_data["contextual_text"],
+                search_text=chunk_data["search_text"],
                 lvl1=chunk_data["lvl1"],
                 lvl2=chunk_data["lvl2"],
                 lvl3=chunk_data["lvl3"],
