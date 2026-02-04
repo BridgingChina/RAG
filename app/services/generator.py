@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional, TypeAlias
 
 from app.providers import ChatMessage, LLMProvider
 from app.services.hybrid_retriever import HybridRetrievalResult
@@ -22,10 +22,13 @@ class GenerationResult:
     sources: list[str]
 
 
+ConfidenceLevel: TypeAlias = Literal["high", "medium", "low"]
+
+
 @dataclass
 class Confidence:
     """Confidence assessment for a generated answer."""
-    level: str  # "high", "medium", "low"
+    level: ConfidenceLevel
     reason: str  # Explanation for the confidence level
 
 
@@ -211,12 +214,19 @@ class Generator:
                 json_str = content[json_start:json_end]
                 data = json.loads(json_str)
 
+                raw_level = data.get("confidence", {}).get("level", "low")
+                level: ConfidenceLevel
+                if raw_level in ("high", "medium", "low"):
+                    level = raw_level
+                else:
+                    level = "low"
+
                 return GenerationResultV2(
                     summary=data.get("summary", ""),
                     details=data.get("details", ""),
                     analogy=data.get("analogy"),
                     confidence=Confidence(
-                        level=data.get("confidence", {}).get("level", "low"),
+                        level=level,
                         reason=data.get("confidence", {}).get("reason", "无法评估"),
                     ),
                     citations=citations,

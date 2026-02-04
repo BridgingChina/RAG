@@ -1,3 +1,5 @@
+from typing import Literal, TypeAlias
+
 from pydantic import BaseModel
 
 
@@ -27,8 +29,11 @@ class AskResponse(BaseModel):
     sources: list[str]
 
 
+ConfidenceLevel: TypeAlias = Literal["high", "medium", "low"]
+
+
 class ConfidenceResponse(BaseModel):
-    level: str  # "high" | "medium" | "low"
+    level: ConfidenceLevel
     reason: str
 
 
