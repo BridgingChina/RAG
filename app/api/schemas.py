@@ -10,6 +10,7 @@ class AskContext(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
+    target_bridge_id: int | None = None
     context: AskContext | None = None
 
 
@@ -24,3 +25,31 @@ class AskResponse(BaseModel):
     details: str
     citations: list[CitationResponse]
     sources: list[str]
+
+
+class ConfidenceResponse(BaseModel):
+    level: str  # "high" | "medium" | "low"
+    reason: str
+
+
+class ChunkSummary(BaseModel):
+    chunk_id: int
+    bridge_id: int | None = None
+    bridge_name: str | None = None
+    excerpt: str
+
+
+class EvidenceGroupsResponse(BaseModel):
+    direct: list[ChunkSummary]
+    analogous: list[ChunkSummary]
+
+
+class AskResponseV2(BaseModel):
+    summary: str
+    details: str
+    analogy: str | None = None
+    citations: list[CitationResponse]
+    sources: list[str]
+    confidence: ConfidenceResponse
+    evidence_groups: EvidenceGroupsResponse | None = None
+    degraded: bool | None = None
