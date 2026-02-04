@@ -1,7 +1,8 @@
 import pytest
 
+from app.core.constants import get_taxonomy_lvl1
 from app.providers import ChatMessage, ChatResponse
-from app.services.tagger import MetadataTagger, TagResult, TAXONOMY_LVL1
+from app.services.tagger import MetadataTagger, TagResult
 
 
 class MockProvider:
@@ -49,7 +50,8 @@ async def test_tag_with_malformed_response():
 
 
 def test_taxonomy_lvl1_values():
-    assert "形制与技术" in TAXONOMY_LVL1
-    assert "地域与环境" in TAXONOMY_LVL1
-    assert "功能与社会" in TAXONOMY_LVL1
-    assert "历史与演变" in TAXONOMY_LVL1
+    taxonomy_lvl1 = get_taxonomy_lvl1()
+    assert "形制与技术" in taxonomy_lvl1
+    assert "地域与环境" in taxonomy_lvl1
+    assert "功能与社会" in taxonomy_lvl1
+    assert "历史与演变" in taxonomy_lvl1

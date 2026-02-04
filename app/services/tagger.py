@@ -2,10 +2,8 @@ import json
 import re
 from dataclasses import dataclass
 
+from app.core.constants import get_taxonomy_lvl1
 from app.providers import ChatMessage, LLMProvider
-
-# Fixed taxonomy for V0
-TAXONOMY_LVL1 = ["形制与技术", "地域与环境", "功能与社会", "历史与演变"]
 
 
 @dataclass
@@ -61,12 +59,12 @@ class MetadataTagger:
                 data = json.loads(json_match.group())
                 lvl1 = data.get("lvl1")
                 # Validate lvl1
-                if lvl1 not in TAXONOMY_LVL1:
+                if lvl1 not in get_taxonomy_lvl1():
                     lvl1 = None
                 return TagResult(
                     lvl1=lvl1,
                     lvl2=data.get("lvl2"),
-                    lvl3=None,  # V0 leaves lvl3 empty
+                    lvl3=data.get("lvl3"),  # Extract lvl3 from LLM response
                     bridge_id=data.get("bridge_name"),
                 )
         except (json.JSONDecodeError, AttributeError):
