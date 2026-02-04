@@ -36,12 +36,13 @@ class ChunkSummary(BaseModel):
     chunk_id: int
     bridge_id: int | None = None
     bridge_name: str | None = None
-    excerpt: str
+    preview: str
 
 
 class EvidenceGroupsResponse(BaseModel):
-    direct: list[ChunkSummary]
-    analogous: list[ChunkSummary]
+    anchor: list[ChunkSummary]
+    concept: list[ChunkSummary]
+    analogy: list[ChunkSummary]
 
 
 class AskResponseV2(BaseModel):
