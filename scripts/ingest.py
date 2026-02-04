@@ -24,6 +24,7 @@ from app.models import Base, Bridge, Chunk, Source
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
 from app.services.tagger import MetadataTagger
+from app.services.tokenizer import Tokenizer
 
 
 # Lvl2 taxonomy (optional, for better classification)
@@ -63,6 +64,7 @@ async def ingest_text(
     """Ingest text into the database."""
     # Initialize provider and services
     provider = ZhipuProvider()
+    tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
     chunker = SemanticChunker(
         provider=provider,
         min_chunk_size=200,
@@ -121,6 +123,7 @@ async def ingest_text(
         session.flush()
 
         # Create chunks
+        chunk_rows: list[Chunk] = []
         for chunk_data in chunks_to_save:
             chunk = Chunk(
                 source_id=source.id,
@@ -133,7 +136,23 @@ async def ingest_text(
                 embedding=chunk_data["embedding"],
             )
             session.add(chunk)
+            chunk_rows.append(chunk)
 
+        session.flush()
+        # Populate tsvector for FTS queries (uses GIN index on chunks.tsv).
+        mappings = [
+            {
+                "id": chunk.id,
+                "tsv_text": tokenizer.to_tsvector_text(chunk.search_text or chunk.content),
+            }
+            for chunk in chunk_rows
+        ]
+        session.execute(
+            sql_text(
+                "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"
+            ),
+            mappings,
+        )
         session.commit()
         print(f"  保存完成: {len(chunks_to_save)} 个块")
 
