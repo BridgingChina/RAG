@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -19,11 +21,33 @@ from app.services.tokenizer import Tokenizer
 
 router = APIRouter()
 
+_provider_cache: dict[object, object] = {}
+_tokenizer_cache: dict[str | None, Tokenizer] = {}
+
+
+def _get_provider():
+    # Cache per provider constructor reference so unit tests that patch
+    # `app.api.ask.ZhipuProvider` still get a fresh instance.
+    key = ZhipuProvider
+    provider = _provider_cache.get(key)
+    if provider is None:
+        provider = key()
+        _provider_cache[key] = provider
+    return provider
+
+
+def _get_tokenizer_v2() -> Tokenizer:
+    key = "data/bridge_terms.txt"
+    tokenizer = _tokenizer_cache.get(key)
+    if tokenizer is None:
+        tokenizer = Tokenizer(user_dict_path=key)
+        _tokenizer_cache[key] = tokenizer
+    return tokenizer
+
 
 @router.post("/ask", response_model=AskResponse)
-async def ask(request: AskRequest, db: Session = Depends(get_db)):
+def ask(request: AskRequest, db: Session = Depends(get_db), provider=Depends(_get_provider)):
     """V1 endpoint - simple vector retrieval."""
-    provider = ZhipuProvider()
     retriever = Retriever(provider=provider)
     generator = Generator(provider=provider)
 
@@ -37,123 +61,129 @@ async def ask(request: AskRequest, db: Session = Depends(get_db)):
             lvl3=request.context.lvl3,
         )
 
-    # Retrieve evidence
-    evidence = await retriever.retrieve(db, request.question, context)
+    async def _run():
+        evidence = await retriever.retrieve(db, request.question, context)
+        result = await generator.generate(request.question, evidence)
 
-    # Generate answer
-    result = await generator.generate(request.question, evidence)
+        return AskResponse(
+            summary=result.summary,
+            details=result.details,
+            citations=[
+                CitationResponse(
+                    chunk_id=c.chunk_id,
+                    source_title=c.source_title,
+                    page_range=c.page_range,
+                )
+                for c in result.citations
+            ],
+            sources=result.sources,
+        )
 
-    return AskResponse(
-        summary=result.summary,
-        details=result.details,
-        citations=[
-            CitationResponse(
-                chunk_id=c.chunk_id,
-                source_title=c.source_title,
-                page_range=c.page_range,
-            )
-            for c in result.citations
-        ],
-        sources=result.sources,
-    )
+    return asyncio.run(_run())
 
 
 @router.post("/ask/v2", response_model=AskResponseV2)
-async def ask_v2(request: AskRequest, db: Session = Depends(get_db)):
+def ask_v2(
+    request: AskRequest,
+    db: Session = Depends(get_db),
+    provider=Depends(_get_provider),
+    tokenizer: Tokenizer = Depends(_get_tokenizer_v2),
+):
     """V2 endpoint - hybrid retrieval with confidence."""
-    provider = ZhipuProvider()
-    tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
     retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
     generator = Generator(provider=provider)
     facet_extractor = FacetExtractor(provider=provider)
 
-    degraded: list[str] = []
+    async def _run():
+        degraded: list[str] = []
 
-    # Get target bridge ID
-    target_bridge_id = request.target_bridge_id
-    if not target_bridge_id and request.context:
-        target_bridge_id = request.context.bridge_id
+        target_bridge_id = request.target_bridge_id
+        if not target_bridge_id and request.context:
+            target_bridge_id = request.context.bridge_id
 
-    facet = None
-    try:
-        facet = await facet_extractor.extract(request.question)
-    except Exception:
-        degraded.append("facet")
+        facet = None
+        try:
+            facet = await facet_extractor.extract(request.question)
+        except Exception:
+            degraded.append("facet")
 
-    # Retrieve evidence
-    try:
-        evidence = await retriever.retrieve(
-            db,
-            request.question,
-            target_bridge_id=target_bridge_id,
-            facet=facet,
+        try:
+            evidence = await retriever.retrieve(
+                db,
+                request.question,
+                target_bridge_id=target_bridge_id,
+                facet=facet,
+            )
+            degraded.extend(retriever.last_degraded)
+        except Exception:
+            evidence = HybridRetrievalResult(
+                anchor_chunks=[], concept_chunks=[], analogy_chunks=[]
+            )
+            degraded.extend(retriever.last_degraded)
+            degraded.append("retrieval")
+
+        if not evidence.all_chunks():
+            degraded.append("empty_evidence")
+
+        degraded = list(dict.fromkeys(degraded))
+
+        result = await generator.generate_v2(request.question, evidence)
+
+        evidence_groups = EvidenceGroupsResponse(
+            anchor=[
+                ChunkSummary(
+                    chunk_id=c.chunk_id,
+                    bridge_id=c.bridge_id,
+                    bridge_name=c.bridge_name,
+                    preview=(
+                        c.content[:100] + "..." if len(c.content) > 100 else c.content
+                    ),
+                )
+                for c in evidence.anchor_chunks
+            ],
+            concept=[
+                ChunkSummary(
+                    chunk_id=c.chunk_id,
+                    bridge_id=c.bridge_id,
+                    bridge_name=c.bridge_name,
+                    preview=(
+                        c.content[:100] + "..." if len(c.content) > 100 else c.content
+                    ),
+                )
+                for c in evidence.concept_chunks
+            ],
+            analogy=[
+                ChunkSummary(
+                    chunk_id=c.chunk_id,
+                    bridge_id=c.bridge_id,
+                    bridge_name=c.bridge_name,
+                    preview=(
+                        c.content[:100] + "..." if len(c.content) > 100 else c.content
+                    ),
+                )
+                for c in evidence.analogy_chunks
+            ],
         )
-        degraded.extend(retriever.last_degraded)
-    except Exception:
-        # Fallback to empty result, but preserve any degraded marks from partial execution
-        evidence = HybridRetrievalResult(
-            anchor_chunks=[], concept_chunks=[], analogy_chunks=[]
+
+        return AskResponseV2(
+            summary=result.summary,
+            details=result.details,
+            analogy=result.analogy,
+            citations=[
+                CitationResponse(
+                    chunk_id=c.chunk_id,
+                    source_title=c.source_title,
+                    page_range=c.page_range,
+                )
+                for c in result.citations
+            ],
+            sources=result.sources,
+            confidence=ConfidenceResponse(
+                level=result.confidence.level,
+                reason=result.confidence.reason,
+            ),
+            evidence_groups=evidence_groups,
+            degraded=degraded if degraded else None,
         )
-        degraded.extend(retriever.last_degraded)  # Include any marks from before the exception
-        degraded.append("retrieval")
 
-    if not evidence.all_chunks():
-        degraded.append("empty_evidence")
-
-    # Deduplicate while preserving order
-    degraded = list(dict.fromkeys(degraded))
-
-    # Generate answer
-    result = await generator.generate_v2(request.question, evidence)
-
-    # Build evidence groups for response
-    evidence_groups = EvidenceGroupsResponse(
-        anchor=[
-            ChunkSummary(
-                chunk_id=c.chunk_id,
-                bridge_id=c.bridge_id,
-                bridge_name=c.bridge_name,
-                preview=c.content[:100] + "..." if len(c.content) > 100 else c.content,
-            )
-            for c in evidence.anchor_chunks
-        ],
-        concept=[
-            ChunkSummary(
-                chunk_id=c.chunk_id,
-                bridge_id=c.bridge_id,
-                bridge_name=c.bridge_name,
-                preview=c.content[:100] + "..." if len(c.content) > 100 else c.content,
-            )
-            for c in evidence.concept_chunks
-        ],
-        analogy=[
-            ChunkSummary(
-                chunk_id=c.chunk_id,
-                bridge_id=c.bridge_id,
-                bridge_name=c.bridge_name,
-                preview=c.content[:100] + "..." if len(c.content) > 100 else c.content,
-            )
-            for c in evidence.analogy_chunks
-        ],
-    )
-
-    return AskResponseV2(
-        summary=result.summary,
-        details=result.details,
-        analogy=result.analogy,
-        citations=[
-            CitationResponse(
-                chunk_id=c.chunk_id,
-                source_title=c.source_title,
-                page_range=c.page_range,
-            )
-            for c in result.citations
-        ],
-        sources=result.sources,
-        confidence=ConfidenceResponse(
-            level=result.confidence.level,
-            reason=result.confidence.reason,
-        ),
-        evidence_groups=evidence_groups,
-        degraded=degraded if degraded else None,
-    )
+    return asyncio.run(_run())
