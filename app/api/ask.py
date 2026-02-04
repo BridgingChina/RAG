@@ -47,7 +47,7 @@ def _get_tokenizer_v2() -> Tokenizer:
 
 @router.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest, db: Session = Depends(get_db), provider=Depends(_get_provider)):
-    """V1 endpoint - simple vector retrieval."""
+    """Legacy endpoint (V0) - simple vector retrieval."""
     retriever = Retriever(provider=provider)
     generator = Generator(provider=provider)
 
@@ -89,7 +89,7 @@ def ask_v2(
     provider=Depends(_get_provider),
     tokenizer: Tokenizer = Depends(_get_tokenizer_v2),
 ):
-    """V2 endpoint - hybrid retrieval with confidence."""
+    """V1 endpoint - hybrid retrieval (vector + FTS + facets) with confidence."""
     retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
     generator = Generator(provider=provider)
     facet_extractor = FacetExtractor(provider=provider)
