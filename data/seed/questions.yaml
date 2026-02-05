@@ -1,0 +1,102 @@
+# 测试问题集
+# 覆盖：Anchor / Concept / Analogy 三通道 + Facet 过滤
+
+questions:
+  # === Anchor 查询（指定桥梁） ===
+  - question: 云渡桥的结构特点是什么？
+    target_bridge: 云渡桥
+    expected_channel: anchor
+    description: 测试本桥资料检索
+
+  - question: 青石关桥建于什么年代？
+    target_bridge: 青石关桥
+    expected_channel: anchor
+    description: 测试历史信息检索
+
+  - question: 碧波廊桥的桥上建筑有什么特点？
+    target_bridge: 碧波廊桥
+    expected_channel: anchor
+    description: 测试构造细部检索
+
+  - question: 铁索寒桥的主缆是什么材料？
+    target_bridge: 铁索寒桥
+    expected_channel: anchor
+    description: 测试材料工艺检索
+
+  # === Concept 查询（通用知识） ===
+  - question: 石拱桥的主拱是如何建造的？
+    expected_channel: concept
+    description: 测试通用建造技术知识
+
+  - question: 风雨桥的廊亭有什么功能？
+    expected_channel: concept
+    description: 测试通用功能知识
+
+  - question: 悬索桥的主缆如何承受荷载？
+    expected_channel: concept
+    description: 测试通用结构原理
+
+  - question: 浮桥是怎么固定的？
+    expected_channel: concept
+    description: 测试通用构造知识
+
+  # === Analogy 查询（类比） ===
+  - question: 有没有和云渡桥结构类似的桥？
+    target_bridge: 云渡桥
+    expected_channel: analogy
+    description: 测试类比检索（同类型石拱桥）
+
+  - question: 和碧波廊桥风格相近的桥有哪些？
+    target_bridge: 碧波廊桥
+    expected_channel: analogy
+    description: 测试类比检索（木拱桥/景观功能）
+
+  - question: 其他索桥和铁索寒桥有什么异同？
+    target_bridge: 铁索寒桥
+    expected_channel: analogy
+    description: 测试类比检索（索桥类型）
+
+  # === Facet 过滤 ===
+  - question: 明清时期的石桥有哪些？
+    expected_facets:
+      era: 明清
+      material: 石
+    description: 测试年代+材料 facet 过滤
+
+  - question: 西南地区有哪些桥梁？
+    expected_facets:
+      region: 西南
+    description: 测试区域 facet 过滤
+
+  - question: 现代的斜拉桥有哪些特点？
+    expected_facets:
+      era: 当代
+      bridge_type: 斜拉桥
+    description: 测试年代+桥型 facet 过滤
+
+  - question: 有军事用途的桥梁有哪些？
+    expected_facets:
+      function: 军事
+    description: 测试功能 facet 过滤
+
+  # === 复杂查询 ===
+  - question: 云渡桥和青石关桥哪个更古老？
+    target_bridge: 云渡桥
+    description: 测试比较类问题
+
+  - question: 为什么南方多木桥而北方多石桥？
+    expected_channel: concept
+    description: 测试综合分析问题
+
+  - question: 长江斜拉桥的建造难点是什么？
+    target_bridge: 长江斜拉桥
+    expected_channel: anchor
+    description: 测试现代桥梁技术问题
+
+  - question: 古代桥梁如何防洪？
+    expected_channel: concept
+    description: 测试通用工程知识
+
+  - question: 铁路桥和公路桥的设计有什么区别？
+    expected_channel: concept
+    description: 测试功能差异知识
