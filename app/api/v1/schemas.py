@@ -60,3 +60,29 @@ class AskResponse(BaseModel):
     confidence: ConfidenceResponse
     evidence_groups: EvidenceGroupsResponse | None = None
     degraded: list[str] | None = None
+
+
+# Ingest schemas
+
+
+class IngestRequest(BaseModel):
+    """Request body for /api/v1/ingest endpoint."""
+    content: str  # Markdown content
+    source_type: str = "document"  # Source type (document, note, etc.)
+
+
+class IngestedChunkSummary(BaseModel):
+    """Summary of an ingested chunk."""
+    content_preview: str
+    lvl1: str | None = None
+    lvl2: str | None = None
+    bridge_name: str | None = None
+
+
+class IngestResponse(BaseModel):
+    """Response body for /api/v1/ingest endpoint."""
+    source_id: int
+    bridge_name: str | None = None
+    title: str | None = None
+    chunk_count: int
+    chunks: list[IngestedChunkSummary]

@@ -1,3 +1,4 @@
+"""End-to-end tests for V1 Ask API endpoint."""
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -58,9 +59,9 @@ def test_ask_v2_calls_facet_and_returns_analogy_evidence(
 ):
     provider = RecordingProvider(_emb(1.0, 0.0))
 
-    with patch("app.api.ask.ZhipuProvider", return_value=provider):
+    with patch("app.api.v1.ask.ZhipuProvider", return_value=provider):
         response = client.post(
-            "/ask/v2",
+            "/api/v1/ask",
             json={
                 "question": "赵州桥是石拱桥吗？",
                 "target_bridge_id": test_bridges["target"].id,
@@ -82,11 +83,11 @@ def test_ask_v2_degraded_when_facet_fails(client, test_bridges, test_chunks):
     mock_extractor_instance = AsyncMock()
     mock_extractor_instance.extract.side_effect = RuntimeError("facet failure")
 
-    with patch("app.api.ask.ZhipuProvider", return_value=provider), patch(
-        "app.api.ask.FacetExtractor", return_value=mock_extractor_instance
+    with patch("app.api.v1.ask.ZhipuProvider", return_value=provider), patch(
+        "app.api.v1.ask.FacetExtractor", return_value=mock_extractor_instance
     ):
         response = client.post(
-            "/ask/v2",
+            "/api/v1/ask",
             json={
                 "question": "赵州桥是石拱桥吗？",
                 "target_bridge_id": test_bridges["target"].id,
@@ -109,9 +110,9 @@ def test_ask_v2_degraded_when_fts_fails(monkeypatch, client, test_bridges, test_
 
     monkeypatch.setattr(HybridRetriever, "_fts_search", empty_fts_search)
 
-    with patch("app.api.ask.ZhipuProvider", return_value=provider):
+    with patch("app.api.v1.ask.ZhipuProvider", return_value=provider):
         response = client.post(
-            "/ask/v2",
+            "/api/v1/ask",
             json={
                 "question": "赵州桥是石拱桥吗？",
                 "target_bridge_id": test_bridges["target"].id,
@@ -127,8 +128,8 @@ def test_ask_v2_degraded_when_fts_fails(monkeypatch, client, test_bridges, test_
 def test_ask_v2_degraded_when_evidence_empty(client):
     provider = RecordingProvider(_emb(1.0, 0.0))
 
-    with patch("app.api.ask.ZhipuProvider", return_value=provider):
-        response = client.post("/ask/v2", json={"question": "没有任何数据时怎么办？"})
+    with patch("app.api.v1.ask.ZhipuProvider", return_value=provider):
+        response = client.post("/api/v1/ask", json={"question": "没有任何数据时怎么办？"})
 
     assert response.status_code == 200
     data = response.json()
