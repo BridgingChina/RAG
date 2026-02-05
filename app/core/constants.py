@@ -4,8 +4,8 @@ from pathlib import Path
 
 import yaml
 
-# Config directory is at project root
-CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CONFIG_DIR = PROJECT_ROOT / "config"
 
 
 @lru_cache

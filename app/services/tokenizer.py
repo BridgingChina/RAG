@@ -1,4 +1,10 @@
+from pathlib import Path
+
 import jieba
+
+
+def default_user_dict_path() -> str:
+    return str(Path(__file__).resolve().parents[2] / "data" / "bridge_terms.txt")
 
 
 class Tokenizer:

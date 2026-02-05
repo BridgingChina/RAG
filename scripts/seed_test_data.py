@@ -17,7 +17,7 @@ from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
 from app.services.markdown_parser import parse_markdown
 from app.services.tagger import MetadataTagger
-from app.services.tokenizer import Tokenizer
+from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 SEED_DIR = Path(__file__).parent.parent / "data" / "seed"
 
@@ -88,7 +88,7 @@ async def seed_documents(
         print("  - documents/ not found, skipping")
         return 0
 
-    tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
+    tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
     chunk_count = 0
 
     if use_llm:

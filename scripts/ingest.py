@@ -27,7 +27,7 @@ from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
 from app.services.tagger import MetadataTagger
-from app.services.tokenizer import Tokenizer
+from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 
 def get_taxonomy_lvl2_map() -> dict[str, list[str]]:
@@ -77,7 +77,7 @@ async def ingest_text(
     # Initialize provider and services
     provider = ZhipuProvider()
     context_enricher = ContextEnricher(provider=provider)
-    tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
+    tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
     chunker = SemanticChunker(
         provider=provider,
         min_chunk_size=200,

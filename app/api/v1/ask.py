@@ -17,7 +17,7 @@ from app.providers import ZhipuProvider
 from app.services import Generator
 from app.services.facet_extractor import FacetExtractor
 from app.services.hybrid_retriever import HybridRetriever, HybridRetrievalResult
-from app.services.tokenizer import Tokenizer
+from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 router = APIRouter()
 
@@ -35,7 +35,7 @@ def _get_provider():
 
 
 def _get_tokenizer() -> Tokenizer:
-    key = "data/bridge_terms.txt"
+    key = default_user_dict_path()
     tokenizer = _tokenizer_cache.get(key)
     if tokenizer is None:
         tokenizer = Tokenizer(user_dict_path=key)
