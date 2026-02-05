@@ -13,8 +13,8 @@
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/your-org/bridge-rag.git
-cd bridge-rag
+git clone https://github.com/EchoBridgeCQU/RAG.git
+cd RAG
 ```
 
 ### 2. 启动数据库
@@ -74,4 +74,3 @@ curl -X POST http://localhost:8000/api/v1/ask \
 - [API 文档](api/v1.md) - 了解完整 API
 - [入库指南](ingest-guide.md) - 导入自己的数据
 - [架构文档](architecture.md) - 理解系统设计
-
