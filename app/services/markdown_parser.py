@@ -81,7 +81,7 @@ def _extract_sections(body: str) -> list[Section]:
 
     if not headings:
         # No headings found, treat entire body as one section
-        return []
+        return [Section(title="", level=0, content=body.strip())]
 
     sections = []
     for i, heading in enumerate(headings):
