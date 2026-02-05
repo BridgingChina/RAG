@@ -1,6 +1,4 @@
 """Tests for constants loading module."""
-import pytest
-
 
 def test_load_taxonomy_returns_dict():
     """Test that load_taxonomy returns a nested dict."""

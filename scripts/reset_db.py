@@ -8,7 +8,6 @@ import sys
 from argparse import ArgumentParser
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models import Base
