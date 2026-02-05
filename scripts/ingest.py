@@ -21,21 +21,19 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text as sql_text
 
 from app.core.config import settings
+from app.core.constants import load_taxonomy
 from app.models import Base, Bridge, Chunk, Source
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
 from app.services.tagger import MetadataTagger
-from app.services.tokenizer import Tokenizer
+from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 
-# Lvl2 taxonomy (optional, for better classification)
-TAXONOMY_LVL2 = {
-    "形制与技术": ["结构体系", "构造细部", "材料工艺", "建造技术"],
-    "地域与环境": ["水文地形", "气候特征", "地质条件"],
-    "功能与社会": ["交通功能", "军事防御", "景观价值"],
-    "历史与演变": ["建造年代", "修缮记录", "变迁历史"],
-}
+def get_taxonomy_lvl2_map() -> dict[str, list[str]]:
+    """Convert taxonomy to lvl1 -> [lvl2] mapping for tagger."""
+    taxonomy = load_taxonomy()
+    return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
 class IngestedChunk(TypedDict):
@@ -79,14 +77,14 @@ async def ingest_text(
     # Initialize provider and services
     provider = ZhipuProvider()
     context_enricher = ContextEnricher(provider=provider)
-    tokenizer = Tokenizer(user_dict_path="data/bridge_terms.txt")
+    tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
     chunker = SemanticChunker(
         provider=provider,
         min_chunk_size=200,
         max_chunk_size=500,
         similarity_threshold=0.5,
     )
-    tagger = MetadataTagger(provider=provider, taxonomy_lvl2=TAXONOMY_LVL2)
+    tagger = MetadataTagger(provider=provider, taxonomy_lvl2=get_taxonomy_lvl2_map())
 
     # Step 1: Chunk the text
     print(f"正在切块...")

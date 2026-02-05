@@ -1,21 +1,21 @@
-"""V2 API schema tests."""
+"""API v1 schema tests."""
 
 
 def test_ask_request_has_target_bridge_id():
-    from app.api.schemas import AskRequest
+    from app.api.v1.schemas import AskRequest
     req = AskRequest(question="测试", target_bridge_id=42)
     assert req.target_bridge_id == 42
 
 
 def test_confidence_schema():
-    from app.api.schemas import ConfidenceResponse
+    from app.api.v1.schemas import ConfidenceResponse
     conf = ConfidenceResponse(level="high", reason="证据充分")
     assert conf.level == "high"
 
 
-def test_ask_response_v2_has_new_fields():
-    from app.api.schemas import AskResponseV2, ConfidenceResponse
-    resp = AskResponseV2(
+def test_ask_response_has_expected_fields():
+    from app.api.v1.schemas import AskResponse, ConfidenceResponse
+    resp = AskResponse(
         summary="要点",
         details="详细",
         analogy="类比",
@@ -30,7 +30,7 @@ def test_ask_response_v2_has_new_fields():
 
 
 def test_chunk_summary_uses_preview():
-    from app.api.schemas import ChunkSummary
+    from app.api.v1.schemas import ChunkSummary
     chunk = ChunkSummary(
         chunk_id=1,
         bridge_id=42,
@@ -41,7 +41,7 @@ def test_chunk_summary_uses_preview():
 
 
 def test_evidence_groups_response_has_three_channels():
-    from app.api.schemas import EvidenceGroupsResponse, ChunkSummary
+    from app.api.v1.schemas import EvidenceGroupsResponse, ChunkSummary
     groups = EvidenceGroupsResponse(
         anchor=[ChunkSummary(chunk_id=1, bridge_id=1, bridge_name="Bridge A", preview="Anchor text")],
         concept=[ChunkSummary(chunk_id=2, bridge_id=None, bridge_name=None, preview="Concept text")],

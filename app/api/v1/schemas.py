@@ -1,9 +1,11 @@
+"""API v1 request/response schemas."""
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel
 
 
 class AskContext(BaseModel):
+    """Optional context for filtering retrieval."""
     bridge_id: int | None = None
     lvl1: str | None = None
     lvl2: str | None = None
@@ -11,33 +13,30 @@ class AskContext(BaseModel):
 
 
 class AskRequest(BaseModel):
+    """Request body for /api/v1/ask endpoint."""
     question: str
     target_bridge_id: int | None = None
     context: AskContext | None = None
 
 
 class CitationResponse(BaseModel):
+    """Citation reference in response."""
     chunk_id: int
     source_title: str
     page_range: str | None
-
-
-class AskResponse(BaseModel):
-    summary: str
-    details: str
-    citations: list[CitationResponse]
-    sources: list[str]
 
 
 ConfidenceLevel: TypeAlias = Literal["high", "medium", "low"]
 
 
 class ConfidenceResponse(BaseModel):
+    """Confidence assessment for the answer."""
     level: ConfidenceLevel
     reason: str
 
 
 class ChunkSummary(BaseModel):
+    """Summary of a retrieved chunk."""
     chunk_id: int
     bridge_id: int | None = None
     bridge_name: str | None = None
@@ -45,12 +44,14 @@ class ChunkSummary(BaseModel):
 
 
 class EvidenceGroupsResponse(BaseModel):
+    """Evidence grouped by retrieval channel."""
     anchor: list[ChunkSummary]
     concept: list[ChunkSummary]
     analogy: list[ChunkSummary]
 
 
-class AskResponseV2(BaseModel):
+class AskResponse(BaseModel):
+    """Response body for /api/v1/ask endpoint."""
     summary: str
     details: str
     analogy: str | None = None
@@ -59,3 +60,29 @@ class AskResponseV2(BaseModel):
     confidence: ConfidenceResponse
     evidence_groups: EvidenceGroupsResponse | None = None
     degraded: list[str] | None = None
+
+
+# Ingest schemas
+
+
+class IngestRequest(BaseModel):
+    """Request body for /api/v1/ingest endpoint."""
+    content: str  # Markdown content
+    source_type: str = "document"  # Source type (document, note, etc.)
+
+
+class IngestedChunkSummary(BaseModel):
+    """Summary of an ingested chunk."""
+    content_preview: str
+    lvl1: str | None = None
+    lvl2: str | None = None
+    bridge_name: str | None = None
+
+
+class IngestResponse(BaseModel):
+    """Response body for /api/v1/ingest endpoint."""
+    source_id: int
+    bridge_name: str | None = None
+    title: str | None = None
+    chunk_count: int
+    chunks: list[IngestedChunkSummary]

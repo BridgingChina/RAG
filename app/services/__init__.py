@@ -1,6 +1,7 @@
 from app.services.chunker import ChunkResult, SemanticChunker
 from app.services.context_enricher import ContextEnricher, ContextResult
 from app.services.facet_extractor import Facet, FacetExtractor
+from app.services.markdown_parser import MarkdownDocument, Section, parse_markdown
 from app.services.generator import (
     Citation,
     Confidence,
@@ -16,7 +17,6 @@ from app.services.hybrid_retriever import (
     format_evidence_for_llm,
 )
 from app.services.ranker import ChunkScore, apply_diversity, rrf_merge
-from app.services.retriever import RetrievalContext, RetrievalResult, Retriever
 from app.services.tagger import MetadataTagger, TagResult
 from app.services.tokenizer import Tokenizer
 
@@ -30,6 +30,10 @@ __all__ = [
     # Facet Extractor
     "Facet",
     "FacetExtractor",
+    # Markdown Parser
+    "MarkdownDocument",
+    "Section",
+    "parse_markdown",
     # Generator
     "Citation",
     "Confidence",
@@ -46,10 +50,6 @@ __all__ = [
     "ChunkScore",
     "apply_diversity",
     "rrf_merge",
-    # Retriever
-    "RetrievalContext",
-    "RetrievalResult",
-    "Retriever",
     # Tagger
     "MetadataTagger",
     "TagResult",

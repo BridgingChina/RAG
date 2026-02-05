@@ -35,7 +35,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.models import Base
-from app.services.tokenizer import Tokenizer
+from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 
 def _q(conn, sql: str, params: dict[str, object] | None = None):
@@ -97,7 +97,7 @@ def _format_seconds(s: float) -> str:
 )
 @click.option(
     "--user-dict-path",
-    default="data/bridge_terms.txt",
+    default=default_user_dict_path(),
     show_default=True,
     help="jieba user dict used for Tokenizer backfill.",
 )

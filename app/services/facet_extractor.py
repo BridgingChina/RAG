@@ -1,13 +1,7 @@
 import json
 from dataclasses import dataclass
 
-from app.constants.facets import (
-    BRIDGE_TYPES,
-    ERAS,
-    FUNCTIONS,
-    MATERIALS,
-    REGIONS,
-)
+from app.core.constants import load_facets
 from app.providers import ChatMessage, LLMProvider
 
 
@@ -68,13 +62,14 @@ class FacetExtractor:
 
     async def extract(self, query: str) -> Facet:
         """Extract facets from a query."""
+        facets = load_facets()
         prompt = self.PROMPT_TEMPLATE.format(
             query=query,
-            bridge_types=", ".join(BRIDGE_TYPES),
-            materials=", ".join(MATERIALS),
-            eras=", ".join(ERAS),
-            regions=", ".join(REGIONS),
-            functions=", ".join(FUNCTIONS),
+            bridge_types=", ".join(facets["bridge_types"]),
+            materials=", ".join(facets["materials"]),
+            eras=", ".join(facets["eras"]),
+            regions=", ".join(facets["regions"]),
+            functions=", ".join(facets["functions"]),
         )
 
         messages = [ChatMessage(role="user", content=prompt)]
@@ -90,12 +85,13 @@ class FacetExtractor:
             if start >= 0 and end > start:
                 json_str = content[start:end]
                 data = json.loads(json_str)
+                facets = load_facets()
                 return Facet(
-                    bridge_type=self._validate_facet(data.get("bridge_type"), BRIDGE_TYPES),
-                    material=self._validate_facet(data.get("material"), MATERIALS),
-                    era=self._validate_facet(data.get("era"), ERAS),
-                    region=self._validate_facet(data.get("region"), REGIONS),
-                    function=self._validate_facet(data.get("function"), FUNCTIONS),
+                    bridge_type=self._validate_facet(data.get("bridge_type"), facets["bridge_types"]),
+                    material=self._validate_facet(data.get("material"), facets["materials"]),
+                    era=self._validate_facet(data.get("era"), facets["eras"]),
+                    region=self._validate_facet(data.get("region"), facets["regions"]),
+                    function=self._validate_facet(data.get("function"), facets["functions"]),
                 )
         except (json.JSONDecodeError, KeyError):
             pass
