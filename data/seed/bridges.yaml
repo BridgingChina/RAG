@@ -1,0 +1,112 @@
+# 12 座虚构桥梁档案
+# 覆盖：8种桥型 × 7种材料 × 8个年代 × 8个区域
+
+bridges:
+  # === 华北 ===
+  - name: 青石关桥
+    aliases: 青关桥
+    location: 河北省张家口市 华北
+    era: 明清
+    bridge_type: 石拱桥
+    material: 石
+    function: 军事
+    summary: 长城关隘处的石拱桥，连接内外交通要道
+
+  - name: 永安木桥
+    location: 山西省太原市 华北
+    era: 宋元
+    bridge_type: 梁桥
+    material: 木
+    function: 交通
+    summary: 汾河古渡口的木梁桥，历经数百年风雨
+
+  # === 华东 ===
+  - name: 碧波廊桥
+    aliases: 碧廊桥
+    location: 浙江省丽水市 华东
+    era: 明清
+    bridge_type: 木拱桥
+    material: 木
+    function: 景观
+    summary: 江南水乡的木拱廊桥，桥上设有长廊和茶亭
+
+  - name: 钱塘铁桥
+    location: 浙江省杭州市 华东
+    era: 近现代
+    bridge_type: 铁桥
+    material: 铁
+    function: 铁路
+    summary: 钱塘江上的铁路桥，见证近代工业发展
+
+  # === 华南 ===
+  - name: 南海风雨桥
+    aliases: 风雨桥
+    location: 广西壮族自治区柳州市 华南
+    era: 明清
+    bridge_type: 梁桥
+    material: 木
+    function: 人行
+    summary: 侗族风雨桥代表，桥上建有遮风挡雨的廊亭
+
+  - name: 珠江悬索桥
+    location: 广东省广州市 华南
+    era: 当代
+    bridge_type: 悬索桥
+    material: 钢
+    function: 公路
+    summary: 珠江口的现代悬索桥，主跨超过千米
+
+  # === 华中 ===
+  - name: 洞庭浮桥
+    location: 湖南省岳阳市 华中
+    era: 秦汉
+    bridge_type: 浮桥
+    material: 木
+    function: 军事
+    summary: 古代洞庭湖畔的军用浮桥，以船连舟搭建
+
+  - name: 长江斜拉桥
+    location: 湖北省武汉市 华中
+    era: 当代
+    bridge_type: 斜拉桥
+    material: 钢筋混凝土
+    function: 综合交通
+    summary: 武汉长江上的现代斜拉桥，双向八车道
+
+  # === 西南 ===
+  - name: 云渡桥
+    aliases: 云桥
+    location: 云南省大理市 西南
+    era: 明清
+    bridge_type: 石拱桥
+    material: 石
+    function: 交通
+    summary: 横跨苍山溪流的三孔石拱桥，以云雾缭绕著称
+
+  - name: 铁索寒桥
+    aliases: 寒江桥
+    location: 四川省甘孜州 西南
+    era: 近现代
+    bridge_type: 索桥
+    material: 铁
+    function: 交通
+    summary: 高原峡谷铁索桥，冬季常有冰凌
+
+  # === 西北 ===
+  - name: 丝路古渡桥
+    aliases: 古渡桥
+    location: 甘肃省敦煌市 西北
+    era: 隋唐
+    bridge_type: 梁桥
+    material: 石
+    function: 交通
+    summary: 丝绸之路上的石梁桥，连接东西方贸易
+
+  # === 东北 ===
+  - name: 冰城竹桥
+    location: 黑龙江省哈尔滨市 东北
+    era: 魏晋南北朝
+    bridge_type: 梁桥
+    material: 竹
+    function: 人行
+    summary: 北方少见的竹制桥梁，展现古人智慧
