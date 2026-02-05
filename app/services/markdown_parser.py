@@ -52,7 +52,8 @@ def parse_markdown(content: str) -> MarkdownDocument:
     match = FRONTMATTER_PATTERN.match(content)
     if match:
         try:
-            frontmatter = yaml.safe_load(match.group(1)) or {}
+            loaded = yaml.safe_load(match.group(1)) or {}
+            frontmatter = loaded if isinstance(loaded, dict) else {}
         except yaml.YAMLError:
             frontmatter = {}
         body = content[match.end():]

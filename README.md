@@ -25,7 +25,7 @@ python scripts/seed_test_data.py
 uvicorn app.main:app --reload
 
 # Test the API
-curl -X POST http://localhost:8000/ask/v2 \
+curl -X POST http://localhost:8000/api/v1/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "赵州桥是什么结构？"}'
 ```
@@ -33,13 +33,13 @@ curl -X POST http://localhost:8000/ask/v2 \
 ## API Endpoints
 
 - `GET /health` - Health check
-- `POST /ask` - Legacy (V0): vector retrieval with optional context filtering
-- `POST /ask/v2` - V1: hybrid retrieval (vector + FTS + facet-guided analogy) with confidence + evidence groups
+- `POST /api/v1/ask` - Ask with hybrid retrieval (vector + FTS + facets) and citations
+- `POST /api/v1/ingest` - Ingest markdown content into chunks
 
 ## Running Tests
 
 ```bash
-pytest tests/ -v
+pytest -q
 ```
 
 ## DB Notes (V1)
@@ -47,7 +47,7 @@ pytest tests/ -v
 V1 adds fields/indexes for full-text search:
 - `chunks.contextual_text` / `chunks.search_text`
 - `chunks.tsv` (TSVECTOR) + GIN index
-- `chunks.embedding` HNSW index (pgvector; best-effort)
+- `chunks.embedding` IVFFLAT index (pgvector; best-effort)
 
 `Base.metadata.create_all()` will not alter an existing schema; use `python scripts/migrate_db.py` to upgrade old DBs and backfill `tsv`.
 
@@ -56,8 +56,10 @@ V1 adds fields/indexes for full-text search:
 ```
 app/
 ├── api/          # FastAPI routes
-│   ├── ask.py       # /ask endpoint
-│   └── schemas.py  # Request/response models
+│   └── v1/
+│       ├── ask.py     # /api/v1/ask endpoint
+│       ├── ingest.py  # /api/v1/ingest endpoint
+│       └── schemas.py # Request/response models
 ├── core/         # Config, database
 │   ├── config.py   # Pydantic settings
 │   └── database.py # SQLAlchemy session
@@ -73,7 +75,6 @@ app/
 └── services/     # Business logic
     ├── chunker.py  # Semantic chunking
     ├── generator.py # Answer generation with citations
-    ├── retriever.py # (Legacy) vector search with metadata filtering
     ├── hybrid_retriever.py # V1 hybrid retrieval with RRF fusion
     └── tagger.py   # LLM-based taxonomy classification
 ```

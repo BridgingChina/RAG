@@ -174,7 +174,25 @@ def ingest(
 
             # Get embedding
             embeddings = await provider.embed([search_text])
-            chunk_embedding = embeddings[0] if embeddings else []
+            if not embeddings:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Embedding provider returned no embeddings",
+                )
+
+            chunk_embedding_raw = embeddings[0]
+            if not isinstance(chunk_embedding_raw, (list, tuple)):
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Invalid embedding type: expected list[float], got {type(chunk_embedding_raw).__name__}",
+                )
+
+            chunk_embedding = list(chunk_embedding_raw)
+            if len(chunk_embedding) != 2048:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Invalid embedding dimension: expected 2048, got {len(chunk_embedding)}",
+                )
 
             # Create chunk
             chunk = Chunk(

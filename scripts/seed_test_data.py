@@ -145,6 +145,7 @@ async def seed_documents(
                         content=cr.content,
                         source_title=title,
                         section_title=cr.section_title,
+                        page_range=None,
                         surrounding_chunks=surrounding,
                     )
                     contextual_text = ctx.contextual_text or ""
@@ -176,13 +177,16 @@ async def seed_documents(
         else:
             # Simple splitting by section (fast)
             for section in doc.sections:
-                search_text = f"[{section.title}] {section.content}"
+                section_content = (section.content or "").strip()
+                if not section_content:
+                    continue
+                search_text = f"[{section.title}] {section_content}"
                 # Use deterministic fake embedding based on content hash
                 fake_emb = [float(hash(search_text + str(i)) % 1000) / 1000 for i in range(2048)]
 
                 chunk = Chunk(
                     source_id=source.id,
-                    content=section.content,
+                    content=section_content,
                     section_title=section.title,
                     contextual_text="",
                     search_text=search_text,
