@@ -3,8 +3,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install .
+COPY app/ app/
+COPY config/ config/
+COPY data/ data/
 
-COPY app app/
+RUN pip install .
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
