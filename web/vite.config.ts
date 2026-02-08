@@ -12,7 +12,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:8000',
+      '/api': {
+        // Use Docker service name in containers, localhost outside
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

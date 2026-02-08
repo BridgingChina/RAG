@@ -4,6 +4,31 @@
 
 ## Quick Start
 
+### Option 1: Docker Deployment (推荐)
+
+使用 Docker Compose 一键部署数据库、API、Web 三个服务：
+
+```bash
+# 设置环境变量
+export ZHIPU_API_KEY="your_api_key_here"
+
+# 启动开发环境（支持热重载）
+make dev
+
+# 或启动生产环境
+make prod
+```
+
+访问：
+- Web UI: http://localhost:3000 (开发) / http://localhost:80 (生产)
+- API Docs: http://localhost:8000/docs (开发)
+
+详见 [Docker 部署指南](./docs/docker-deployment.md)
+
+### Option 2: Local Development
+
+传统方式，本地运行 API 服务：
+
 ```bash
 # Start database
 docker compose up -d db

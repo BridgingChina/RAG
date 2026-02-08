@@ -1,0 +1,27 @@
+services:
+  db:
+    ports:
+      - "5433:5432"  # Expose database for GUI tools
+
+  api:
+    ports:
+      - "8000:8000"  # Expose API for direct testing
+    volumes:
+      - ./app:/app/app              # Mount source code
+      - ./config:/app/config
+      - ./data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:5173"   # Vite dev server port mapping
+    volumes:
+      - ./web/src:/app/src          # Mount source for hot reload
+      - ./web/public:/app/public
+      - /app/node_modules           # Prevent overwriting container node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_API_PROXY_TARGET=http://api:8000  # Docker service DNS for container-to-container routing
