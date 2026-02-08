@@ -1,19 +1,46 @@
 services:
   db:
     image: pgvector/pgvector:pg16
-    ports:
-      - "5433:5432"
+    container_name: bridge_rag_db
     environment:
       POSTGRES_DB: bridge_rag
       POSTGRES_USER: bridge
-      POSTGRES_PASSWORD: bridge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bridge}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - bridge_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bridge -d bridge_rag"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bridge_rag_api
+    environment:
+      DATABASE_URL: postgresql+psycopg://bridge:${POSTGRES_PASSWORD:-bridge}@db:5432/bridge_rag
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - bridge_net
+
+  web:
+    image: nginx:alpine
+    container_name: bridge_rag_web
+    depends_on:
+      - api
+    networks:
+      - bridge_net
+
 volumes:
   pgdata:
+
+networks:
+  bridge_net:
+    driver: bridge
