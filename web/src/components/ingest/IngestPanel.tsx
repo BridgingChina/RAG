@@ -8,6 +8,9 @@ import { ChunkList } from "./ChunkList"
 
 const SOURCE_TYPES = ["document", "note"]
 
+// WARNING: This panel allows direct access to the /ingest endpoint without authentication.
+// For production deployment, implement authentication and authorization checks.
+// See web/SECURITY.md for details.
 export function IngestPanel() {
   const [content, setContent] = useState("")
   const [sourceType, setSourceType] = useState("document")
