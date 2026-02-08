@@ -29,6 +29,9 @@ pytest tests/test_chunker.py -v
 # Run single test
 pytest tests/test_chunker.py::test_chunk_simple_text -v
 
+# Run integration tests only (require running DB)
+pytest tests/integration/ -v
+
 # Seed test data
 python scripts/seed_test_data.py
 
@@ -36,37 +39,43 @@ python scripts/seed_test_data.py
 python scripts/reset_db.py
 ```
 
+## Environment Setup
+
+Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml).
+
 ## Architecture
 
 **Tech Stack:** Python 3.11+ + FastAPI, PostgreSQL + pgvector, 智谱 API (embedding-3 + GLM-4)
 
 **Core Flow:**
 ```
-入库: Markdown资料 → 解析 → 切块 → 上下文增强(ContextEnricher) → 标注 → 组装search_text → jieba分词 → embedding+tsv → PostgreSQL
+入库: Markdown → 解析 → 切块 → ContextEnricher(上下文描述) → Tagger(标注) → 组装search_text → jieba分词 → embedding+tsv → PostgreSQL
 问答: 问题 → 向量化 + Facet抽取 → 三通道召回(Anchor/Concept/Analogy) → RRF融合 → LLM生成(带confidence)
 ```
 
 **Key Abstractions:**
 
-- `app/providers/` — LLM Provider 抽象层，`embed()` 返回 2048 维向量（智谱 embedding-3）
+- `app/providers/` — LLM Provider 抽象层 (`LLMProvider` ABC)，`embed()` 返回 2048 维向量（智谱 embedding-3），`chat()` 返回 `ChatResponse`
 - `app/services/markdown_parser.py` — Markdown 解析，提取 front matter 和章节结构
 - `app/services/chunker.py` — 语义切块，按 embedding 相似度判断断点
-- `app/services/tagger.py` — LLM 自动标注 lvl1/lvl2/lvl3/bridge_id
 - `app/services/context_enricher.py` — 为 chunk 生成上下文描述（80-160字），包含来源、主题、指代消歧
-- `app/services/tokenizer.py` — jieba 中文分词，支持自定义词典
+- `app/services/tagger.py` — LLM 自动标注 lvl1/lvl2/lvl3/bridge_id
+- `app/services/tokenizer.py` — jieba 中文分词，支持自定义词典。生成 `to_tsvector_text()` 和 `to_tsquery()`
 - `app/services/facet_extractor.py` — 从问题抽取结构化维度（bridge_type/material/era/region/function），带枚举约束
-- `app/services/hybrid_retriever.py` — 三通道检索：Anchor(本桥) + Concept(通用) + Analogy(相似桥)，RRF 融合
-- `app/services/ranker.py` — RRF (Reciprocal Rank Fusion) 算法，支持多样性约束
+- `app/services/hybrid_retriever.py` — 三通道检索 + RRF 融合，每通道内部 vector + FTS 双路召回再 RRF 合并
+- `app/services/ranker.py` — RRF 算法 + `apply_diversity()` 多样性约束（analogy 通道限每桥 1 条）
 - `app/services/generator.py` — 基于证据生成回答，输出引用和置信度
+
+**索引链路（search_text pipeline）：** chunk 入库时经历 `content → contextual_text（ContextEnricher 生成的上下文描述）→ search_text（拼合后用于检索的文本）→ tsv（jieba 分词后的 tsvector）`。向量索引用 `embedding` 列，全文索引用 `tsv` 列。
 
 **Configuration:**
 
-- `config/taxonomy.yaml` — 三级知识分类体系
+- `config/taxonomy.yaml` — 三级知识分类体系，通过 `app/core/constants.py` 加载（`@lru_cache`）
 - `config/facets.yaml` — Facet 枚举值（桥型、材料、年代、区域、功能）
 
 **Data Model:**
 
-- `chunks` — 核心检索单元，2048 维向量、taxonomy 标签（lvl1/lvl2/lvl3）、`contextual_text`/`search_text`/`tsv`
+- `chunks` — 核心检索单元，2048 维向量（IVFFLAT 索引，非 HNSW，因 HNSW 有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
 - `bridges` — 桥梁档案（bridge_type/material/era/location/function）
 - `taxonomy_nodes` — 三级目录结构
 - `sources` — 来源元信息
@@ -76,6 +85,12 @@ python scripts/reset_db.py
 - `GET /health` — Health check
 - `POST /api/v1/ask` — 问答端点，三通道混合检索，返回 `confidence` 和 `evidence_groups`
 - `POST /api/v1/ingest` — 入库端点，接受 Markdown 格式文档
+
+## Testing
+
+- **Unit tests** (`tests/test_*.py`): 不需要数据库，可直接运行
+- **Integration tests** (`tests/integration/`): 需要 PostgreSQL+pgvector 运行中，缺失时自动 `pytest.skip`
+- **conftest.py**: `db_session` fixture 在事务内运行并回滚；`chunk_factory` 自动处理 tsvector 填充
 
 ## Domain Context
 
