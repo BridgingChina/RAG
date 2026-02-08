@@ -1,0 +1,19 @@
+services:
+  db:
+    restart: always
+    # No port exposure - container-only access
+
+  api:
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    # No port exposure - accessed only via nginx
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_URL: /api  # Production API accessed via nginx proxy
+    ports:
+      - "80:80"
+    restart: always
