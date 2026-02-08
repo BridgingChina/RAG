@@ -9,6 +9,7 @@ services:
     # No port exposure - accessed only via nginx
 
   web:
+    image: bridge-rag-web:latest
     build:
       context: .
       dockerfile: web/Dockerfile.prod
