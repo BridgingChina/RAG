@@ -16,7 +16,7 @@ export function AskPanel() {
 
   async function handleSubmit() {
     const q = question.trim()
-    if (!q) return
+    if (!q || loading) return  // Guard against concurrent requests
     setLoading(true)
     setError(null)
     setResult(null)
@@ -32,7 +32,7 @@ export function AskPanel() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !loading) {
       e.preventDefault()
       handleSubmit()
     }
