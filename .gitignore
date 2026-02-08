@@ -28,3 +28,6 @@ htmlcov/
 # WebUI
 web/dist/
 web/node_modules/
+
+# Docker
+nginx/logs/
