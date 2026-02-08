@@ -7,9 +7,12 @@ services:
     ports:
       - "8000:8000"  # Expose API for direct testing
     volumes:
-      - ./app:/app/app              # Mount source code
+      - ./app:/app/app              # Mount source code for hot reload
       - ./config:/app/config
       - ./data:/app/data
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1   # Prevent .pyc files
+      - PYTHONUNBUFFERED=1          # Force stdout/stderr to be unbuffered
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   web:

@@ -10,6 +10,9 @@ Bridge RAG System v1.0.0 — 桥梁知识检索增强生成系统。云端 RAG �
 
 ## Commands
 
+### Development Setup
+
+**Recommended (Works on all platforms):**
 ```bash
 # Start database (PostgreSQL + pgvector on port 5433)
 docker compose up -d db
@@ -17,8 +20,21 @@ docker compose up -d db
 # Install dependencies
 pip install -e ".[dev]"
 
-# Run server
+# Run server with hot reload
 uvicorn app.main:app --reload
+```
+
+**Alternative: Full Docker Compose (Linux/WSL2):**
+```bash
+# Start all services (database + API + web)
+make dev
+# or
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+**Note:** On macOS, Docker volume mounts may cause `OSError: [Errno 35]` errors with API hot reload. The recommended approach (local Python + Docker database) works reliably across all platforms.
+
+### Testing
 
 # Run all tests
 pytest tests/ -v

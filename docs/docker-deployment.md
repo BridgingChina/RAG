@@ -115,6 +115,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 开发环境已配置热重载：
 - **API**: 修改 `app/` 下的 Python 文件会自动重启 uvicorn
+  - ⚠️ **macOS 限制**: 由于 Docker for Mac 的文件系统限制，API 热重载可能遇到 `OSError: [Errno 35] Resource deadlock avoided` 错误
+  - **推荐方案**: 在 macOS 上使用本地 Python 开发（详见下方"macOS 开发环境"）
 - **Web**: 修改 `web/src/` 下的 React 文件会自动刷新浏览器
 
 #### 访问服务
@@ -140,6 +142,52 @@ psql -h localhost -p 5433 -U bridge -d bridge_rag
 - Database: bridge_rag
 - User: bridge
 - Password: bridge
+
+#### macOS 开发环境
+
+**问题：** macOS 上 Docker volume 挂载可能导致 API 服务启动失败，错误信息为 `OSError: [Errno 35] Resource deadlock avoided`。
+
+**推荐方案：** 使用混合开发模式 — Docker 运行基础设施，本地运行 API。
+
+**配置步骤：**
+
+1. **启动 Docker 基础设施**（数据库 + Web）：
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db web
+   ```
+
+2. **安装本地 Python 依赖**：
+   ```bash
+   pip install -e ".[dev]"
+   ```
+
+3. **本地运行 API**（支持热重载）：
+   ```bash
+   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+4. **验证服务**：
+   - Database: `localhost:5433`
+   - API (本地): `localhost:8000`
+   - Web (Docker): `localhost:3000`
+
+**优势：**
+- ✅ API 完整热重载支持（1-2秒响应）
+- ✅ Web 前端热重载正常工作
+- ✅ 数据库隔离在 Docker 中，环境一致
+- ✅ 可直接使用 IDE 调试器调试 API 代码
+
+**管理命令：**
+```bash
+# 停止本地 API
+kill $(lsof -ti:8000)
+
+# 仅停止 Docker 服务（保留数据）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml stop
+
+# 查看 Docker 服务日志
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
+```
 
 ### 生产环境使用
 
@@ -347,6 +395,63 @@ docker stats bridge_rag_api bridge_rag_web bridge_rag_db
    ```
 
 2. 停止占用端口的进程，或修改 docker-compose 中的端口映射
+
+### 问题 6: macOS API 热重载失败
+
+**症状：** API 容器无法启动，日志显示 `OSError: [Errno 35] Resource deadlock avoided`
+
+**根本原因：** Docker for Mac 的文件系统虚拟化在 volume 挂载时存在限制，Python 导入模块时可能触发文件锁定错误。
+
+**解决方案：**
+
+**方案 1: 本地 Python 开发**（推荐）
+
+使用混合开发模式，详见上方"macOS 开发环境"章节：
+```bash
+# 启动数据库和 Web
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db web
+
+# 本地运行 API
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**方案 2: 禁用 API 热重载**
+
+修改 `docker-compose.dev.yml`，注释掉 volume 挂载：
+```yaml
+api:
+  # volumes:
+  #   - ./app:/app/app
+  command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+```
+
+代码变更后需手动重新构建：
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build api
+```
+
+**方案 3: 启用 VirtioFS**（实验性）
+
+1. 打开 Docker Desktop → Settings → General
+2. 勾选 **Use the new Virtualization framework**
+3. 在 Resources → File Sharing 中启用 **VirtioFS**
+4. 重启 Docker Desktop
+
+注意：VirtioFS 是实验性功能，可能仍存在问题。
+
+**临时排查步骤：**
+1. 清理本地 Python 缓存：
+   ```bash
+   find app -name "__pycache__" -type d -exec rm -rf {} +
+   find app -name "*.pyc" -delete
+   ```
+
+2. 完全重建容器：
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml build --no-cache api
+   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+   ```
 
 ## 最佳实践
 
