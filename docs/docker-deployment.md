@@ -18,6 +18,7 @@ export ZHIPU_API_KEY="your_api_key_here"
 
 # 可选（生产环境建议修改）
 export POSTGRES_PASSWORD="bridge"
+export WEB_PORT="80"  # 生产环境 Web 服务外部端口，默认 80
 ```
 
 ### 2. 启动服务
@@ -65,6 +66,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f
 ```bash
 export ZHIPU_API_KEY="your_api_key_here"
 export POSTGRES_PASSWORD="bridge"
+export WEB_PORT="80"  # 可选，自定义生产环境 Web 端口
 ```
 
 #### 方式二：使用 .env 文件
@@ -73,6 +75,7 @@ export POSTGRES_PASSWORD="bridge"
 ```bash
 ZHIPU_API_KEY=your_api_key_here
 POSTGRES_PASSWORD=bridge
+WEB_PORT=80  # 可选，自定义生产环境 Web 端口
 ```
 
 然后加载：
