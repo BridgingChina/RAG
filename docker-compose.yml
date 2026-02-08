@@ -2,6 +2,8 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: bridge_rag_db
+    ports:
+      - "5433:5432"  # Expose for local development workflow (docker compose up -d db)
     environment:
       POSTGRES_DB: bridge_rag
       POSTGRES_USER: bridge
