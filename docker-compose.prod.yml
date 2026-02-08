@@ -10,8 +10,8 @@ services:
 
   web:
     build:
-      context: ./web
-      dockerfile: Dockerfile.prod
+      context: .
+      dockerfile: web/Dockerfile.prod
       args:
         VITE_API_URL: /api  # Production API accessed via nginx proxy
     ports:
