@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Search, ChevronDown, Loader2 } from "lucide-react"
 import { askQuestion } from "@/lib/api"
 import type { AskResponse } from "@/lib/types"
+import { AnswerDisplay } from "./AnswerDisplay"
 
 export function AskPanel() {
   const [question, setQuestion] = useState("")
@@ -103,12 +104,8 @@ export function AskPanel() {
         </div>
       )}
 
-      {/* Result placeholder — wired in Task 7 */}
-      {result && !loading && (
-        <div className="text-sm text-slate-500">
-          收到回答（AnswerDisplay 待实现）: {result.summary.slice(0, 100)}…
-        </div>
-      )}
+      {/* Result */}
+      {result && !loading && <AnswerDisplay data={result} />}
     </div>
   )
 }
