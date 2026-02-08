@@ -5,15 +5,13 @@ from app.api.v1 import router as v1_router
 
 app = FastAPI(title="Bridge RAG", version="1.0.0")
 
-# CORS middleware for WebUI development
-# WARNING: This configuration is for local development only.
-# For production, use environment variables and restrict methods/headers.
-# See web/SECURITY.md for deployment guidelines.
+# CORS middleware for local development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # TODO: Use env var for production
-    allow_methods=["*"],  # TODO: Restrict to ["GET", "POST"] in production
-    allow_headers=["*"],  # TODO: Restrict headers in production
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # API v1 routes
