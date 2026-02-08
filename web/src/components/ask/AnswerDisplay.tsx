@@ -2,6 +2,7 @@ import Markdown from "react-markdown"
 import { AlertTriangle } from "lucide-react"
 import type { AskResponse } from "@/lib/types"
 import { ConfidenceBadge } from "./ConfidenceBadge"
+import { EvidenceGrid } from "./EvidenceGrid"
 
 export function AnswerDisplay({ data }: { data: AskResponse }) {
   return (
@@ -33,6 +34,9 @@ export function AnswerDisplay({ data }: { data: AskResponse }) {
           {data.analogy}
         </blockquote>
       )}
+
+      {/* Evidence Grid */}
+      {data.evidence_groups && <EvidenceGrid evidence={data.evidence_groups} />}
 
       {/* Citations */}
       {data.citations.length > 0 && (
