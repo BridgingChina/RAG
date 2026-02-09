@@ -34,6 +34,9 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 **Note:** On macOS, Docker volume mounts may cause `OSError: [Errno 35]` errors with API hot reload. The recommended approach (local Python + Docker database) works reliably across all platforms.
 
+**Database Auto-Initialization:**
+The database schema is automatically initialized on first startup. No need to manually run `reset_db.py` for fresh installations.
+
 ### Testing
 
 # Run all tests
@@ -59,6 +62,14 @@ python scripts/reset_db.py
 
 Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml).
 
+## Database Schema Management
+
+The system uses automatic schema versioning:
+- Schema version is tracked in the `schema_version` table
+- Current version: 1 (initial schema with 1024-dim vectors)
+- Database auto-initializes on first startup if no version exists
+- For development, use `python scripts/reset_db.py --force` to recreate from scratch
+
 ## Architecture
 
 **Tech Stack:** Python 3.11+ + FastAPI, PostgreSQL + pgvector, 智谱 API (embedding-3 + GLM-4)
@@ -71,7 +82,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. The database URL defaults
 
 **Key Abstractions:**
 
-- `app/providers/` — LLM Provider 抽象层 (`LLMProvider` ABC)，`embed()` 返回 2048 维向量（智谱 embedding-3），`chat()` 返回 `ChatResponse`
+- `app/providers/` — LLM Provider 抽象层 (`LLMProvider` ABC)，`embed()` 返回 1024 维向量（智谱 embedding-3，可配置 512/1024/2048），`chat()` 返回 `ChatResponse`
 - `app/services/markdown_parser.py` — Markdown 解析，提取 front matter 和章节结构
 - `app/services/chunker.py` — 语义切块，按 embedding 相似度判断断点
 - `app/services/context_enricher.py` — 为 chunk 生成上下文描述（80-160字），包含来源、主题、指代消歧
@@ -91,7 +102,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. The database URL defaults
 
 **Data Model:**
 
-- `chunks` — 核心检索单元，2048 维向量（IVFFLAT 索引，非 HNSW，因 HNSW 有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
+- `chunks` — 核心检索单元，1024 维向量（IVFFLAT 索引，IVFFLAT 和 HNSW 均有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
 - `bridges` — 桥梁档案（bridge_type/material/era/location/function）
 - `taxonomy_nodes` — 三级目录结构
 - `sources` — 来源元信息

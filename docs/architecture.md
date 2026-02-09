@@ -45,7 +45,7 @@ Bridge RAG System 是一个面向桥梁知识的检索增强生成系统，采�
 │                    Provider Layer                            │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │                   ZhipuProvider                          ││
-│  │  - embed(): 2048-dim vectors (embedding-3)              ││
+│  │  - embed(): 1024-dim vectors (embedding-3)              ││
 │  │  - chat(): GLM-4 generation                             ││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
@@ -108,7 +108,7 @@ Question → Facet提取 → 三通道检索 → LLM生成 → Response
 ```
 Markdown → Parse → Chunk → Enrich → Tag → Embed → Store
    ↓         ↓       ↓        ↓       ↓      ↓       ↓
- YAML    Sections  200-500  Context  lvl1  2048d   chunks
+ YAML    Sections  200-500  Context  lvl1  1024d   chunks
  front              chars   text    lvl2   vec    table
  matter                             lvl3
 ```
@@ -126,5 +126,5 @@ Markdown → Parse → Chunk → Enrich → Tag → Embed → Store
 | 数据库 | PostgreSQL | 成熟稳定、pgvector 扩展 |
 | 向量索引 | pgvector | 原生集成、无需额外服务 |
 | LLM | 智谱 GLM-4 | 中文能力强、API 稳定 |
-| Embedding | 智谱 embedding-3 | 2048 维、中文优化 |
+| Embedding | 智谱 embedding-3 | 1024 维、中文优化 |
 
