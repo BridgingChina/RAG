@@ -89,8 +89,9 @@ def init_database() -> None:
     Uses PostgreSQL advisory lock to serialize concurrent first-run initializations.
     """
     # Use advisory lock to prevent concurrent initialization
-    # Lock ID: hash of "bridge_rag_init" -> 1819242596 (arbitrary but consistent)
-    INIT_LOCK_ID = 1819242596
+    # Lock ID: SHA256("bridge_rag_init")[:4] -> 606059278
+    # Derived from project-specific string to avoid conflicts with other locks
+    INIT_LOCK_ID = 606059278
 
     try:
         # Acquire advisory lock (blocks until available)
