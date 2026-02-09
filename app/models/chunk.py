@@ -5,6 +5,7 @@ from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.constants import EMBEDDING_DIM
 from app.models.base import Base, TimestampMixin
 
 
@@ -22,7 +23,7 @@ class Chunk(Base, TimestampMixin):
         ForeignKey("bridges.id"), nullable=True
     )
     page_range: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    embedding: Mapped[list[float]] = mapped_column(Vector(2048))
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
     contextual_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     search_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tsv: Mapped[Optional[str]] = mapped_column(TSVECTOR, nullable=True)
@@ -32,11 +33,12 @@ class Chunk(Base, TimestampMixin):
         Index("ix_chunks_bridge", "bridge_id"),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
         # pgvector IVFFLAT index for cosine distance (<=>).
-        # Note: IVFFLAT supports dimensions > 2000 (HNSW limit is 2000).
+        # Note: Both IVFFLAT and HNSW have a 2000-dimension limit in pgvector.
         Index(
             "ix_chunks_embedding_ivfflat",
             "embedding",
             postgresql_using="ivfflat",
+            postgresql_with={"lists": 100},
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )
