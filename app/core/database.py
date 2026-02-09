@@ -3,6 +3,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from app.core.constants import EMBEDDING_DIM
 from app.core.logging import logger
 
 engine = create_engine(settings.database_url)
@@ -34,13 +35,49 @@ def get_current_schema_version(engine: Engine) -> int | None:
 
 
 def set_schema_version(engine: Engine, version: int, description: str) -> None:
-    """Record a schema version in the database."""
+    """Record a schema version in the database.
+
+    Uses ON CONFLICT DO NOTHING to handle concurrent initialization safely.
+    """
     with engine.connect() as conn:
         conn.execute(
-            text("INSERT INTO schema_version (version, description) VALUES (:version, :description)"),
+            text(
+                "INSERT INTO schema_version (version, description) "
+                "VALUES (:version, :description) "
+                "ON CONFLICT (version) DO NOTHING"
+            ),
             {"version": version, "description": description},
         )
         conn.commit()
+
+
+def verify_schema_compatibility(engine: Engine) -> None:
+    """Verify that the actual database schema matches expected configuration.
+
+    Raises RuntimeError if schema exists but doesn't match (e.g., wrong embedding dimension).
+    """
+    try:
+        with engine.connect() as conn:
+            # Check if chunks table exists and has correct embedding dimension
+            result = conn.execute(
+                text(
+                    "SELECT atttypmod FROM pg_attribute "
+                    "WHERE attrelid = 'chunks'::regclass AND attname = 'embedding'"
+                )
+            )
+            row = result.fetchone()
+            if row is not None:
+                # atttypmod for vector(N) is N+4
+                actual_dim = row[0] - 4
+                if actual_dim != EMBEDDING_DIM:
+                    raise RuntimeError(
+                        f"Schema mismatch: chunks.embedding has {actual_dim} dimensions, "
+                        f"but EMBEDDING_DIM={EMBEDDING_DIM}. "
+                        f"Migration required before setting schema version."
+                    )
+    except ProgrammingError:
+        # Table doesn't exist yet, which is fine for fresh initialization
+        pass
 
 
 def init_database() -> None:
@@ -68,6 +105,9 @@ def init_database() -> None:
 
         # Create all tables
         Base.metadata.create_all(engine)
+
+        # Verify schema compatibility before stamping version
+        verify_schema_compatibility(engine)
 
         # Set initial version
         set_schema_version(engine, 1, "Initial schema")
