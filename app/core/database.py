@@ -87,53 +87,55 @@ def init_database() -> None:
     Sets version to 1 after successful initialization.
 
     Uses PostgreSQL advisory lock to serialize concurrent first-run initializations.
+    The lock is held on a single connection throughout the entire init sequence.
     """
     # Use advisory lock to prevent concurrent initialization
     # Lock ID: SHA256("bridge_rag_init")[:4] -> 606059278
     # Derived from project-specific string to avoid conflicts with other locks
     INIT_LOCK_ID = 606059278
 
+    # Acquire lock and hold it for the entire initialization sequence
+    # Advisory locks are session-scoped, so we must keep the connection open
+    lock_conn = engine.connect()
     try:
         # Acquire advisory lock (blocks until available)
-        with engine.connect() as conn:
-            conn.execute(text(f"SELECT pg_advisory_lock({INIT_LOCK_ID})"))
-            conn.commit()
+        lock_conn.execute(text(f"SELECT pg_advisory_lock({INIT_LOCK_ID})"))
+        lock_conn.commit()
 
-        try:
-            # Re-check version after acquiring lock (another process may have just initialized)
-            current_version = get_current_schema_version(engine)
+        # Re-check version after acquiring lock (another process may have just initialized)
+        current_version = get_current_schema_version(engine)
 
-            if current_version is not None:
-                logger.info(f"Database already initialized at version {current_version}")
-                return
+        if current_version is not None:
+            logger.info(f"Database already initialized at version {current_version}")
+            return
 
-            logger.info("Initializing database schema...")
+        logger.info("Initializing database schema...")
 
-            # Create pgvector extension if it doesn't exist
-            with engine.connect() as conn:
-                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-                conn.commit()
+        # Create pgvector extension if it doesn't exist
+        lock_conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        lock_conn.commit()
 
-            # Import Base here to avoid circular imports
-            from app.models import Base
+        # Import Base here to avoid circular imports
+        from app.models import Base
 
-            # Create all tables
-            Base.metadata.create_all(engine)
+        # Create all tables
+        Base.metadata.create_all(engine)
 
-            # Verify schema compatibility before stamping version
-            verify_schema_compatibility(engine)
+        # Verify schema compatibility before stamping version
+        verify_schema_compatibility(engine)
 
-            # Set initial version
-            set_schema_version(engine, 1, "Initial schema")
+        # Set initial version
+        set_schema_version(engine, 1, "Initial schema")
 
-            logger.info("Database initialization completed successfully")
-
-        finally:
-            # Always release the advisory lock
-            with engine.connect() as conn:
-                conn.execute(text(f"SELECT pg_advisory_unlock({INIT_LOCK_ID})"))
-                conn.commit()
+        logger.info("Database initialization completed successfully")
 
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
+    finally:
+        # Always release the advisory lock and close the connection
+        try:
+            lock_conn.execute(text(f"SELECT pg_advisory_unlock({INIT_LOCK_ID})"))
+            lock_conn.commit()
+        finally:
+            lock_conn.close()
