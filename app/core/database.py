@@ -58,6 +58,11 @@ def init_database() -> None:
 
         logger.info("Initializing database schema...")
 
+        # Create pgvector extension if it doesn't exist
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
+
         # Import Base here to avoid circular imports
         from app.models import Base
 
