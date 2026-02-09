@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.constants import load_taxonomy
+from app.core.constants import EMBEDDING_DIM, load_taxonomy
 from app.models import Base, Bridge, Chunk, Source, TaxonomyNode
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
@@ -158,7 +158,7 @@ async def seed_documents(
                 # Embed
                 search_text = f"{contextual_text}\n\n{cr.content}" if contextual_text else cr.content
                 embeddings = await provider.embed([search_text])
-                embedding = embeddings[0] if embeddings else [0.0] * 2048
+                embedding = embeddings[0] if embeddings else [0.0] * EMBEDDING_DIM
 
                 chunk = Chunk(
                     source_id=source.id,
@@ -182,7 +182,7 @@ async def seed_documents(
                     continue
                 search_text = f"[{section.title}] {section_content}"
                 # Use deterministic fake embedding based on content hash
-                fake_emb = [float(hash(search_text + str(i)) % 1000) / 1000 for i in range(2048)]
+                fake_emb = [float(hash(search_text + str(i)) % 1000) / 1000 for i in range(EMBEDDING_DIM)]
 
                 chunk = Chunk(
                     source_id=source.id,
