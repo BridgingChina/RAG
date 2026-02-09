@@ -18,7 +18,7 @@ from app.services.context_enricher import ContextEnricher
 from app.services.markdown_parser import parse_markdown
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
-from app.core.constants import load_taxonomy
+from app.core.constants import EMBEDDING_DIM, load_taxonomy
 
 router = APIRouter()
 
@@ -188,10 +188,10 @@ def ingest(
                 )
 
             chunk_embedding = list(chunk_embedding_raw)
-            if len(chunk_embedding) != 2048:
+            if len(chunk_embedding) != EMBEDDING_DIM:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Invalid embedding dimension: expected 2048, got {len(chunk_embedding)}",
+                    detail=f"Invalid embedding dimension: expected {EMBEDDING_DIM}, got {len(chunk_embedding)}",
                 )
 
             # Create chunk
