@@ -3,6 +3,21 @@ import pytest
 from app.models import Bridge, Chunk, Source
 
 
+def test_create_schema_version():
+    """Test creating schema version record"""
+    from app.models.schema_version import SchemaVersion
+    from datetime import datetime
+
+    version = SchemaVersion(
+        version=1,
+        description="Initial schema"
+    )
+
+    assert version.version == 1
+    assert version.description == "Initial schema"
+    assert isinstance(version.created_at, datetime) or version.created_at is None
+
+
 def test_create_bridge(db_session):
     bridge = Bridge(name="赵州桥", location="河北赵县")
     db_session.add(bridge)
