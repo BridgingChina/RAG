@@ -85,34 +85,53 @@ def init_database() -> None:
 
     Checks current schema version and creates all tables if version is None.
     Sets version to 1 after successful initialization.
+
+    Uses PostgreSQL advisory lock to serialize concurrent first-run initializations.
     """
+    # Use advisory lock to prevent concurrent initialization
+    # Lock ID: hash of "bridge_rag_init" -> 1819242596 (arbitrary but consistent)
+    INIT_LOCK_ID = 1819242596
+
     try:
-        current_version = get_current_schema_version(engine)
-
-        if current_version is not None:
-            logger.info(f"Database already initialized at version {current_version}")
-            return
-
-        logger.info("Initializing database schema...")
-
-        # Create pgvector extension if it doesn't exist
+        # Acquire advisory lock (blocks until available)
         with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.execute(text(f"SELECT pg_advisory_lock({INIT_LOCK_ID})"))
             conn.commit()
 
-        # Import Base here to avoid circular imports
-        from app.models import Base
+        try:
+            # Re-check version after acquiring lock (another process may have just initialized)
+            current_version = get_current_schema_version(engine)
 
-        # Create all tables
-        Base.metadata.create_all(engine)
+            if current_version is not None:
+                logger.info(f"Database already initialized at version {current_version}")
+                return
 
-        # Verify schema compatibility before stamping version
-        verify_schema_compatibility(engine)
+            logger.info("Initializing database schema...")
 
-        # Set initial version
-        set_schema_version(engine, 1, "Initial schema")
+            # Create pgvector extension if it doesn't exist
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.commit()
 
-        logger.info("Database initialization completed successfully")
+            # Import Base here to avoid circular imports
+            from app.models import Base
+
+            # Create all tables
+            Base.metadata.create_all(engine)
+
+            # Verify schema compatibility before stamping version
+            verify_schema_compatibility(engine)
+
+            # Set initial version
+            set_schema_version(engine, 1, "Initial schema")
+
+            logger.info("Database initialization completed successfully")
+
+        finally:
+            # Always release the advisory lock
+            with engine.connect() as conn:
+                conn.execute(text(f"SELECT pg_advisory_unlock({INIT_LOCK_ID})"))
+                conn.commit()
 
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
