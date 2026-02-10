@@ -1,5 +1,6 @@
 from app.services.chunker import ChunkResult, SemanticChunker
 from app.services.context_enricher import ContextEnricher, ContextResult
+from app.services.bridge_linker import BridgeLink, BridgeLinker, BridgeLinkingResult
 from app.services.facet_extractor import Facet, FacetExtractor
 from app.services.markdown_parser import MarkdownDocument, Section, parse_markdown
 from app.services.generator import (
@@ -27,6 +28,10 @@ __all__ = [
     # Context Enricher
     "ContextEnricher",
     "ContextResult",
+    # Bridge Linker
+    "BridgeLink",
+    "BridgeLinker",
+    "BridgeLinkingResult",
     # Facet Extractor
     "Facet",
     "FacetExtractor",

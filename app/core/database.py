@@ -10,7 +10,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 
 
 def get_db():
@@ -123,11 +123,21 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "lvl2",
             "lvl3",
             "bridge_id",
+            "bridge_binding_status",
             "page_range",
             "embedding",
             "contextual_text",
             "search_text",
             "tsv",
+            "created_at",
+        },
+        "chunk_bridge_links": {
+            "id",
+            "chunk_id",
+            "bridge_id",
+            "role",
+            "confidence",
+            "method",
             "created_at",
         },
     }
@@ -262,7 +272,7 @@ def init_database() -> None:
 
             # Set initial version
             set_schema_version(
-                engine, LATEST_SCHEMA_VERSION, "Initial schema", conn=conn
+                engine, LATEST_SCHEMA_VERSION, "Schema v2 multi-bridge ingest", conn=conn
             )
 
             logger.info("Database initialization completed successfully")

@@ -33,6 +33,7 @@ def db_session(db_engine):
     session = Session(bind=connection)
 
     # Ensure a clean DB for each test without destroying any pre-existing data.
+    session.execute(text("DELETE FROM chunk_bridge_links"))
     session.execute(text("DELETE FROM chunks"))
     session.execute(text("DELETE FROM sources"))
     session.execute(text("DELETE FROM bridges"))

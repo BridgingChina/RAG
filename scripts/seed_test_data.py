@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.constants import EMBEDDING_DIM, load_taxonomy
-from app.models import Base, Bridge, Chunk, Source, TaxonomyNode
+from app.models import Base, Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
@@ -170,9 +170,21 @@ async def seed_documents(
                     lvl2=tag.lvl2,
                     lvl3=tag.lvl3,
                     bridge_id=bridge_id,
+                    bridge_binding_status="primary" if bridge_id is not None else "none",
                     embedding=embedding,
                 )
                 session.add(chunk)
+                session.flush()
+                if bridge_id is not None:
+                    session.add(
+                        ChunkBridgeLink(
+                            chunk_id=chunk.id,
+                            bridge_id=bridge_id,
+                            role="primary",
+                            confidence=1.0,
+                            method="hint",
+                        )
+                    )
                 chunk_count += 1
         else:
             # Simple splitting by section (fast)
@@ -193,9 +205,21 @@ async def seed_documents(
                     lvl1="形制与技术",  # Default
                     lvl2="结构体系",
                     bridge_id=bridge_id,
+                    bridge_binding_status="primary" if bridge_id is not None else "none",
                     embedding=fake_emb,
                 )
                 session.add(chunk)
+                session.flush()
+                if bridge_id is not None:
+                    session.add(
+                        ChunkBridgeLink(
+                            chunk_id=chunk.id,
+                            bridge_id=bridge_id,
+                            role="primary",
+                            confidence=1.0,
+                            method="hint",
+                        )
+                    )
                 chunk_count += 1
 
         print(f"    - {md_file.name}: processed")

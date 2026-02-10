@@ -11,10 +11,12 @@ What this script does (idempotent):
    - chunks.contextual_text (TEXT)
    - chunks.search_text (TEXT)
    - chunks.tsv (TSVECTOR)
+   - chunks.bridge_binding_status (VARCHAR(20))
    - bridges.function (VARCHAR)  # used by facet-based candidate selection
 4) Create new indexes if missing:
    - chunks.tsv GIN index
-   - chunks.embedding HNSW index (pgvector; may be skipped if unsupported)
+   - chunks.embedding IVFFLAT index (pgvector)
+   - chunk_bridge_links indexes
 5) Backfill chunks.tsv for existing rows (Tokenizer -> to_tsvector('simple', ...))
 
 Usage:
@@ -148,18 +150,12 @@ def main(
                 _q(conn, "CREATE EXTENSION IF NOT EXISTS vector")
                 conn.commit()
 
-            # Create missing tables (safe on new DBs; no-op on existing).
-            has_core_tables = _table_exists(conn, table_name="chunks") and _table_exists(
-                conn, table_name="bridges"
-            )
-            if not has_core_tables:
-                if dry_run:
-                    click.echo("  (dry-run) would run: Base.metadata.create_all(...)")
-                else:
-                    Base.metadata.create_all(engine)
-                    click.echo("  OK: Base tables created")
+            # Always call create_all to ensure newly added tables are created as well.
+            if dry_run:
+                click.echo("  (dry-run) would run: Base.metadata.create_all(...)")
             else:
-                click.echo("  OK: core tables already exist")
+                Base.metadata.create_all(engine)
+                click.echo("  OK: Base metadata ensured")
 
             # Columns.
             click.echo("\n[2/4] Adding missing columns (idempotent)...")
@@ -168,6 +164,7 @@ def main(
                 ("chunks", "contextual_text", "TEXT"),
                 ("chunks", "search_text", "TEXT"),
                 ("chunks", "tsv", "TSVECTOR"),
+                ("chunks", "bridge_binding_status", "VARCHAR(20) DEFAULT 'none'"),
                 ("bridges", "function", "VARCHAR(100)"),
             ]
             for table, column, ddl_type in col_specs:
@@ -197,6 +194,22 @@ def main(
                     f"(information_schema.udt_name={tsv_info.get('udt_name')})."
                 )
 
+            # Backfill bridge_binding_status based on existing bridge_id.
+            if not dry_run and _column_info(conn, table="chunks", column="bridge_binding_status"):
+                _q(
+                    conn,
+                    """
+                    UPDATE chunks
+                    SET bridge_binding_status = CASE
+                        WHEN bridge_id IS NULL THEN 'none'
+                        ELSE 'primary'
+                    END
+                    WHERE bridge_binding_status IS NULL
+                       OR bridge_binding_status NOT IN ('none', 'primary', 'ambiguous')
+                    """,
+                )
+                conn.commit()
+
             # Indexes.
             click.echo("\n[3/4] Creating missing indexes (best-effort)...")
             index_ddls: list[tuple[str, str]] = [
@@ -208,6 +221,26 @@ def main(
                     "ix_chunks_embedding_ivfflat",
                     "CREATE INDEX IF NOT EXISTS ix_chunks_embedding_ivfflat "
                     "ON chunks USING ivfflat (embedding vector_cosine_ops)",
+                ),
+                (
+                    "ix_chunks_binding_status",
+                    "CREATE INDEX IF NOT EXISTS ix_chunks_binding_status "
+                    "ON chunks (bridge_binding_status)",
+                ),
+                (
+                    "ix_chunk_bridge_links_chunk_id",
+                    "CREATE INDEX IF NOT EXISTS ix_chunk_bridge_links_chunk_id "
+                    "ON chunk_bridge_links (chunk_id)",
+                ),
+                (
+                    "ix_chunk_bridge_links_bridge_id",
+                    "CREATE INDEX IF NOT EXISTS ix_chunk_bridge_links_bridge_id "
+                    "ON chunk_bridge_links (bridge_id)",
+                ),
+                (
+                    "ix_chunk_bridge_links_role_confidence",
+                    "CREATE INDEX IF NOT EXISTS ix_chunk_bridge_links_role_confidence "
+                    "ON chunk_bridge_links (role, confidence)",
                 ),
             ]
             for idx_name, ddl_sql in index_ddls:

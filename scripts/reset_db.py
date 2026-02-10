@@ -34,10 +34,12 @@ def reset_db(seed: bool = False, force: bool = False) -> None:
     print("Dropping all tables...")
     with engine.connect() as conn:
         # Drop tables in correct order (respecting foreign keys)
+        conn.execute(text("DROP TABLE IF EXISTS chunk_bridge_links CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sources CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS bridges CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS taxonomy_nodes CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS schema_version CASCADE"))
         conn.commit()
     print("Tables dropped.")
 

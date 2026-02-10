@@ -107,7 +107,14 @@ class TestVerifySchemaCompatibility:
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
 
-        required_tables = ["schema_version", "sources", "bridges", "taxonomy_nodes", "chunks"]
+        required_tables = [
+            "schema_version",
+            "sources",
+            "bridges",
+            "taxonomy_nodes",
+            "chunks",
+            "chunk_bridge_links",
+        ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
         required_columns = {
@@ -135,11 +142,21 @@ class TestVerifySchemaCompatibility:
                 "lvl2",
                 "lvl3",
                 "bridge_id",
+                "bridge_binding_status",
                 "page_range",
                 "embedding",
                 "contextual_text",
                 "search_text",
                 "tsv",
+                "created_at",
+            },
+            "chunk_bridge_links": {
+                "id",
+                "chunk_id",
+                "bridge_id",
+                "role",
+                "confidence",
+                "method",
                 "created_at",
             },
         }
@@ -176,7 +193,14 @@ class TestVerifySchemaCompatibility:
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
 
-        required_tables = ["schema_version", "sources", "bridges", "taxonomy_nodes", "chunks"]
+        required_tables = [
+            "schema_version",
+            "sources",
+            "bridges",
+            "taxonomy_nodes",
+            "chunks",
+            "chunk_bridge_links",
+        ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
         required_columns = {
@@ -204,11 +228,21 @@ class TestVerifySchemaCompatibility:
                 "lvl2",
                 "lvl3",
                 "bridge_id",
+                "bridge_binding_status",
                 "page_range",
                 "embedding",
                 "contextual_text",
                 "search_text",
                 "tsv",
+                "created_at",
+            },
+            "chunk_bridge_links": {
+                "id",
+                "chunk_id",
+                "bridge_id",
+                "role",
+                "confidence",
+                "method",
                 "created_at",
             },
         }
@@ -265,7 +299,7 @@ class TestInitDatabase:
     def test_init_database_success(
         self, mock_engine, mock_set_version, mock_get_version, mock_verify, mock_base
     ):
-        """Should initialize all tables and set version to 1."""
+        """Should initialize all tables and set version to 2."""
         # Database not initialized yet
         mock_get_version.return_value = None
 
@@ -282,9 +316,9 @@ class TestInitDatabase:
         # Verify schema compatibility checked
         mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)
 
-        # Verify version set to 1
+        # Verify version set to 2
         mock_set_version.assert_called_once_with(
-            mock_engine, 1, "Initial schema", conn=mock_conn
+            mock_engine, 2, "Schema v2 multi-bridge ingest", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")
@@ -295,9 +329,9 @@ class TestInitDatabase:
     def test_init_database_already_initialized(
         self, mock_logger, mock_engine, mock_set_version, mock_get_version, mock_verify
     ):
-        """Should skip initialization when version=1 exists."""
+        """Should skip initialization when version=2 exists."""
         # Database already initialized
-        mock_get_version.return_value = 1
+        mock_get_version.return_value = 2
 
         mock_conn = MagicMock()
         mock_engine.begin.return_value.__enter__ = Mock(return_value=mock_conn)
