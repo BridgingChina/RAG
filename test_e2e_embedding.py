@@ -1,4 +1,4 @@
-"""End-to-end test for 1024-dim embedding creation and retrieval."""
+"""End-to-end test for EMBEDDING_DIM-dim embedding creation and retrieval."""
 import asyncio
 from app.core.database import get_db
 from app.models import Chunk, Source
@@ -19,13 +19,12 @@ async def run_test():
         db.flush()
         print(f"✅ Created test source (id={source.id})")
 
-        # Create a mock 1024-dim embedding (using zeros for testing)
+        # Create a mock EMBEDDING_DIM-dim embedding (using zeros for testing)
         print(f"Creating mock {EMBEDDING_DIM}-dim embedding...")
         embedding = [0.1] * EMBEDDING_DIM
 
         print(f"Embedding dimension: {len(embedding)}")
         assert len(embedding) == EMBEDDING_DIM, f"Expected {EMBEDDING_DIM}, got {len(embedding)}"
-        assert len(embedding) == 1024, f"Expected 1024, got {len(embedding)}"
         print(f"✅ Embedding dimension is {EMBEDDING_DIM}")
 
         # Create a chunk
@@ -44,7 +43,9 @@ async def run_test():
         print("Retrieving chunk...")
         retrieved = db.query(Chunk).filter_by(id=chunk.id).first()
         assert retrieved is not None, "Chunk not found"
-        assert len(retrieved.embedding) == 1024, f"Expected 1024, got {len(retrieved.embedding)}"
+        assert (
+            len(retrieved.embedding) == EMBEDDING_DIM
+        ), f"Expected {EMBEDDING_DIM}, got {len(retrieved.embedding)}"
         print(f"✅ Retrieved chunk embedding dimension: {len(retrieved.embedding)}")
 
         # Verify content

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.core.constants import EMBEDDING_DIM
 from app.providers import ChatMessage, ZhipuProvider
 
 
@@ -23,12 +24,12 @@ def test_chat_message_structure():
 
 
 @pytest.mark.asyncio
-async def test_embed_returns_1024_dimensions(provider):
-    """Test that embed() returns 1024-dimensional vectors."""
+async def test_embed_returns_expected_dimensions(provider):
+    """Test that embed() returns EMBEDDING_DIM-dimensional vectors."""
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "data": [
-            {"index": 0, "embedding": [0.1] * 1024}
+            {"index": 0, "embedding": [0.1] * EMBEDDING_DIM}
         ]
     }
     mock_response.raise_for_status = MagicMock()
@@ -39,7 +40,7 @@ async def test_embed_returns_1024_dimensions(provider):
         embeddings = await provider.embed(["test text"])
 
         assert len(embeddings) == 1
-        assert len(embeddings[0]) == 1024
+        assert len(embeddings[0]) == EMBEDDING_DIM
 
 
 @pytest.mark.asyncio
@@ -48,7 +49,7 @@ async def test_embed_passes_dimensions_parameter(provider):
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "data": [
-            {"index": 0, "embedding": [0.1] * 1024}
+            {"index": 0, "embedding": [0.1] * EMBEDDING_DIM}
         ]
     }
     mock_response.raise_for_status = MagicMock()
@@ -59,8 +60,8 @@ async def test_embed_passes_dimensions_parameter(provider):
 
         await provider.embed(["test text"])
 
-        # Verify the API call includes dimensions=1024
+        # Verify the API call includes dimensions=EMBEDDING_DIM
         call_args = mock_post.call_args
         json_payload = call_args.kwargs["json"]
         assert "dimensions" in json_payload
-        assert json_payload["dimensions"] == 1024
+        assert json_payload["dimensions"] == EMBEDDING_DIM

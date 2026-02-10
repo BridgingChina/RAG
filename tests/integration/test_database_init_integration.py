@@ -167,8 +167,8 @@ def test_init_database_idempotent(test_engine):
 
 
 @pytest.mark.integration
-def test_chunk_embedding_dimension_is_1024(test_engine):
-    """Test that chunks can store 1024-dimensional embeddings."""
+def test_chunk_embedding_dimension_matches_constant(test_engine):
+    """Test that chunks can store EMBEDDING_DIM-dimensional embeddings."""
     from sqlalchemy.orm import Session
     from app.core import database
 
@@ -192,11 +192,11 @@ def test_chunk_embedding_dimension_is_1024(test_engine):
             session.add(source)
             session.flush()
 
-            # Create a 1024-dimensional embedding
+            # Create an EMBEDDING_DIM-dimensional embedding
             embedding = [0.1] * EMBEDDING_DIM
-            assert len(embedding) == 1024
+            assert len(embedding) == EMBEDDING_DIM
 
-            # Insert chunk with 1024-dim embedding
+            # Insert chunk with EMBEDDING_DIM-dim embedding
             chunk = Chunk(
                 source_id=source.id,
                 content="Test chunk content",
@@ -208,7 +208,7 @@ def test_chunk_embedding_dimension_is_1024(test_engine):
             # Verify embedding was stored correctly
             stored_chunk = session.query(Chunk).first()
             assert stored_chunk is not None
-            assert len(stored_chunk.embedding) == 1024
+            assert len(stored_chunk.embedding) == EMBEDDING_DIM
 
         finally:
             session.close()
