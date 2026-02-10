@@ -1,11 +1,12 @@
 import pytest
 
+from app.core.constants import EMBEDDING_DIM
 from app.services.hybrid_retriever import HybridRetriever
 from app.services.tokenizer import Tokenizer
 
 
 def _emb(v0: float, v1: float = 0.0) -> list[float]:
-    vec = [0.0] * 2048
+    vec = [0.0] * EMBEDDING_DIM
     vec[0] = v0
     vec[1] = v1
     return vec
@@ -72,4 +73,3 @@ def test_fts_search_falls_back_on_invalid_tsquery(monkeypatch, db_session, chunk
 
     assert ids == []
     assert "fts" in getattr(retriever, "last_degraded", [])
-

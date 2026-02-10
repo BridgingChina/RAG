@@ -6,6 +6,7 @@ and generation with confidence assessment.
 
 import pytest
 
+from app.core.constants import EMBEDDING_DIM
 from app.providers import ChatMessage, ChatResponse
 from app.services.tokenizer import Tokenizer
 from app.services.facet_extractor import FacetExtractor, Facet
@@ -24,7 +25,7 @@ class MockProvider:
     """
 
     async def embed(self, texts):
-        return [[0.1] * 2048 for _ in texts]
+        return [[0.1] * EMBEDDING_DIM for _ in texts]
 
     async def chat(self, messages):
         content = messages[0].content
@@ -248,7 +249,7 @@ async def test_generator_v2_malformed_json():
     """Verify Generator handles malformed JSON gracefully."""
     class BadProvider:
         async def embed(self, texts):
-            return [[0.1] * 2048 for _ in texts]
+            return [[0.1] * EMBEDDING_DIM for _ in texts]
 
         async def chat(self, messages):
             return ChatResponse(
