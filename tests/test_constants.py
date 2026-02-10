@@ -1,5 +1,13 @@
 """Tests for constants loading module."""
 
+
+def test_embedding_dim_is_1024():
+    """Test that EMBEDDING_DIM constant is set to 1024."""
+    from app.core.constants import EMBEDDING_DIM
+
+    assert EMBEDDING_DIM == 1024
+
+
 def test_load_taxonomy_returns_dict():
     """Test that load_taxonomy returns a nested dict."""
     from app.core.constants import load_taxonomy

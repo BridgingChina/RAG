@@ -1,6 +1,7 @@
 import httpx
 
 from app.core.config import settings
+from app.core.constants import EMBEDDING_DIM
 from app.providers.base import ChatMessage, ChatResponse, LLMProvider
 
 
@@ -20,6 +21,14 @@ class ZhipuProvider(LLMProvider):
         }
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for the given texts.
+
+        Args:
+            texts: List of text strings to embed
+
+        Returns:
+            List of embedding vectors (dimension determined by EMBEDDING_DIM constant)
+        """
         if not texts:
             return []
 
@@ -30,7 +39,11 @@ class ZhipuProvider(LLMProvider):
                 resp = await client.post(
                     f"{self.BASE_URL}/embeddings",
                     headers=self._headers(),
-                    json={"model": self.embedding_model, "input": batch},
+                    json={
+                        "model": self.embedding_model,
+                        "input": batch,
+                        "dimensions": EMBEDDING_DIM,
+                    },
                     timeout=30.0,
                 )
                 resp.raise_for_status()

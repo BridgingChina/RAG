@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.constants import EMBEDDING_DIM
 from app.core.database import get_db
 from app.main import app
 from app.providers import ChatResponse
@@ -12,7 +13,7 @@ from app.services.tokenizer import Tokenizer
 
 
 def _emb(v0: float, v1: float = 0.0) -> list[float]:
-    vec = [0.0] * 2048
+    vec = [0.0] * EMBEDDING_DIM
     vec[0] = v0
     vec[1] = v1
     return vec

@@ -8,6 +8,7 @@ from sqlalchemy import event, text
 from sqlalchemy.orm import Session
 from unittest.mock import patch
 
+from app.core.constants import EMBEDDING_DIM
 from app.core.database import get_db
 from app.main import app
 from app.models import Chunk
@@ -21,7 +22,7 @@ class MockProvider:
         for t in texts:
             digest = hashlib.sha256(t.encode("utf-8")).digest()
             seed = list(digest)  # 32 bytes
-            vec = [(seed[i % len(seed)] / 255.0) for i in range(2048)]
+            vec = [(seed[i % len(seed)] / 255.0) for i in range(EMBEDDING_DIM)]
             embeddings.append(vec)
         return embeddings
 

@@ -40,8 +40,8 @@ pip install -e ".[dev]"
 cp .env.example .env
 # Edit .env with your ZHIPU_API_KEY
 
-# Migrate / backfill DB (required for existing databases; safe to run repeatedly)
-python scripts/migrate_db.py
+# Database auto-initializes on first startup (schema version 1 with 1024-dim vectors)
+# For existing databases, use: python scripts/migrate_db.py
 
 # Seed test data (optional)
 python scripts/seed_test_data.py
@@ -72,9 +72,10 @@ pytest -q
 V1 adds fields/indexes for full-text search:
 - `chunks.contextual_text` / `chunks.search_text`
 - `chunks.tsv` (TSVECTOR) + GIN index
-- `chunks.embedding` IVFFLAT index (pgvector; best-effort)
+- `chunks.embedding` IVFFLAT index (1024-dim vectors; pgvector)
+- Schema version tracking in `schema_version` table
 
-`Base.metadata.create_all()` will not alter an existing schema; use `python scripts/migrate_db.py` to upgrade old DBs and backfill `tsv`.
+Database auto-initializes on first startup. For existing DBs, use `python scripts/migrate_db.py` to upgrade and backfill `tsv`.
 
 ## Project Structure
 

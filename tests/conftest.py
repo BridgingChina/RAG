@@ -4,6 +4,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.constants import EMBEDDING_DIM
 from app.models import Base, Bridge, Chunk, Source
 from app.services.tokenizer import Tokenizer
 
@@ -138,7 +139,7 @@ def chunk_factory(db_session, test_source, tokenizer):
 @pytest.fixture
 def test_chunks(test_bridges, chunk_factory):
     def emb(v0: float, v1: float = 0.0) -> list[float]:
-        vec = [0.0] * 2048
+        vec = [0.0] * EMBEDDING_DIM
         vec[0] = v0
         vec[1] = v1
         return vec

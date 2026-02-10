@@ -1,5 +1,6 @@
 import pytest
 
+from app.core.constants import EMBEDDING_DIM
 from app.services.facet_extractor import Facet
 from app.services.hybrid_retriever import FETCH_MULTIPLIER, RRF_K, HybridRetriever
 from app.services.ranker import rrf_merge
@@ -7,7 +8,7 @@ from app.services.tokenizer import Tokenizer
 
 
 def _emb(v0: float, v1: float = 0.0) -> list[float]:
-    vec = [0.0] * 2048
+    vec = [0.0] * EMBEDDING_DIM
     vec[0] = v0
     vec[1] = v1
     return vec
@@ -149,4 +150,3 @@ async def test_retrieve_respects_default_quota_6_2_2(db_session, test_bridges, t
         test_bridges["candidate1"].id,
         test_bridges["candidate2"].id,
     }
-

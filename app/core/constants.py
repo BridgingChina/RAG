@@ -7,6 +7,9 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "config"
 
+# Embedding dimension (must match ZhipuProvider.embed() dimensions parameter)
+EMBEDDING_DIM = 1024
+
 
 @lru_cache
 def load_taxonomy() -> dict[str, dict[str, list[str]]]:
