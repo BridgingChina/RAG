@@ -10,7 +10,9 @@
 
 ```markdown
 ---
-bridge: 赵州桥
+bridges:
+  - 赵州桥
+  - 卢沟桥
 source_type: document
 title: 赵州桥研究资料
 ---
@@ -30,7 +32,8 @@ title: 赵州桥研究资料
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| `bridge` | string | 建议 | 关联的桥梁名称，用于 Anchor 检索 |
+| `bridge` | string | 否 | 主桥提示（兼容旧格式） |
+| `bridges` | string[] | 否 | 桥梁提示列表（可用于多桥文档） |
 | `source_type` | string | 否 | 来源类型：`document`、`note`、`web` 等 |
 | `title` | string | 否 | 文档标题，默认使用文件名（API 入库时默认 `导入资料`） |
 
@@ -74,8 +77,11 @@ title: 赵州桥研究资料
 curl -X POST http://localhost:8000/api/v1/ingest \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "---\nbridge: 赵州桥\ntitle: 测试\n---\n\n# 概述\n\n内容...",
-    "source_type": "document"
+    "content": "---\nbridges:\n  - 赵州桥\n  - 卢沟桥\ntitle: 测试\n---\n\n# 概述\n\n内容...",
+    "source_type": "document",
+    "bridge_candidates": ["赵州桥", "卢沟桥"],
+    "min_primary_confidence": 0.75,
+    "enable_auto_bridge_detection": true
   }'
 ```
 
@@ -105,19 +111,17 @@ python scripts/seed_test_data.py --llm
 
 ### 内容建议
 
-- 每个文档聚焦一座桥梁
+- 允许单文档包含多座桥梁（系统会做 chunk 级桥梁绑定）
 - 章节划分清晰，便于切块
 - 避免过长的连续段落
 - 关键数据用数字而非文字描述
 
 ### 避免的问题
 
-- ❌ 不要在一个文档中混合多座桥梁的信息
 - ❌ 不要使用纯图片内容（OCR 暂不支持）
-- ❌ 不建议省略 front matter 中的 `bridge` 字段（会影响 Anchor 检索）
+- ❌ 不建议完全省略桥梁提示字段（`bridge` 或 `bridges`），会增加消歧难度
 - ❌ 不要使用过深的章节嵌套
 
 ## 示例文档
 
 完整示例见 `data/seed/documents/` 目录。
-

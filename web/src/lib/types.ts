@@ -45,19 +45,26 @@ export interface AskResponse {
 export interface IngestRequest {
   content: string
   source_type: string
+  bridge_candidates?: string[] | null
+  min_primary_confidence?: number
+  enable_auto_bridge_detection?: boolean
 }
 
 export interface IngestedChunkSummary {
   content_preview: string
   lvl1: string | null
   lvl2: string | null
-  bridge_name: string | null
+  binding_status: "none" | "primary" | "ambiguous"
+  primary_bridge_name: string | null
+  secondary_bridge_names: string[]
 }
 
 export interface IngestResponse {
   source_id: number
-  bridge_name: string | null
   title: string | null
+  primary_bridge_names: string[]
+  ambiguous_chunk_count: number
+  auto_created_bridges: string[]
   chunk_count: number
   chunks: IngestedChunkSummary[]
 }
