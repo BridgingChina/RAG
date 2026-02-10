@@ -32,6 +32,9 @@ def db_session(db_engine):
     transaction = connection.begin()
     session = Session(bind=connection)
 
+    # Integration tests may drop tables; recreate metadata before each case.
+    Base.metadata.create_all(bind=connection)
+
     # Ensure a clean DB for each test without destroying any pre-existing data.
     session.execute(text("DELETE FROM chunk_bridge_links"))
     session.execute(text("DELETE FROM chunks"))

@@ -3,7 +3,6 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock, call
 from sqlalchemy import Engine
-from sqlalchemy.exc import ProgrammingError
 
 from app.core.database import (
     get_current_schema_version,
@@ -18,18 +17,15 @@ class TestGetCurrentSchemaVersion:
 
     def test_get_current_schema_version_none(self):
         """Should return None when schema_version table doesn't exist."""
-        # Mock engine that raises ProgrammingError on query
         mock_engine = Mock(spec=Engine)
         mock_connection = MagicMock()
+        mock_exists_result = MagicMock()
+        mock_exists_result.scalar_one.return_value = None
 
         # Setup context manager
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
-
-        # Simulate table doesn't exist
-        mock_connection.execute.side_effect = ProgrammingError(
-            "relation does not exist", None, None
-        )
+        mock_connection.execute.return_value = mock_exists_result
 
         result = get_current_schema_version(mock_engine)
         assert result is None
@@ -39,15 +35,15 @@ class TestGetCurrentSchemaVersion:
         # Mock engine with existing schema_version
         mock_engine = Mock(spec=Engine)
         mock_connection = MagicMock()
+        mock_exists_result = MagicMock()
+        mock_exists_result.scalar_one.return_value = "schema_version"
+        mock_version_result = MagicMock()
+        mock_version_result.scalar_one_or_none.return_value = 1
 
         # Setup context manager
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
-
-        # Mock result with version 1
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = 1
-        mock_connection.execute.return_value = mock_result
+        mock_connection.execute.side_effect = [mock_exists_result, mock_version_result]
 
         result = get_current_schema_version(mock_engine)
         assert result == 1
@@ -167,8 +163,7 @@ class TestVerifySchemaCompatibility:
             for column in columns
         ]
 
-        # Return correct dimension (atttypmod = dimension + 4)
-        mock_dim_result.fetchone.return_value = (EMBEDDING_DIM + 4,)
+        mock_dim_result.fetchone.return_value = (f"vector({EMBEDDING_DIM})",)
 
         mock_connection.execute.side_effect = [
             mock_tables_result,
@@ -253,7 +248,7 @@ class TestVerifySchemaCompatibility:
         ]
 
         wrong_dim = EMBEDDING_DIM + 1
-        mock_dim_result.fetchone.return_value = (wrong_dim + 4,)
+        mock_dim_result.fetchone.return_value = (f"vector({wrong_dim})",)
 
         mock_connection.execute.side_effect = [
             mock_tables_result,

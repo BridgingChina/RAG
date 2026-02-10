@@ -11,7 +11,7 @@ from unittest.mock import patch
 from app.core.constants import EMBEDDING_DIM
 from app.core.database import get_db
 from app.main import app
-from app.models import Chunk, ChunkBridgeLink
+from app.models import Base, Chunk, ChunkBridgeLink
 from app.providers import ChatResponse
 from app.providers.base import ChatMessage
 
@@ -119,6 +119,8 @@ def client_e2e(db_engine):
     connection = db_engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection)
+
+    Base.metadata.create_all(bind=connection)
 
     session.execute(text("DELETE FROM chunk_bridge_links"))
     session.execute(text("DELETE FROM chunks"))
