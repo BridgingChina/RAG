@@ -78,7 +78,7 @@ class TestVerifySchemaCompatibility:
     """Tests for verify_schema_compatibility()."""
 
     def test_verify_schema_compatibility_no_table(self):
-        """Should pass when chunks table doesn't exist yet."""
+        """Should pass when no tables exist yet (fresh DB)."""
         mock_engine = Mock(spec=Engine)
         mock_connection = MagicMock()
 
@@ -86,27 +86,78 @@ class TestVerifySchemaCompatibility:
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
 
-        # Simulate table doesn't exist (ProgrammingError)
-        mock_connection.execute.side_effect = ProgrammingError("statement", "params", "orig")
+        mock_tables_result = MagicMock()
+        mock_tables_result.scalars.return_value.all.return_value = []
+        mock_connection.execute.return_value = mock_tables_result
 
         # Should not raise
         verify_schema_compatibility(mock_engine)
 
     def test_verify_schema_compatibility_correct_dimension(self):
-        """Should pass when embedding dimension matches EMBEDDING_DIM."""
+        """Should pass when required tables/columns exist and embedding dimension matches."""
         from app.core.constants import EMBEDDING_DIM
 
         mock_engine = Mock(spec=Engine)
         mock_connection = MagicMock()
-        mock_result = MagicMock()
+        mock_tables_result = MagicMock()
+        mock_columns_result = MagicMock()
+        mock_dim_result = MagicMock()
 
         # Setup context manager
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
 
+        required_tables = ["schema_version", "sources", "bridges", "taxonomy_nodes", "chunks"]
+        mock_tables_result.scalars.return_value.all.return_value = required_tables
+
+        required_columns = {
+            "schema_version": {"version", "description", "created_at"},
+            "sources": {"id", "type", "title", "url", "file_path", "accessed_at", "created_at"},
+            "bridges": {
+                "id",
+                "name",
+                "aliases",
+                "location",
+                "era",
+                "bridge_type",
+                "material",
+                "function",
+                "summary",
+                "created_at",
+            },
+            "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description"},
+            "chunks": {
+                "id",
+                "source_id",
+                "content",
+                "section_title",
+                "lvl1",
+                "lvl2",
+                "lvl3",
+                "bridge_id",
+                "page_range",
+                "embedding",
+                "contextual_text",
+                "search_text",
+                "tsv",
+                "created_at",
+            },
+        }
+
+        mock_columns_result.all.return_value = [
+            (table, column)
+            for table, columns in required_columns.items()
+            for column in columns
+        ]
+
         # Return correct dimension (atttypmod = dimension + 4)
-        mock_result.fetchone.return_value = (EMBEDDING_DIM + 4,)
-        mock_connection.execute.return_value = mock_result
+        mock_dim_result.fetchone.return_value = (EMBEDDING_DIM + 4,)
+
+        mock_connection.execute.side_effect = [
+            mock_tables_result,
+            mock_columns_result,
+            mock_dim_result,
+        ]
 
         # Should not raise
         verify_schema_compatibility(mock_engine)
@@ -117,16 +168,64 @@ class TestVerifySchemaCompatibility:
 
         mock_engine = Mock(spec=Engine)
         mock_connection = MagicMock()
-        mock_result = MagicMock()
+        mock_tables_result = MagicMock()
+        mock_columns_result = MagicMock()
+        mock_dim_result = MagicMock()
 
         # Setup context manager
         mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
         mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
 
-        # Return wrong dimension (e.g., 2048 when EMBEDDING_DIM is 1024)
-        wrong_dim = 2048
-        mock_result.fetchone.return_value = (wrong_dim + 4,)
-        mock_connection.execute.return_value = mock_result
+        required_tables = ["schema_version", "sources", "bridges", "taxonomy_nodes", "chunks"]
+        mock_tables_result.scalars.return_value.all.return_value = required_tables
+
+        required_columns = {
+            "schema_version": {"version", "description", "created_at"},
+            "sources": {"id", "type", "title", "url", "file_path", "accessed_at", "created_at"},
+            "bridges": {
+                "id",
+                "name",
+                "aliases",
+                "location",
+                "era",
+                "bridge_type",
+                "material",
+                "function",
+                "summary",
+                "created_at",
+            },
+            "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description"},
+            "chunks": {
+                "id",
+                "source_id",
+                "content",
+                "section_title",
+                "lvl1",
+                "lvl2",
+                "lvl3",
+                "bridge_id",
+                "page_range",
+                "embedding",
+                "contextual_text",
+                "search_text",
+                "tsv",
+                "created_at",
+            },
+        }
+        mock_columns_result.all.return_value = [
+            (table, column)
+            for table, columns in required_columns.items()
+            for column in columns
+        ]
+
+        wrong_dim = EMBEDDING_DIM + 1
+        mock_dim_result.fetchone.return_value = (wrong_dim + 4,)
+
+        mock_connection.execute.side_effect = [
+            mock_tables_result,
+            mock_columns_result,
+            mock_dim_result,
+        ]
 
         # Should raise RuntimeError
         with pytest.raises(RuntimeError) as exc_info:
@@ -135,6 +234,24 @@ class TestVerifySchemaCompatibility:
         assert "Schema mismatch" in str(exc_info.value)
         assert str(wrong_dim) in str(exc_info.value)
         assert str(EMBEDDING_DIM) in str(exc_info.value)
+
+    def test_verify_schema_compatibility_missing_tables(self):
+        """Should raise when some required tables exist but not all."""
+        mock_engine = Mock(spec=Engine)
+        mock_connection = MagicMock()
+
+        # Setup context manager
+        mock_engine.connect.return_value.__enter__ = Mock(return_value=mock_connection)
+        mock_engine.connect.return_value.__exit__ = Mock(return_value=None)
+
+        mock_tables_result = MagicMock()
+        mock_tables_result.scalars.return_value.all.return_value = ["schema_version"]
+        mock_connection.execute.return_value = mock_tables_result
+
+        with pytest.raises(RuntimeError) as exc_info:
+            verify_schema_compatibility(mock_engine)
+
+        assert "missing required tables" in str(exc_info.value).lower()
 
 
 class TestInitDatabase:
@@ -152,35 +269,48 @@ class TestInitDatabase:
         # Database not initialized yet
         mock_get_version.return_value = None
 
+        mock_conn = MagicMock()
+        mock_engine.begin.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_engine.begin.return_value.__exit__ = Mock(return_value=None)
+
         # Call function
         init_database()
 
         # Verify tables created
-        mock_base.metadata.create_all.assert_called_once_with(mock_engine)
+        mock_base.metadata.create_all.assert_called_once_with(mock_conn)
 
         # Verify schema compatibility checked
-        mock_verify.assert_called_once_with(mock_engine)
+        mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)
 
         # Verify version set to 1
         mock_set_version.assert_called_once_with(
-            mock_engine, 1, "Initial schema"
+            mock_engine, 1, "Initial schema", conn=mock_conn
         )
 
+    @patch("app.core.database.verify_schema_compatibility")
     @patch("app.core.database.get_current_schema_version")
     @patch("app.core.database.set_schema_version")
+    @patch("app.core.database.engine")
     @patch("app.core.database.logger")
     def test_init_database_already_initialized(
-        self, mock_logger, mock_set_version, mock_get_version
+        self, mock_logger, mock_engine, mock_set_version, mock_get_version, mock_verify
     ):
         """Should skip initialization when version=1 exists."""
         # Database already initialized
         mock_get_version.return_value = 1
+
+        mock_conn = MagicMock()
+        mock_engine.begin.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_engine.begin.return_value.__exit__ = Mock(return_value=None)
 
         # Call function
         init_database()
 
         # Verify no version set
         mock_set_version.assert_not_called()
+
+        # Verify schema compatibility checked even when version exists
+        mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)
 
         # Verify logged
         mock_logger.info.assert_called()
@@ -196,6 +326,10 @@ class TestInitDatabase:
         # Database not initialized
         mock_get_version.return_value = None
 
+        mock_conn = MagicMock()
+        mock_engine.begin.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_engine.begin.return_value.__exit__ = Mock(return_value=None)
+
         # Simulate error during table creation
         mock_base.metadata.create_all.side_effect = Exception("Database error")
 
@@ -205,3 +339,22 @@ class TestInitDatabase:
 
         # Verify error was logged
         mock_logger.error.assert_called()
+
+    @patch("app.core.database.verify_schema_compatibility")
+    @patch("app.core.database.get_current_schema_version")
+    @patch("app.core.database.engine")
+    def test_init_database_fails_on_version_mismatch(
+        self, mock_engine, mock_get_version, mock_verify
+    ):
+        """Should fail fast when schema_version doesn't match LATEST_SCHEMA_VERSION."""
+        mock_get_version.return_value = 999
+
+        mock_conn = MagicMock()
+        mock_engine.begin.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_engine.begin.return_value.__exit__ = Mock(return_value=None)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            init_database()
+
+        assert "Unsupported database schema version" in str(exc_info.value)
+        mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)
