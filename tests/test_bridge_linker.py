@@ -99,3 +99,34 @@ async def test_unknown_bridge_auto_created(db_session):
     assert result.primary_bridge_name == "新桥一号"
     assert "新桥一号" in result.auto_created_bridge_names
     assert db_session.query(Bridge).filter(Bridge.name == "新桥一号").first() is not None
+
+
+@pytest.mark.asyncio
+async def test_hints_do_not_force_first_bridge_as_primary(db_session):
+    db_session.add_all([Bridge(name="赵州桥"), Bridge(name="卢沟桥")])
+    db_session.flush()
+
+    linker = BridgeLinker(provider=MockProvider())
+    result = await linker.link_chunk(
+        db_session,
+        "卢沟桥采用联拱结构。",
+        hint_bridge_names=["赵州桥", "卢沟桥"],
+    )
+
+    assert result.binding_status == "primary"
+    assert result.primary_bridge_name == "卢沟桥"
+    assert result.primary_bridge_name != "赵州桥"
+
+
+@pytest.mark.asyncio
+async def test_no_auto_create_when_auto_detection_disabled(db_session):
+    linker = BridgeLinker(provider=MockProvider())
+    result = await linker.link_chunk(
+        db_session,
+        "这是一段没有已知桥名的文本",
+        bridge_candidates=["拼写错误桥名"],
+        enable_auto_bridge_detection=False,
+    )
+
+    assert result.auto_created_bridge_names == []
+    assert db_session.query(Bridge).filter(Bridge.name == "拼写错误桥名").first() is None

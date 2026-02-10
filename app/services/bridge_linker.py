@@ -66,6 +66,9 @@ class BridgeLinker:
         self.provider = provider
         self.min_primary_confidence = min_primary_confidence
         self.enable_auto_bridge_detection = enable_auto_bridge_detection
+        self._bridge_by_id: dict[int, Bridge] | None = None
+        self._bridge_alias_map: dict[str, Bridge] | None = None
+        self._alias_entries: list[tuple[str, int]] | None = None
 
     async def link_chunk(
         self,
@@ -90,36 +93,38 @@ class BridgeLinker:
         auto_created: list[str] = []
         links: list[BridgeLink] = []
 
-        hint_bridges, created = self._resolve_or_create_bridges(db, hint_bridge_names or [])
-        auto_created.extend(created)
+        hint_bridges = self._resolve_existing_bridges(db, hint_bridge_names or [])
+        hint_bridge_ids = {bridge.id for bridge in hint_bridges}
 
-        candidate_bridges, created = self._resolve_or_create_bridges(
-            db, bridge_candidates or []
+        candidate_names = self._dedupe_names(
+            self._normalize_name_list(bridge_candidates or [])
         )
-        auto_created.extend(created)
 
         rule_hits = self._rule_match_bridges(db, content)
-        rule_hit_map = {bridge.id: (bridge, score) for bridge, score in rule_hits}
+        hint_rule_hits = [
+            (bridge, score) for bridge, score in rule_hits if bridge.id in hint_bridge_ids
+        ]
 
-        if hint_bridges:
-            primary = hint_bridges[0]
+        # Hint-assisted path: use hints only when they are actually hit in chunk content.
+        if hint_rule_hits:
+            primary, _ = hint_rule_hits[0]
             links.append(
                 BridgeLink(
                     bridge_id=primary.id,
                     bridge_name=primary.name,
                     role="primary",
-                    confidence=1.0,
+                    confidence=0.98,
                     method="hint",
                 )
             )
 
-            for bridge in hint_bridges[1:]:
+            for bridge, _ in hint_rule_hits[1:]:
                 links.append(
                     BridgeLink(
                         bridge_id=bridge.id,
                         bridge_name=bridge.name,
                         role="secondary",
-                        confidence=0.99,
+                        confidence=0.9,
                         method="hint",
                     )
                 )
@@ -139,7 +144,7 @@ class BridgeLinker:
 
             return self._to_result(links, auto_created, threshold)
 
-        if len(rule_hits) == 1:
+        if len(rule_hits) == 1 and not hint_bridges:
             bridge, score = rule_hits[0]
             conf = self._rule_confidence(score)
             role: LinkRole = "primary" if conf >= threshold else "candidate"
@@ -151,10 +156,20 @@ class BridgeLinker:
                     confidence=conf,
                     method="rule",
                 )
-            )
+                )
             return self._to_result(links, auto_created, threshold)
 
         if not auto_detection:
+            for bridge in hint_bridges:
+                links.append(
+                    BridgeLink(
+                        bridge_id=bridge.id,
+                        bridge_name=bridge.name,
+                        role="candidate",
+                        confidence=0.6,
+                        method="hint",
+                    )
+                )
             for bridge, score in rule_hits:
                 links.append(
                     BridgeLink(
@@ -167,7 +182,8 @@ class BridgeLinker:
                 )
             return self._to_result(links, auto_created, threshold)
 
-        llm_seed_names = [bridge.name for bridge in candidate_bridges]
+        llm_seed_names = [bridge.name for bridge in hint_bridges]
+        llm_seed_names.extend(candidate_names)
         llm_seed_names.extend([bridge.name for bridge, _ in rule_hits])
         llm_seed_names = self._dedupe_names(llm_seed_names)
 
@@ -184,7 +200,11 @@ class BridgeLinker:
         names_to_resolve.extend(llm_candidates)
 
         resolved_map: dict[str, Bridge] = {}
-        resolved_bridges, created = self._resolve_or_create_bridges(db, names_to_resolve)
+        resolved_bridges, created = self._resolve_or_create_bridges(
+            db,
+            names_to_resolve,
+            allow_create=True,
+        )
         auto_created.extend(created)
         for bridge in resolved_bridges:
             resolved_map[bridge.name] = bridge
@@ -235,6 +255,16 @@ class BridgeLinker:
             )
 
         if not links:
+            for bridge in hint_bridges:
+                links.append(
+                    BridgeLink(
+                        bridge_id=bridge.id,
+                        bridge_name=bridge.name,
+                        role="candidate",
+                        confidence=0.6,
+                        method="hint",
+                    )
+                )
             for bridge, score in rule_hits:
                 links.append(
                     BridgeLink(
@@ -252,30 +282,20 @@ class BridgeLinker:
         if not content.strip():
             return []
 
-        bridges = db.query(Bridge).all()
-        alias_entries: list[tuple[str, Bridge]] = []
-        for bridge in bridges:
-            names = [bridge.name]
-            names.extend(self._split_aliases(bridge.aliases))
-            for name in names:
-                normalized = self._normalize_name(name)
-                if normalized:
-                    alias_entries.append((normalized, bridge))
-
-        alias_entries.sort(key=lambda x: len(x[0]), reverse=True)
+        self._ensure_bridge_index(db)
+        assert self._alias_entries is not None
+        assert self._bridge_by_id is not None
 
         score_by_bridge: dict[int, int] = {}
-        bridge_by_id: dict[int, Bridge] = {}
-        for alias, bridge in alias_entries:
+        for alias, bridge_id in self._alias_entries:
             count = content.count(alias)
             if count <= 0:
                 continue
             score = count * max(1, len(alias))
-            score_by_bridge[bridge.id] = score_by_bridge.get(bridge.id, 0) + score
-            bridge_by_id[bridge.id] = bridge
+            score_by_bridge[bridge_id] = score_by_bridge.get(bridge_id, 0) + score
 
         items = sorted(score_by_bridge.items(), key=lambda x: -x[1])
-        return [(bridge_by_id[bid], score) for bid, score in items]
+        return [(self._bridge_by_id[bid], score) for bid, score in items]
 
     async def _llm_link(self, content: str, candidates: list[str]) -> dict:
         prompt = self.PROMPT_TEMPLATE.format(
@@ -298,30 +318,30 @@ class BridgeLinker:
         self,
         db: Session,
         names: list[str],
+        *,
+        allow_create: bool,
     ) -> tuple[list[Bridge], list[str]]:
+        self._ensure_bridge_index(db)
+        assert self._bridge_alias_map is not None
+
         normalized = self._dedupe_names(names)
         if not normalized:
             return [], []
-
-        rows = db.query(Bridge).all()
-        alias_map: dict[str, Bridge] = {}
-        for bridge in rows:
-            alias_map[bridge.name] = bridge
-            for alias in self._split_aliases(bridge.aliases):
-                alias_map[alias] = bridge
 
         result: list[Bridge] = []
         created: list[str] = []
         seen_ids: set[int] = set()
 
         for name in normalized:
-            bridge = alias_map.get(name)
-            if bridge is None:
+            bridge = self._bridge_alias_map.get(name)
+            if bridge is None and allow_create:
                 bridge = Bridge(name=name)
                 db.add(bridge)
                 db.flush()
                 created.append(name)
-                alias_map[name] = bridge
+                self._register_bridge(bridge)
+            if bridge is None:
+                continue
 
             if bridge.id in seen_ids:
                 continue
@@ -329,6 +349,10 @@ class BridgeLinker:
             result.append(bridge)
 
         return result, created
+
+    def _resolve_existing_bridges(self, db: Session, names: list[str]) -> list[Bridge]:
+        bridges, _ = self._resolve_or_create_bridges(db, names, allow_create=False)
+        return bridges
 
     def _to_result(
         self,
@@ -385,7 +409,8 @@ class BridgeLinker:
 
     @staticmethod
     def _rule_confidence(score: int) -> float:
-        return min(0.92, 0.65 + min(0.25, score * 0.01))
+        # Treat exact rule hits as reasonably strong evidence.
+        return min(0.95, 0.75 + min(0.2, score * 0.01))
 
     @staticmethod
     def _split_aliases(aliases: str | None) -> list[str]:
@@ -442,3 +467,37 @@ class BridgeLinker:
             seen.add(name)
             result.append(name)
         return result
+
+    def _ensure_bridge_index(self, db: Session) -> None:
+        if self._bridge_by_id is not None and self._bridge_alias_map is not None and self._alias_entries is not None:
+            return
+
+        rows = db.query(Bridge).all()
+        self._bridge_by_id = {}
+        self._bridge_alias_map = {}
+        self._alias_entries = []
+        for bridge in rows:
+            self._register_bridge(bridge, rebuild=False)
+        self._rebuild_alias_entries()
+
+    def _register_bridge(self, bridge: Bridge, *, rebuild: bool = True) -> None:
+        assert self._bridge_by_id is not None
+        assert self._bridge_alias_map is not None
+
+        self._bridge_by_id[bridge.id] = bridge
+        names = [bridge.name]
+        names.extend(self._split_aliases(bridge.aliases))
+        for name in names:
+            normalized = self._normalize_name(name)
+            if normalized:
+                self._bridge_alias_map[normalized] = bridge
+
+        if rebuild:
+            self._rebuild_alias_entries()
+
+    def _rebuild_alias_entries(self) -> None:
+        assert self._bridge_alias_map is not None
+        self._alias_entries = [
+            (alias, bridge.id) for alias, bridge in self._bridge_alias_map.items()
+        ]
+        self._alias_entries.sort(key=lambda x: len(x[0]), reverse=True)
