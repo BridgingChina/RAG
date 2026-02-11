@@ -1,4 +1,4 @@
-"""DB migration / backfill helper for Bridge RAG System V1.
+"""DB migration / backfill helper for Bridge RAG System.
 
 This repo does not use Alembic. `Base.metadata.create_all()` won't add new
 columns or indexes to an existing database, so older DBs need a one-off DDL +
@@ -18,6 +18,7 @@ What this script does (idempotent):
    - chunks.embedding IVFFLAT index (pgvector)
    - chunk_bridge_links indexes
 5) Backfill chunks.tsv for existing rows (Tokenizer -> to_tsvector('simple', ...))
+6) Stamp schema_version to latest supported version when migration succeeds
 
 Usage:
     python scripts/migrate_db.py
@@ -36,6 +37,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
+from app.core.database import LATEST_SCHEMA_VERSION
 from app.models import Base
 from app.services.tokenizer import Tokenizer, default_user_dict_path
 
@@ -75,6 +77,36 @@ def _index_exists(conn, *, index_name: str) -> bool:
 def _table_exists(conn, *, table_name: str) -> bool:
     name = table_name if "." in table_name else f"public.{table_name}"
     return _q(conn, "SELECT to_regclass(:name)", {"name": name}).scalar_one() is not None
+
+
+def _latest_schema_version(conn) -> int | None:
+    if not _table_exists(conn, table_name="schema_version"):
+        return None
+    return _q(
+        conn,
+        "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+    ).scalar_one_or_none()
+
+
+def _stamp_schema_version(conn, *, version: int, description: str) -> bool:
+    if not _table_exists(conn, table_name="schema_version"):
+        return False
+
+    current = _latest_schema_version(conn)
+    if current is not None and current >= version:
+        return False
+
+    _q(
+        conn,
+        """
+        INSERT INTO schema_version (version, description)
+        VALUES (:version, :description)
+        ON CONFLICT (version) DO NOTHING
+        """,
+        {"version": version, "description": description},
+    )
+    conn.commit()
+    return True
 
 
 def _create_index_best_effort(conn, *, name: str, ddl_sql: str) -> bool:
@@ -122,11 +154,14 @@ def main(
     dry_run: bool,
 ) -> None:
     db_url = database_url or settings.database_url
+    target_schema_version = LATEST_SCHEMA_VERSION
+    target_schema_description = "Schema v2 multi-bridge ingest"
     click.echo(f"DB migrate/backfill starting...")
     click.echo(f"- database_url: {db_url}")
     click.echo(f"- dry_run: {dry_run}")
     click.echo(f"- force: {force}")
     click.echo(f"- batch_size: {batch_size}")
+    click.echo(f"- target_schema_version: {target_schema_version}")
 
     # Tokenizer: best-effort user dict.
     tokenizer: Tokenizer
@@ -268,10 +303,29 @@ def main(
             click.echo("\n[4/4] Backfilling chunks.tsv ...")
             if tsv_info is None:
                 click.echo("  SKIP: chunks.tsv does not exist (unexpected)")
+                if dry_run:
+                    click.echo(
+                        "  (dry-run) would stamp schema_version "
+                        f"to {target_schema_version}"
+                    )
+                else:
+                    stamped = _stamp_schema_version(
+                        conn,
+                        version=target_schema_version,
+                        description=target_schema_description,
+                    )
+                    if stamped:
+                        click.echo(f"  STAMPED: schema_version={target_schema_version}")
+                    else:
+                        click.echo("  OK: schema_version already up-to-date")
                 return
 
             if dry_run:
                 click.echo("  (dry-run) would backfill tsv using Tokenizer + to_tsvector('simple', ...)")
+                click.echo(
+                    "  (dry-run) would stamp schema_version "
+                    f"to {target_schema_version}"
+                )
                 return
 
             total = _q(conn, "SELECT COUNT(*) FROM chunks").scalar_one()
@@ -284,6 +338,15 @@ def main(
             click.echo(f"  rows to update: {remaining}")
             if remaining == 0:
                 click.echo("  OK: nothing to backfill")
+                stamped = _stamp_schema_version(
+                    conn,
+                    version=target_schema_version,
+                    description=target_schema_description,
+                )
+                if stamped:
+                    click.echo(f"  STAMPED: schema_version={target_schema_version}")
+                else:
+                    click.echo("  OK: schema_version already up-to-date")
                 return
 
             update_stmt = text(
@@ -328,6 +391,15 @@ def main(
                 )
 
             click.echo(f"  DONE: updated {updated} rows in {_format_seconds(time.time() - started)}")
+            stamped = _stamp_schema_version(
+                conn,
+                version=target_schema_version,
+                description=target_schema_description,
+            )
+            if stamped:
+                click.echo(f"  STAMPED: schema_version={target_schema_version}")
+            else:
+                click.echo("  OK: schema_version already up-to-date")
 
     except Exception as e:
         click.echo(f"\nFAILED: {e}", err=True)

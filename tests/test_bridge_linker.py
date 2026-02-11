@@ -130,3 +130,24 @@ async def test_no_auto_create_when_auto_detection_disabled(db_session):
 
     assert result.auto_created_bridge_names == []
     assert db_session.query(Bridge).filter(Bridge.name == "拼写错误桥名").first() is None
+
+
+@pytest.mark.asyncio
+async def test_llm_primary_alias_resolves_to_existing_bridge(db_session):
+    db_session.add(Bridge(name="赵州桥", aliases="安济桥"))
+    db_session.flush()
+
+    provider = MockProvider(
+        {
+            "primary_bridge": "安济桥",
+            "primary_confidence": 0.92,
+            "secondary_bridges": [],
+            "candidate_bridges": [],
+        }
+    )
+    linker = BridgeLinker(provider=provider)
+    result = await linker.link_chunk(db_session, "该桥采用敞肩拱结构")
+
+    assert result.binding_status == "primary"
+    assert result.primary_bridge_name == "赵州桥"
+    assert result.auto_created_bridge_names == []

@@ -156,7 +156,7 @@ class BridgeLinker:
                     confidence=conf,
                     method="rule",
                 )
-                )
+            )
             return self._to_result(links, auto_created, threshold)
 
         if not auto_detection:
@@ -200,13 +200,22 @@ class BridgeLinker:
         names_to_resolve.extend(llm_candidates)
 
         resolved_map: dict[str, Bridge] = {}
-        resolved_bridges, created = self._resolve_or_create_bridges(
+        _, created = self._resolve_or_create_bridges(
             db,
             names_to_resolve,
             allow_create=True,
         )
         auto_created.extend(created)
-        for bridge in resolved_bridges:
+
+        # Preserve both alias and canonical keys so later lookups using raw
+        # LLM names still resolve after alias matching.
+        self._ensure_bridge_index(db)
+        assert self._bridge_alias_map is not None
+        for name in self._dedupe_names(names_to_resolve):
+            bridge = self._bridge_alias_map.get(name)
+            if not bridge:
+                continue
+            resolved_map[name] = bridge
             resolved_map[bridge.name] = bridge
 
         if llm_primary and llm_primary in resolved_map:
