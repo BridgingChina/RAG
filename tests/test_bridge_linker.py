@@ -151,3 +151,38 @@ async def test_llm_primary_alias_resolves_to_existing_bridge(db_session):
     assert result.binding_status == "primary"
     assert result.primary_bridge_name == "赵州桥"
     assert result.auto_created_bridge_names == []
+
+
+@pytest.mark.asyncio
+async def test_promotes_highest_confidence_candidate_to_primary(db_session):
+    db_session.add_all([Bridge(name="提示桥"), Bridge(name="赵州桥")])
+    db_session.flush()
+
+    linker = BridgeLinker(provider=MockProvider())
+    result = await linker.link_chunk(
+        db_session,
+        "赵州桥采用敞肩拱结构",
+        hint_bridge_names=["提示桥"],
+        min_primary_confidence=0.6,
+        enable_auto_bridge_detection=False,
+    )
+
+    assert result.binding_status == "primary"
+    assert result.primary_bridge_name == "赵州桥"
+
+
+@pytest.mark.asyncio
+async def test_short_alias_embedded_in_word_not_counted(db_session):
+    db_session.add(Bridge(name="测试桥", aliases="州桥"))
+    db_session.flush()
+
+    linker = BridgeLinker(provider=MockProvider())
+    result = await linker.link_chunk(
+        db_session,
+        "这段文本讨论苏州桥梁史，不特指某座桥",
+        enable_auto_bridge_detection=False,
+    )
+
+    assert result.binding_status == "none"
+    assert result.primary_bridge_name is None
+    assert result.candidate_bridge_names == []

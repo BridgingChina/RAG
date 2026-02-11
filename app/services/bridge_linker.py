@@ -1,7 +1,7 @@
 import json
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Callable, Literal
 
 from sqlalchemy.orm import Session
 
@@ -297,7 +297,7 @@ class BridgeLinker:
 
         score_by_bridge: dict[int, int] = {}
         for alias, bridge_id in self._alias_entries:
-            count = content.count(alias)
+            count = self._count_alias_occurrences(content, alias)
             if count <= 0:
                 continue
             score = count * max(1, len(alias))
@@ -380,9 +380,10 @@ class BridgeLinker:
 
         primary_link = next((l for l in deduped_links if l.role == "primary"), None)
         if primary_link is None:
-            candidate_primary = next(
+            candidate_primary = max(
                 (l for l in deduped_links if l.role == "candidate" and l.confidence >= threshold),
-                None,
+                key=lambda l: l.confidence,
+                default=None,
             )
             if candidate_primary is not None:
                 deduped_links = [
@@ -476,6 +477,84 @@ class BridgeLinker:
             seen.add(name)
             result.append(name)
         return result
+
+    @staticmethod
+    def _count_alias_occurrences(content: str, alias: str) -> int:
+        alias = alias.strip()
+        if not alias:
+            return 0
+
+        # Single-char aliases are too noisy for entity linking.
+        if len(alias) <= 1:
+            return 0
+
+        if BridgeLinker._is_ascii_token(alias):
+            return BridgeLinker._count_with_boundary(
+                content,
+                alias,
+                BridgeLinker._is_ascii_word_char,
+            )
+
+        # For very short non-ASCII aliases, require boundary separators.
+        if len(alias) <= 2:
+            return BridgeLinker._count_with_boundary(
+                content,
+                alias,
+                BridgeLinker._is_non_ascii_word_char,
+            )
+
+        return content.count(alias)
+
+    @staticmethod
+    def _count_with_boundary(
+        content: str,
+        needle: str,
+        is_word_char: Callable[[str], bool],
+    ) -> int:
+        count = 0
+        start = 0
+        needle_len = len(needle)
+        while True:
+            idx = content.find(needle, start)
+            if idx < 0:
+                break
+            end = idx + needle_len
+
+            left = content[idx - 1] if idx > 0 else None
+            right = content[end] if end < len(content) else None
+            left_ok = left is None or not is_word_char(left)
+            right_ok = right is None or not is_word_char(right)
+            if left_ok and right_ok:
+                count += 1
+
+            start = end
+
+        return count
+
+    @staticmethod
+    def _is_ascii_token(value: str) -> bool:
+        return all(ch.isascii() and (ch.isalnum() or ch in {"_", "-"}) for ch in value)
+
+    @staticmethod
+    def _is_ascii_word_char(ch: str) -> bool:
+        return ch.isascii() and (ch.isalnum() or ch in {"_", "-"})
+
+    @staticmethod
+    def _is_non_ascii_word_char(ch: str) -> bool:
+        if ch.isalnum():
+            return True
+        code = ord(ch)
+        # Common CJK Unified Ideographs ranges.
+        return (
+            0x3400 <= code <= 0x4DBF
+            or 0x4E00 <= code <= 0x9FFF
+            or 0xF900 <= code <= 0xFAFF
+            or 0x20000 <= code <= 0x2A6DF
+            or 0x2A700 <= code <= 0x2B73F
+            or 0x2B740 <= code <= 0x2B81F
+            or 0x2B820 <= code <= 0x2CEAF
+            or 0x2F800 <= code <= 0x2FA1F
+        )
 
     def _ensure_bridge_index(self, db: Session) -> None:
         if self._bridge_by_id is not None and self._bridge_alias_map is not None and self._alias_entries is not None:
