@@ -65,13 +65,8 @@ export function Component() {
   const handleUpdate = async (data: BridgeUpdateRequest) => {
     if (!id) return
     setActionError(null)
-    try {
-      await updateBridge(Number(id), data)
-      refetch()
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e))
-      throw e
-    }
+    await updateBridge(Number(id), data)
+    refetch()
   }
 
   const handleDelete = async () => {
@@ -137,9 +132,6 @@ export function Component() {
             <CardTitle>编辑信息</CardTitle>
           </CardHeader>
           <CardContent>
-            {actionError && (
-              <p className="mb-4 text-sm text-destructive">{actionError}</p>
-            )}
             <BridgeForm
               initialData={bridge}
               onSubmit={handleUpdate}

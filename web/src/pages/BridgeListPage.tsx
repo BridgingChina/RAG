@@ -20,7 +20,7 @@ export function Component() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
 
-  const { data, loading, error } = useApi(
+  const { data, loading, error, refetch } = useApi(
     () =>
       fetchBridges({
         page,
@@ -61,7 +61,7 @@ export function Component() {
             <p className="mb-4 text-sm text-destructive">
               {error || "加载失败"}
             </p>
-            <Button onClick={() => window.location.reload()} variant="outline">
+            <Button onClick={refetch} variant="outline" size="sm">
               重试
             </Button>
           </div>
