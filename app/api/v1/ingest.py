@@ -1,5 +1,6 @@
 """V1 Ingest API endpoint."""
 import asyncio
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -11,8 +12,9 @@ from app.api.v1.schemas import (
     IngestedChunkSummary,
 )
 from app.core.database import get_db
-from app.models import Bridge, Chunk, Source
+from app.models import Chunk, ChunkBridgeLink, Source
 from app.providers import ZhipuProvider
+from app.services.bridge_linker import BridgeLinker
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
 from app.services.markdown_parser import parse_markdown
@@ -50,21 +52,34 @@ def _get_taxonomy_lvl2_map() -> dict[str, list[str]]:
     return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
-def _get_or_create_bridge(session: Session, name: str) -> Bridge | None:
-    """Get existing bridge by name or create a new one."""
-    if not name:
-        return None
+def _extract_bridge_hints(frontmatter: dict, request_candidates: list[str] | None) -> list[str]:
+    names: list[str] = []
 
-    bridge = session.query(Bridge).filter(Bridge.name == name).first()
+    bridge = frontmatter.get("bridge")
+    if isinstance(bridge, str) and bridge.strip():
+        names.append(bridge.strip())
 
-    if bridge:
-        return bridge
+    bridges = frontmatter.get("bridges")
+    if isinstance(bridges, str):
+        names.extend([p.strip() for p in re.split(r"[,\n，、;；|]+", bridges) if p.strip()])
+    elif isinstance(bridges, list):
+        for item in bridges:
+            if isinstance(item, str) and item.strip():
+                names.append(item.strip())
 
-    # Create new bridge
-    bridge = Bridge(name=name)
-    session.add(bridge)
-    session.flush()
-    return bridge
+    if request_candidates:
+        for item in request_candidates:
+            if isinstance(item, str) and item.strip():
+                names.append(item.strip())
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        deduped.append(name)
+    return deduped
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -76,11 +91,12 @@ def ingest(
 ):
     """Ingest a Markdown document.
 
-    Parses Markdown with YAML front matter, chunks the content,
-    enriches with context, tags with taxonomy, and stores in database.
+    Parses Markdown with YAML front matter, chunks the content, enriches with
+    context, tags with taxonomy, links chunk-level bridge entities, and stores in DB.
 
     Front matter fields:
-    - bridge: Name of the bridge this document is about
+    - bridge: Primary bridge hint (optional)
+    - bridges: Bridge hint list (optional)
     - title: Document title
     - source_type: Override for source type (default from request)
     """
@@ -89,13 +105,9 @@ def ingest(
         doc = parse_markdown(request.content)
 
         # Extract metadata from front matter
-        bridge_name = doc.frontmatter.get("bridge")
         title = doc.frontmatter.get("title", "导入资料")
         source_type = doc.frontmatter.get("source_type", request.source_type)
-
-        # Get or create bridge
-        bridge = _get_or_create_bridge(db, bridge_name) if bridge_name else None
-        bridge_id = bridge.id if bridge else None
+        bridge_hints = _extract_bridge_hints(doc.frontmatter, request.bridge_candidates)
 
         # Combine sections into text with headings
         text_parts = []
@@ -119,6 +131,11 @@ def ingest(
             similarity_threshold=0.5,
         )
         tagger = MetadataTagger(provider=provider, taxonomy_lvl2=_get_taxonomy_lvl2_map())
+        bridge_linker = BridgeLinker(
+            provider=provider,
+            min_primary_confidence=request.min_primary_confidence,
+            enable_auto_bridge_detection=request.enable_auto_bridge_detection,
+        )
 
         # Chunk the text
         chunk_results = await chunker.chunk(text_content)
@@ -137,6 +154,9 @@ def ingest(
         # Process each chunk
         chunk_summaries: list[IngestedChunkSummary] = []
         chunk_rows: list[Chunk] = []
+        primary_bridge_names: set[str] = set()
+        auto_created_bridges: set[str] = set()
+        ambiguous_chunk_count = 0
 
         for i, chunk_result in enumerate(chunk_results):
             # Context enrichment (best-effort)
@@ -163,14 +183,26 @@ def ingest(
             # Tag with metadata
             tag_result = await tagger.tag(chunk_result.content)
 
-            # Use bridge from front matter, or from tagger
-            chunk_bridge_id = bridge_id
-            chunk_bridge_name = bridge_name
-            if not chunk_bridge_id and tag_result.bridge_id:
-                tag_bridge = _get_or_create_bridge(db, tag_result.bridge_id)
-                if tag_bridge:
-                    chunk_bridge_id = tag_bridge.id
-                    chunk_bridge_name = tag_bridge.name
+            # Link bridges at chunk level
+            bridge_link_result = await bridge_linker.link_chunk(
+                db=db,
+                content=chunk_result.content,
+                hint_bridge_names=bridge_hints,
+                bridge_candidates=request.bridge_candidates,
+                min_primary_confidence=request.min_primary_confidence,
+                enable_auto_bridge_detection=request.enable_auto_bridge_detection,
+            )
+            auto_created_bridges.update(bridge_link_result.auto_created_bridge_names)
+            if bridge_link_result.binding_status == "ambiguous":
+                ambiguous_chunk_count += 1
+            if bridge_link_result.primary_bridge_name:
+                primary_bridge_names.add(bridge_link_result.primary_bridge_name)
+
+            primary_link = next(
+                (link for link in bridge_link_result.links if link.role == "primary"),
+                None,
+            )
+            chunk_bridge_id = primary_link.bridge_id if primary_link else None
 
             # Get embedding
             embeddings = await provider.embed([search_text])
@@ -205,9 +237,22 @@ def ingest(
                 lvl2=tag_result.lvl2,
                 lvl3=tag_result.lvl3,
                 bridge_id=chunk_bridge_id,
+                bridge_binding_status=bridge_link_result.binding_status,
                 embedding=chunk_embedding,
             )
             db.add(chunk)
+            db.flush()
+
+            for link in bridge_link_result.links:
+                db.add(
+                    ChunkBridgeLink(
+                        chunk_id=chunk.id,
+                        bridge_id=link.bridge_id,
+                        role=link.role,
+                        confidence=link.confidence,
+                        method=link.method,
+                    )
+                )
             chunk_rows.append(chunk)
 
             # Build summary
@@ -219,11 +264,11 @@ def ingest(
                     content_preview=preview,
                     lvl1=tag_result.lvl1,
                     lvl2=tag_result.lvl2,
-                    bridge_name=chunk_bridge_name,
+                    binding_status=bridge_link_result.binding_status,
+                    primary_bridge_name=bridge_link_result.primary_bridge_name,
+                    secondary_bridge_names=bridge_link_result.secondary_bridge_names,
                 )
             )
-
-        db.flush()
 
         # Populate tsvector for FTS
         mappings = [
@@ -243,8 +288,10 @@ def ingest(
 
         return IngestResponse(
             source_id=source.id,
-            bridge_name=bridge_name,
             title=title,
+            primary_bridge_names=sorted(primary_bridge_names),
+            ambiguous_chunk_count=ambiguous_chunk_count,
+            auto_created_bridges=sorted(auto_created_bridges),
             chunk_count=len(chunk_rows),
             chunks=chunk_summaries,
         )

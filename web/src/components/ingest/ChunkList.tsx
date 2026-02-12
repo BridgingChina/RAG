@@ -22,8 +22,21 @@ export function ChunkList({ chunks }: { chunks: IngestedChunkSummary[] }) {
                 {chunk.lvl2}
               </Badge>
             )}
-            {chunk.bridge_name && (
-              <span className="text-[11px] text-slate-400">{chunk.bridge_name}</span>
+            {chunk.primary_bridge_name && (
+              <span className="text-[11px] text-slate-400">{chunk.primary_bridge_name}</span>
+            )}
+            {chunk.binding_status !== "none" && (
+              <Badge
+                variant="secondary"
+                className="text-[11px]"
+              >
+                {chunk.binding_status}
+              </Badge>
+            )}
+            {chunk.secondary_bridge_names.length > 0 && (
+              <span className="text-[11px] text-slate-400">
+                +{chunk.secondary_bridge_names.length} 次要桥
+              </span>
             )}
           </div>
         </li>

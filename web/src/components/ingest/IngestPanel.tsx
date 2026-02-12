@@ -14,6 +14,8 @@ const SOURCE_TYPES = ["document", "note"]
 export function IngestPanel() {
   const [content, setContent] = useState("")
   const [sourceType, setSourceType] = useState("document")
+  const [bridgeCandidates, setBridgeCandidates] = useState("")
+  const [minPrimaryConfidence, setMinPrimaryConfidence] = useState("0.75")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<IngestResponse | null>(null)
@@ -25,7 +27,16 @@ export function IngestPanel() {
     setError(null)
     setResult(null)
     try {
-      const res = await ingestDocument(c, sourceType)
+      const candidateList = bridgeCandidates
+        .split(/[,\n，、;；|]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const confidence = Number.parseFloat(minPrimaryConfidence)
+      const res = await ingestDocument(c, sourceType, {
+        bridgeCandidates: candidateList.length > 0 ? candidateList : null,
+        minPrimaryConfidence: Number.isNaN(confidence) ? 0.75 : confidence,
+        enableAutoBridgeDetection: true,
+      })
       setResult(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : "入库失败")
@@ -51,11 +62,25 @@ export function IngestPanel() {
           </select>
         </div>
         <Textarea
-          placeholder={"---\nbridge: 桥梁名称\nsource_type: document\ntitle: 资料标题\n---\n\n# 章节标题\n\n正文内容..."}
+          placeholder={"---\nbridges:\n  - 赵州桥\n  - 卢沟桥\nsource_type: document\ntitle: 资料标题\n---\n\n# 章节标题\n\n正文内容..."}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           className="font-mono min-h-[300px] resize-y"
         />
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <input
+            value={bridgeCandidates}
+            onChange={(e) => setBridgeCandidates(e.target.value)}
+            placeholder="候选桥（可选，逗号分隔）"
+            className="text-sm border border-slate-200 rounded-md px-3 py-2 text-slate-600 bg-white"
+          />
+          <input
+            value={minPrimaryConfidence}
+            onChange={(e) => setMinPrimaryConfidence(e.target.value)}
+            placeholder="主桥阈值（默认0.75）"
+            className="text-sm border border-slate-200 rounded-md px-3 py-2 text-slate-600 bg-white"
+          />
+        </div>
         <div className="flex justify-end">
           <Button
             onClick={handleSubmit}
@@ -84,14 +109,20 @@ export function IngestPanel() {
         <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
           <div className="flex items-baseline justify-between">
             <div>
-              {result.bridge_name && (
+              {result.primary_bridge_names.length > 0 && (
                 <h2 className="font-serif text-xl font-semibold text-slate-800">
-                  {result.bridge_name}
+                  主桥：{result.primary_bridge_names.join(" / ")}
                 </h2>
               )}
               {result.title && (
                 <p className="text-sm text-slate-400">{result.title}</p>
               )}
+              <p className="text-xs text-slate-500 mt-1">
+                歧义块：{result.ambiguous_chunk_count}
+                {result.auto_created_bridges.length > 0
+                  ? ` · 自动建桥：${result.auto_created_bridges.join("、")}`
+                  : ""}
+              </p>
             </div>
             <span className="text-sm text-slate-500">
               共 <span className="font-semibold text-blue-500">{result.chunk_count}</span> 个知识块

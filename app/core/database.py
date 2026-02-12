@@ -1,5 +1,6 @@
+import re
+
 from sqlalchemy import Connection, Engine, bindparam, create_engine, text
-from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -10,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 
 
 def get_db():
@@ -21,29 +22,27 @@ def get_db():
         db.close()
 
 
+def _schema_version_table_exists(conn: Connection) -> bool:
+    result = conn.execute(text("SELECT to_regclass('public.schema_version')"))
+    return result.scalar_one() is not None
+
+
 def get_current_schema_version(engine: Engine, *, conn: Connection | None = None) -> int | None:
     """Get current schema version from database.
 
     Returns None if schema_version table doesn't exist yet.
     """
-    try:
-        if conn is None:
-            with engine.connect() as new_conn:
-                result = new_conn.execute(
-                    text(
-                        "SELECT version FROM schema_version "
-                        "ORDER BY version DESC LIMIT 1"
-                    )
-                )
-                return result.scalar_one_or_none()
+    if conn is None:
+        with engine.connect() as new_conn:
+            return get_current_schema_version(engine, conn=new_conn)
 
-        result = conn.execute(
-            text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
-        )
-        return result.scalar_one_or_none()
-    except ProgrammingError:
-        # Table doesn't exist yet
+    if not _schema_version_table_exists(conn):
         return None
+
+    result = conn.execute(
+        text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
+    )
+    return result.scalar_one_or_none()
 
 
 def set_schema_version(
@@ -123,11 +122,21 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "lvl2",
             "lvl3",
             "bridge_id",
+            "bridge_binding_status",
             "page_range",
             "embedding",
             "contextual_text",
             "search_text",
             "tsv",
+            "created_at",
+        },
+        "chunk_bridge_links": {
+            "id",
+            "chunk_id",
+            "bridge_id",
+            "role",
+            "confidence",
+            "method",
             "created_at",
         },
     }
@@ -191,19 +200,27 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
     # Check if chunks.embedding has correct vector dimension
     result = conn.execute(
         text(
-            "SELECT atttypmod FROM pg_attribute "
+            "SELECT format_type(atttypid, atttypmod) "
+            "FROM pg_attribute "
             "WHERE attrelid = 'chunks'::regclass AND attname = 'embedding'"
         )
     )
     row = result.fetchone()
-    if row is None:
+    if row is None or row[0] is None:
         raise RuntimeError(
             "Schema mismatch: chunks.embedding column type could not be inspected. "
             "Migration required."
         )
 
-    # atttypmod for vector(N) is N+4
-    actual_dim = row[0] - 4
+    type_expr = str(row[0])
+    match = re.search(r"vector\((\d+)\)", type_expr)
+    if match is None:
+        raise RuntimeError(
+            f"Schema mismatch: chunks.embedding type is '{type_expr}', expected vector({EMBEDDING_DIM}). "
+            "Migration required."
+        )
+
+    actual_dim = int(match.group(1))
     if actual_dim != EMBEDDING_DIM:
         raise RuntimeError(
             f"Schema mismatch: chunks.embedding has {actual_dim} dimensions, "
@@ -262,7 +279,7 @@ def init_database() -> None:
 
             # Set initial version
             set_schema_version(
-                engine, LATEST_SCHEMA_VERSION, "Initial schema", conn=conn
+                engine, LATEST_SCHEMA_VERSION, "Schema v2 multi-bridge ingest", conn=conn
             )
 
             logger.info("Database initialization completed successfully")

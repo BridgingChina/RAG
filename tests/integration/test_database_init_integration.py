@@ -30,6 +30,7 @@ def test_engine():
 
     # Drop all tables to start fresh
     with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS chunk_bridge_links CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sources CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS bridges CASCADE"))
@@ -41,6 +42,7 @@ def test_engine():
 
     # Cleanup: Drop all tables after tests
     with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS chunk_bridge_links CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sources CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS bridges CASCADE"))
@@ -97,6 +99,7 @@ def test_init_database_creates_all_tables(test_engine):
         # Verify all tables exist
         assert inspector.has_table("schema_version")
         assert inspector.has_table("chunks")
+        assert inspector.has_table("chunk_bridge_links")
         assert inspector.has_table("bridges")
         assert inspector.has_table("sources")
         assert inspector.has_table("taxonomy_nodes")
@@ -105,8 +108,8 @@ def test_init_database_creates_all_tables(test_engine):
 
 
 @pytest.mark.integration
-def test_init_database_sets_version_to_1(test_engine):
-    """Test that init_database sets version to 1 with correct description."""
+def test_init_database_sets_version_to_2(test_engine):
+    """Test that init_database sets version to 2 with correct description."""
     from app.core import database
     original_engine = database.engine
     database.engine = test_engine
@@ -122,8 +125,8 @@ def test_init_database_sets_version_to_1(test_engine):
             row = result.fetchone()
 
             assert row is not None
-            assert row[0] == 1  # version
-            assert row[1] == "Initial schema"  # description
+            assert row[0] == 2  # version
+            assert row[1] == "Schema v2 multi-bridge ingest"  # description
     finally:
         database.engine = original_engine
 
@@ -139,24 +142,24 @@ def test_init_database_idempotent(test_engine):
         # First initialization
         init_database()
 
-        # Verify version is 1
+        # Verify version is 2
         with test_engine.connect() as conn:
             result = conn.execute(
                 text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
             )
             version1 = result.scalar_one()
-            assert version1 == 1
+            assert version1 == 2
 
         # Second initialization (should be idempotent)
         init_database()
 
-        # Verify version is still 1 (not incremented)
+        # Verify version is still 2 (not incremented)
         with test_engine.connect() as conn:
             result = conn.execute(
                 text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
             )
             version2 = result.scalar_one()
-            assert version2 == 1
+            assert version2 == 2
 
             # Verify only one version record exists
             result = conn.execute(text("SELECT COUNT(*) FROM schema_version"))
