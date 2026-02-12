@@ -177,6 +177,17 @@ def update_chunk(
     # Get update data, excluding unset fields
     update_data = body.model_dump(exclude_unset=True)
 
+    # Validate bridge_id exists if being set
+    if "bridge_id" in update_data and update_data["bridge_id"] is not None:
+        bridge_exists = db.query(Bridge).filter(
+            Bridge.id == update_data["bridge_id"]
+        ).first()
+        if not bridge_exists:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Bridge {update_data['bridge_id']} not found",
+            )
+
     # Map binding_status to bridge_binding_status
     if "binding_status" in update_data:
         update_data["bridge_binding_status"] = update_data.pop("binding_status")

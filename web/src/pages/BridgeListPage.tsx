@@ -25,7 +25,7 @@ export function Component() {
       fetchBridges({
         page,
         page_size: 20,
-        search: search || undefined,
+        q: search || undefined,
       }),
     [page, search],
   )

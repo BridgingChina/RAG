@@ -12,7 +12,7 @@ from app.api.v1.schemas.bridge import (
 from app.api.v1.schemas.chunk import ChunkListItem
 from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
-from app.models import Bridge, Chunk, Source
+from app.models import Bridge, Chunk, ChunkBridgeLink, Source
 
 router = APIRouter(prefix="/bridges", tags=["bridges"])
 
@@ -169,7 +169,7 @@ def delete_bridge(bridge_id: int, db: Session = Depends(get_db)) -> None:
     if not bridge:
         raise HTTPException(status_code=404, detail="Bridge not found")
 
-    # Check for associated chunks
+    # Check for associated chunks (primary binding)
     chunk_count = db.query(func.count(Chunk.id)).filter(Chunk.bridge_id == bridge_id).scalar()
     if chunk_count > 0:
         raise HTTPException(
@@ -177,21 +177,31 @@ def delete_bridge(bridge_id: int, db: Session = Depends(get_db)) -> None:
             detail=f"Cannot delete bridge with {chunk_count} associated chunks",
         )
 
+    # Delete any secondary bridge links referencing this bridge
+    db.query(ChunkBridgeLink).filter(
+        ChunkBridgeLink.bridge_id == bridge_id
+    ).delete(synchronize_session=False)
+
     # Delete the bridge
     db.delete(bridge)
     db.commit()
 
 
-@router.get("/{bridge_id}/chunks", response_model=list[ChunkListItem])
-def get_bridge_chunks(bridge_id: int, db: Session = Depends(get_db)) -> list[ChunkListItem]:
-    """Get all chunks associated with a specific bridge."""
+@router.get("/{bridge_id}/chunks", response_model=PaginatedResponse[ChunkListItem])
+def get_bridge_chunks(
+    bridge_id: int,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> PaginatedResponse[ChunkListItem]:
+    """Get chunks associated with a specific bridge (paginated)."""
     # Check if bridge exists
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
     if not bridge:
         raise HTTPException(status_code=404, detail="Bridge not found")
 
-    # Fetch chunks with bridge and source names
-    results = (
+    # Base query for chunks of this bridge
+    query = (
         db.query(
             Chunk.id,
             Chunk.content,
@@ -207,17 +217,16 @@ def get_bridge_chunks(bridge_id: int, db: Session = Depends(get_db)) -> list[Chu
         .outerjoin(Bridge, Chunk.bridge_id == Bridge.id)
         .outerjoin(Source, Chunk.source_id == Source.id)
         .filter(Chunk.bridge_id == bridge_id)
-        .order_by(desc(Chunk.id))
-        .all()
     )
 
-    # Build response items
+    total = query.count()
+    offset = (page - 1) * page_size
+    results = query.order_by(desc(Chunk.id)).offset(offset).limit(page_size).all()
+
     items = []
     for row in results:
-        # Generate content preview
         content = row.content
         content_preview = content[:80] + "..." if len(content) > 80 else content
-
         items.append(
             ChunkListItem(
                 id=row.id,
@@ -233,4 +242,12 @@ def get_bridge_chunks(bridge_id: int, db: Session = Depends(get_db)) -> list[Chu
             )
         )
 
-    return items
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )

@@ -16,7 +16,14 @@ export function Component() {
   }>({})
 
   const { data, loading, error, refetch } = useApi(
-    () => fetchChunks({ page, page_size: 20, ...filters }),
+    () =>
+      fetchChunks({
+        page,
+        page_size: 20,
+        lvl1: filters.lvl1,
+        binding_status: filters.binding_status,
+        q: filters.search,
+      }),
     [page, filters],
   )
 

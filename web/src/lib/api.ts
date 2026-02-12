@@ -136,7 +136,7 @@ export function fetchChunks(params?: {
   lvl1?: string
   lvl2?: string
   binding_status?: string
-  search?: string
+  q?: string
 }): Promise<PaginatedResponse<ChunkListItem>> {
   return get<PaginatedResponse<ChunkListItem>>("/chunks", params)
 }
@@ -161,10 +161,7 @@ export function deleteChunk(id: number): Promise<void> {
 export function fetchBridges(params?: {
   page?: number
   page_size?: number
-  bridge_type?: string
-  material?: string
-  era?: string
-  search?: string
+  q?: string
 }): Promise<PaginatedResponse<BridgeListItem>> {
   return get<PaginatedResponse<BridgeListItem>>("/bridges", params)
 }
