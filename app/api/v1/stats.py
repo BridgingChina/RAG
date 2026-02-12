@@ -68,19 +68,19 @@ def get_dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
     )
     recent_ingests = [
         RecentIngest(
-            source_id=source_id,
-            title=title,
-            chunk_count=chunk_count,
-            created_at=created_at,
+            source_id=sid,
+            title=stitle,
+            chunk_count=scount,
+            created_at=screated,
         )
-        for source_id, title, chunk_count, created_at in recent_sources
+        for sid, stitle, scount, screated in recent_sources
     ]
 
     return DashboardStats(
         chunk_count=chunk_count,
         bridge_count=bridge_count,
         source_count=source_count,
-        ambiguous_ratio=ambiguous_ratio,
+        ambiguous_ratio=round(ambiguous_ratio, 4),
         binding_distribution=binding_distribution,
         lvl1_distribution=lvl1_distribution,
         recent_ingests=recent_ingests,
