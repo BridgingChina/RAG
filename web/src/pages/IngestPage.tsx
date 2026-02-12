@@ -1,11 +1,12 @@
 import { PageHeader } from "@/components/layout/PageHeader"
+import { IngestPanel } from "@/components/ingest/IngestPanel"
 
 export function Component() {
   return (
     <>
-      <PageHeader title="入库" description="导入新资料" />
+      <PageHeader title="入库" description="上传 Markdown 文档到知识库" />
       <main className="p-6">
-        <p className="text-muted-foreground">加载中...</p>
+        <IngestPanel />
       </main>
     </>
   )
