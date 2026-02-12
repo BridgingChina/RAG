@@ -186,7 +186,7 @@ POST   /api/v1/bridges                   ← BridgeCreate
 PUT    /api/v1/bridges/{id}              ← BridgeUpdate
 DELETE /api/v1/bridges/{id}              → 204 (仅当 chunk_count=0)
 POST   /api/v1/bridges/{id}/merge        ← {source_bridge_id} (P1)
-GET    /api/v1/bridges/{id}/chunks       → ChunkListItem[]
+GET    /api/v1/bridges/{id}/chunks       → PaginatedResponse<ChunkListItem>
 ```
 
 ### Generic Pagination
