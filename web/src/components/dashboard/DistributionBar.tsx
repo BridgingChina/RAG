@@ -25,11 +25,11 @@ export function DistributionBar({ items }: DistributionBarProps) {
     <div className="space-y-3">
       {/* Stacked bar */}
       <div className="flex h-8 w-full overflow-hidden rounded-md">
-        {items.map((item, index) => {
+        {items.map((item) => {
           const percentage = (item.count / total) * 100
           return (
             <div
-              key={index}
+              key={item.label}
               className={item.color}
               style={{ width: `${percentage}%` }}
             />
@@ -39,8 +39,8 @@ export function DistributionBar({ items }: DistributionBarProps) {
 
       {/* Labels */}
       <div className="flex flex-wrap gap-4">
-        {items.map((item, index) => (
-          <div key={index} className="flex items-center gap-2">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-center gap-2">
             <div className={`h-3 w-3 rounded-sm ${item.color}`} />
             <span className="text-sm text-muted-foreground">
               {item.label}

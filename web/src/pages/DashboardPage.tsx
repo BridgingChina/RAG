@@ -93,31 +93,32 @@ export function Component() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {data.lvl1_distribution.map((item, index) => {
+                  {(() => {
                     const total = data.lvl1_distribution.reduce(
                       (sum, d) => sum + d.count,
                       0,
                     )
-                    const percentage =
-                      total > 0 ? (item.count / total) * 100 : 0
-
-                    return (
-                      <div key={index} className="space-y-1">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">
-                            {item.label}
-                          </span>
-                          <span className="font-medium">{item.count}</span>
+                    return data.lvl1_distribution.map((item) => {
+                      const percentage =
+                        total > 0 ? (item.count / total) * 100 : 0
+                      return (
+                        <div key={item.label} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              {item.label}
+                            </span>
+                            <span className="font-medium">{item.count}</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                            <div
+                              className="h-full bg-blue-500"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                          <div
-                            className="h-full bg-blue-500"
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  })()}
                   {data.lvl1_distribution.length === 0 && (
                     <p className="text-sm text-muted-foreground">暂无数据</p>
                   )}
