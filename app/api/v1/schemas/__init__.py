@@ -15,6 +15,14 @@ from .ask import (
     EvidenceGroupsResponse,
 )
 
+# Bridge schemas
+from .bridge import (
+    BridgeCreate,
+    BridgeDetail,
+    BridgeListItem,
+    BridgeUpdate,
+)
+
 # Chunk schemas
 from .chunk import (
     ChunkBridgeLinkDetail,
@@ -52,6 +60,11 @@ __all__ = [
     "ConfidenceLevel",
     "ConfidenceResponse",
     "EvidenceGroupsResponse",
+    # Bridge
+    "BridgeCreate",
+    "BridgeDetail",
+    "BridgeListItem",
+    "BridgeUpdate",
     # Chunk
     "ChunkBridgeLinkDetail",
     "ChunkDetail",
