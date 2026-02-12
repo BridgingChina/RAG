@@ -56,29 +56,31 @@ export function Component() {
           <>
             <ChunkTable items={data.items} />
 
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm text-muted-foreground">
-                第 {data.page} / {data.total_pages} 页
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page === 1}
-                  onClick={() => setPage(page - 1)}
-                >
-                  上一页
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page === data.total_pages}
-                  onClick={() => setPage(page + 1)}
-                >
-                  下一页
-                </Button>
+            {data.total_pages > 0 && (
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm text-muted-foreground">
+                  第 {data.page} / {data.total_pages} 页
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage(page - 1)}
+                  >
+                    上一页
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={page >= data.total_pages}
+                    onClick={() => setPage(page + 1)}
+                  >
+                    下一页
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </main>

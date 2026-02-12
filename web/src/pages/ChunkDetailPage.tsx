@@ -39,6 +39,7 @@ export function Component() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const { data, loading, error, refetch } = useApi(
     () => fetchChunk(Number(id)),
@@ -67,11 +68,12 @@ export function Component() {
   const handleSave = async () => {
     if (!id) return
     setIsSaving(true)
+    setActionError(null)
     try {
       await updateChunk(Number(id), formData)
       refetch()
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      setActionError(e instanceof Error ? e.message : String(e))
     } finally {
       setIsSaving(false)
     }
@@ -80,11 +82,13 @@ export function Component() {
   const handleDelete = async () => {
     if (!id) return
     setIsDeleting(true)
+    setActionError(null)
     try {
       await deleteChunk(Number(id))
       navigate("/chunks")
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      setActionError(e instanceof Error ? e.message : String(e))
+      setIsDeleteDialogOpen(false)
     } finally {
       setIsDeleting(false)
     }
@@ -250,6 +254,10 @@ export function Component() {
                 {new Date(data.created_at).toLocaleString("zh-CN")}
               </p>
             </div>
+
+            {actionError && (
+              <p className="text-sm text-destructive">{actionError}</p>
+            )}
 
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving ? "保存中..." : "保存"}

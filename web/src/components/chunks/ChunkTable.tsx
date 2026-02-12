@@ -14,6 +14,26 @@ interface ChunkTableProps {
   items: ChunkListItem[]
 }
 
+function getBindingStatusLabel(
+  status: string,
+): { label: string; variant: "default" | "secondary" | "destructive" } {
+  switch (status) {
+    case "primary":
+      return { label: "绑定", variant: "default" }
+    case "ambiguous":
+      return { label: "歧义", variant: "destructive" }
+    case "none":
+      return { label: "未绑定", variant: "secondary" }
+    default:
+      return { label: status, variant: "secondary" }
+  }
+}
+
+function truncateText(text: string, maxLength: number = 60) {
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength) + "..."
+}
+
 export function ChunkTable({ items }: ChunkTableProps) {
   const navigate = useNavigate()
 
@@ -23,26 +43,6 @@ export function ChunkTable({ items }: ChunkTableProps) {
         <p className="text-muted-foreground">暂无数据</p>
       </div>
     )
-  }
-
-  const getBindingStatusLabel = (
-    status: string,
-  ): { label: string; variant: "default" | "secondary" | "destructive" } => {
-    switch (status) {
-      case "primary":
-        return { label: "绑定", variant: "default" }
-      case "ambiguous":
-        return { label: "歧义", variant: "destructive" }
-      case "none":
-        return { label: "未绑定", variant: "secondary" }
-      default:
-        return { label: status, variant: "secondary" }
-    }
-  }
-
-  const truncateText = (text: string, maxLength: number = 60) => {
-    if (text.length <= maxLength) return text
-    return text.slice(0, maxLength) + "..."
   }
 
   return (
