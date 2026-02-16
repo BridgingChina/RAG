@@ -7,6 +7,8 @@ from app.services.hybrid_retriever import (
     DEFAULT_QUOTA,
     RetrievedChunk,
     HybridRetrievalResult,
+    ChannelDebug,
+    RetrievalDebug,
     format_evidence_for_llm,
 )
 
@@ -124,3 +126,29 @@ def test_format_evidence_for_llm_empty_channels():
 
     # Should indicate no data
     assert "无相关资料" in formatted
+
+
+def test_channel_debug_dataclass():
+    """ChannelDebug holds per-channel retrieval debug info."""
+    cd = ChannelDebug(
+        channel="anchor",
+        filter_desc="bridge_id=42",
+        vec_ids=[1, 2, 3],
+        fts_ids=[2, 4],
+        rrf_scores=[(2, 0.03), (1, 0.02), (3, 0.01), (4, 0.005)],
+        final_ids=[2, 1, 3],
+    )
+    assert cd.channel == "anchor"
+    assert len(cd.vec_ids) == 3
+    assert len(cd.rrf_scores) == 4
+
+
+def test_retrieval_debug_dataclass():
+    """RetrievalDebug aggregates channels and timings."""
+    rd = RetrievalDebug(
+        facet={"bridge_type": "拱桥"},
+        channels=[],
+        timings={"embed": 0.12, "anchor": 0.08},
+    )
+    assert rd.facet["bridge_type"] == "拱桥"
+    assert rd.timings["embed"] == 0.12

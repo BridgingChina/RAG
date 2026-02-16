@@ -43,11 +43,31 @@ class RetrievedChunk:
 
 
 @dataclass
+class ChannelDebug:
+    """Debug info for a single retrieval channel."""
+    channel: str                         # "anchor" | "concept" | "analogy"
+    filter_desc: str                     # e.g. "bridge_id=42"
+    vec_ids: list[int]                   # vector search raw results
+    fts_ids: list[int]                   # FTS raw results
+    rrf_scores: list[tuple[int, float]]  # after RRF merge
+    final_ids: list[int]                 # after diversity + limit
+
+
+@dataclass
+class RetrievalDebug:
+    """Full debug info for a retrieval request."""
+    facet: dict | None
+    channels: list[ChannelDebug]
+    timings: dict[str, float]  # stage -> seconds
+
+
+@dataclass
 class HybridRetrievalResult:
     """Result of three-channel retrieval."""
     anchor_chunks: list[RetrievedChunk]
     concept_chunks: list[RetrievedChunk]
     analogy_chunks: list[RetrievedChunk]
+    debug: RetrievalDebug | None = None
 
     def all_chunks(self) -> list[RetrievedChunk]:
         """Return all chunks from all channels as a flat list."""
