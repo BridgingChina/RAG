@@ -8,10 +8,12 @@ from .ask import (
     AskContext,
     AskRequest,
     AskResponse,
+    ChannelDebugResponse,
     ChunkSummary,
     CitationResponse,
     ConfidenceLevel,
     ConfidenceResponse,
+    DebugResponse,
     EvidenceGroupsResponse,
 )
 
@@ -70,10 +72,12 @@ __all__ = [
     "AskContext",
     "AskRequest",
     "AskResponse",
+    "ChannelDebugResponse",
     "ChunkSummary",
     "CitationResponse",
     "ConfidenceLevel",
     "ConfidenceResponse",
+    "DebugResponse",
     "EvidenceGroupsResponse",
     # Bridge
     "BridgeCreate",
