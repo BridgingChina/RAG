@@ -50,6 +50,17 @@ from .stats import (
     RecentIngest,
 )
 
+# Taxonomy schemas
+from .taxonomy import (
+    TaxonomyBatchUpdate,
+    TaxonomyBatchUpdateResult,
+    TaxonomyNodeCreate,
+    TaxonomyNodeDetail,
+    TaxonomyNodeUpdate,
+    TaxonomyTree,
+    TaxonomyTreeItem,
+)
+
 __all__ = [
     # Common
     "PageParams",
@@ -86,4 +97,12 @@ __all__ = [
     "DashboardStats",
     "Lvl1Distribution",
     "RecentIngest",
+    # Taxonomy
+    "TaxonomyBatchUpdate",
+    "TaxonomyBatchUpdateResult",
+    "TaxonomyNodeCreate",
+    "TaxonomyNodeDetail",
+    "TaxonomyNodeUpdate",
+    "TaxonomyTree",
+    "TaxonomyTreeItem",
 ]
