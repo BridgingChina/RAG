@@ -57,7 +57,7 @@ export function Component() {
   )
 
   const { data: chunksData } = useApi(
-    () => fetchChunks({ source_id: Number(id) }),
+    () => fetchChunks({ source_id: Number(id), page_size: 100 }),
     [id],
   )
 

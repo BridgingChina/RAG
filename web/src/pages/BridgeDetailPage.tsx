@@ -60,7 +60,7 @@ export function Component() {
   )
 
   const { data: chunksData, refetch: refetchChunks } = useApi(
-    () => fetchBridgeChunks(Number(id)),
+    () => fetchBridgeChunks(Number(id), { page_size: 100 }),
     [id],
   )
 

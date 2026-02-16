@@ -197,8 +197,9 @@ export function deleteBridge(id: number): Promise<void> {
 
 export function fetchBridgeChunks(
   id: number,
+  params?: { page?: number; page_size?: number },
 ): Promise<PaginatedResponse<ChunkListItem>> {
-  return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`)
+  return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`, params)
 }
 
 export function mergeBridge(
