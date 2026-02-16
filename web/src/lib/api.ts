@@ -12,6 +12,11 @@ import type {
   PaginatedResponse,
   SourceDetail,
   SourceListItem,
+  TaxonomyBatchUpdate,
+  TaxonomyBatchUpdateResult,
+  TaxonomyNodeCreate,
+  TaxonomyNodeDetail,
+  TaxonomyTree,
 } from "./types"
 
 const BASE = "/api/v1"
@@ -207,4 +212,31 @@ export function fetchSources(params?: {
 
 export function fetchSource(id: number): Promise<SourceDetail> {
   return get<SourceDetail>(`/sources/${id}`)
+}
+
+// --- Taxonomy ---
+
+export function fetchTaxonomyTree(): Promise<TaxonomyTree> {
+  return get<TaxonomyTree>("/taxonomy/tree")
+}
+
+export function createTaxonomyNode(data: TaxonomyNodeCreate): Promise<TaxonomyNodeDetail> {
+  return post<TaxonomyNodeDetail>("/taxonomy/nodes", data)
+}
+
+export function updateTaxonomyNode(
+  id: number,
+  data: { description?: string | null },
+): Promise<TaxonomyNodeDetail> {
+  return put<TaxonomyNodeDetail>(`/taxonomy/nodes/${id}`, data)
+}
+
+export function deleteTaxonomyNode(id: number): Promise<void> {
+  return del(`/taxonomy/nodes/${id}`)
+}
+
+export function batchUpdateTaxonomy(
+  data: TaxonomyBatchUpdate,
+): Promise<TaxonomyBatchUpdateResult> {
+  return post<TaxonomyBatchUpdateResult>("/taxonomy/batch-update", data)
 }

@@ -13,6 +13,7 @@ export const router = createBrowserRouter([
       { path: "bridges/:id", lazy: () => import("@/pages/BridgeDetailPage") },
       { path: "sources", lazy: () => import("@/pages/SourceListPage") },
       { path: "sources/:id", lazy: () => import("@/pages/SourceDetailPage") },
+      { path: "taxonomy", lazy: () => import("@/pages/TaxonomyPage") },
       { path: "ingest", lazy: () => import("@/pages/IngestPage") },
       { path: "ask", lazy: () => import("@/pages/AskPage") },
     ],

@@ -231,3 +231,42 @@ export interface SourceDetail {
   chunk_count: number
   created_at: string
 }
+
+// --- Taxonomy ---
+
+export interface TaxonomyTreeItem {
+  label: string
+  chunk_count: number
+  children: TaxonomyTreeItem[]
+}
+
+export interface TaxonomyTree {
+  items: TaxonomyTreeItem[]
+}
+
+export interface TaxonomyNodeDetail {
+  id: number
+  lvl1: string
+  lvl2: string | null
+  lvl3: string | null
+  description: string | null
+  chunk_count: number
+}
+
+export interface TaxonomyNodeCreate {
+  lvl1: string
+  lvl2?: string | null
+  lvl3?: string | null
+  description?: string | null
+}
+
+export interface TaxonomyBatchUpdate {
+  chunk_ids: number[]
+  lvl1: string
+  lvl2?: string | null
+  lvl3?: string | null
+}
+
+export interface TaxonomyBatchUpdateResult {
+  updated_count: number
+}

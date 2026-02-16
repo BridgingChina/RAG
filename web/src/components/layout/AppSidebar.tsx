@@ -15,6 +15,7 @@ import {
   Blocks,
   Landmark,
   FileText,
+  FolderTree,
   Upload,
   MessageSquare,
 } from "lucide-react"
@@ -32,6 +33,7 @@ const navGroups = [
       { path: "/chunks", icon: Blocks, label: "知识块" },
       { path: "/bridges", icon: Landmark, label: "桥梁" },
       { path: "/sources", icon: FileText, label: "来源" },
+      { path: "/taxonomy", icon: FolderTree, label: "分类目录" },
     ],
   },
   {
