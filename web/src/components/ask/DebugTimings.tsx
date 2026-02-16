@@ -1,10 +1,11 @@
 import { Badge } from "@/components/ui/badge"
 
 export function DebugTimings({ timings }: { timings: Record<string, number> }) {
-  const total = Object.values(timings).reduce((a, b) => a + b, 0)
+  const stages = Object.entries(timings).filter(([key]) => key !== "total")
+  const total = timings.total ?? stages.reduce((a, [, b]) => a + b, 0)
   return (
     <div className="flex flex-wrap gap-2">
-      {Object.entries(timings).map(([key, val]) => (
+      {stages.map(([key, val]) => (
         <Badge key={key} variant="secondary" className="font-mono text-xs">
           {key}: {val.toFixed(3)}s
         </Badge>
