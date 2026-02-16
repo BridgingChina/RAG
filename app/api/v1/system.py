@@ -24,7 +24,7 @@ def system_status(db: Session = Depends(get_db)):
         db_version = row
         db_connected = True
         sv = db.execute(
-            text("SELECT version FROM schema_version ORDER BY id DESC LIMIT 1")
+            text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
         ).scalar()
         schema_version = sv
     except Exception:
