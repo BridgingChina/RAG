@@ -239,6 +239,7 @@ export interface SourceDetail {
 // --- Taxonomy ---
 
 export interface TaxonomyTreeItem {
+  node_id: number
   label: string
   chunk_count: number
   children: TaxonomyTreeItem[]

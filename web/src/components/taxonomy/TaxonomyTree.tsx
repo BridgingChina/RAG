@@ -9,7 +9,7 @@ interface TaxonomyTreeProps {
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
   onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
-  onDeleteNode: (nodeLabel: string, path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
+  onDeleteNode: (nodeId: number, nodeLabel: string) => void
 }
 
 interface TreeNodeProps {
@@ -19,7 +19,7 @@ interface TreeNodeProps {
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
   onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
-  onDeleteNode: (nodeLabel: string, path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
+  onDeleteNode: (nodeId: number, nodeLabel: string) => void
 }
 
 function TreeNode({
@@ -119,7 +119,7 @@ function TreeNode({
             className="h-6 w-6 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation()
-              onDeleteNode(item.label, currentPath)
+              onDeleteNode(item.node_id, item.label)
             }}
             title="删除分类"
           >

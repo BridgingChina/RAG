@@ -36,6 +36,7 @@ import {
   fetchTaxonomyTree,
   fetchChunks,
   createTaxonomyNode,
+  deleteTaxonomyNode,
   batchUpdateTaxonomy,
 } from "@/lib/api"
 
@@ -62,6 +63,8 @@ export function Component() {
   } | null>(null)
   const [selectedChunkIds, setSelectedChunkIds] = useState<Set<number>>(new Set())
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ nodeId: number; label: string } | null>(null)
   const [isBatchUpdateDialogOpen, setIsBatchUpdateDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -115,9 +118,26 @@ export function Component() {
     setIsAddDialogOpen(true)
   }
 
-  const handleDeleteNode = (_nodeLabel: string, _path: { lvl1: string; lvl2?: string; lvl3?: string }) => {
-    // Skip for now as per instructions
-    alert("删除功能待实现（需要后端提供节点 ID）")
+  const handleDeleteNode = (nodeId: number, nodeLabel: string) => {
+    setDeleteTarget({ nodeId, label: nodeLabel })
+    setActionError(null)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    setIsSubmitting(true)
+    setActionError(null)
+    try {
+      await deleteTaxonomyNode(deleteTarget.nodeId)
+      refetchTree()
+      setIsDeleteDialogOpen(false)
+      setDeleteTarget(null)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const handleSubmitAddNode = async () => {
@@ -413,7 +433,7 @@ export function Component() {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium">一级分类</label>
-              <Select value={batchLvl1} onValueChange={setBatchLvl1}>
+              <Select value={batchLvl1} onValueChange={(v) => { setBatchLvl1(v); setBatchLvl2(""); setBatchLvl3("") }}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="选择一级分类" />
                 </SelectTrigger>
@@ -429,7 +449,7 @@ export function Component() {
             {batchLvl1 && lvl2Options.length > 0 && (
               <div>
                 <label className="text-sm font-medium">二级分类（可选）</label>
-                <Select value={batchLvl2} onValueChange={setBatchLvl2}>
+                <Select value={batchLvl2} onValueChange={(v) => { setBatchLvl2(v); setBatchLvl3("") }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="选择二级分类" />
                   </SelectTrigger>
@@ -468,6 +488,29 @@ export function Component() {
             </Button>
             <Button onClick={handleSubmitBatchUpdate} disabled={isSubmitting || !batchLvl1}>
               {isSubmitting ? "更新中..." : "确认修改"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要删除分类「{deleteTarget?.label}」吗？仅当该分类下无关联知识块时可删除。
+            </DialogDescription>
+          </DialogHeader>
+          {actionError && (
+            <p className="text-sm text-destructive">{actionError}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={isSubmitting}>
+              {isSubmitting ? "删除中..." : "确认删除"}
             </Button>
           </DialogFooter>
         </DialogContent>

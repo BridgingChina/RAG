@@ -20,8 +20,12 @@ class TaxonomyNodeCreate(BaseModel):
 
     @field_validator("lvl1", mode="before")
     @classmethod
-    def strip_lvl1(cls, v: str) -> str:
-        return v.strip() if isinstance(v, str) else v
+    def strip_and_require_lvl1(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("lvl1 must not be empty")
+        return v
 
     @field_validator("lvl2", "lvl3", "description", mode="before")
     @classmethod
@@ -43,6 +47,7 @@ class TaxonomyNodeDetail(BaseModel):
 
 
 class TaxonomyTreeItem(BaseModel):
+    node_id: int
     label: str
     chunk_count: int
     children: list[TaxonomyTreeItem]
@@ -60,8 +65,12 @@ class TaxonomyBatchUpdate(BaseModel):
 
     @field_validator("lvl1", mode="before")
     @classmethod
-    def strip_lvl1(cls, v: str) -> str:
-        return v.strip() if isinstance(v, str) else v
+    def strip_and_require_lvl1(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("lvl1 must not be empty")
+        return v
 
     @field_validator("lvl2", "lvl3", mode="before")
     @classmethod

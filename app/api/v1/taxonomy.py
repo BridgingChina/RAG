@@ -53,30 +53,49 @@ def get_taxonomy_tree(db: Session = Depends(get_db)) -> TaxonomyTree:
     for l1, l2, l3, cnt in rows:
         lvl3_counts[(l1, l2, l3)] = cnt
 
-    # Build tree from nodes
-    lvl1_map: dict[str, dict[str, list[str]]] = {}
+    # Build tree from nodes, tracking node IDs
+    # Structure: {lvl1: (node_id, {lvl2: (node_id, {lvl3: node_id})})}
+    lvl1_map: dict[str, tuple[int, dict[str, tuple[int, dict[str, int]]]]] = {}
     for node in nodes:
         if node.lvl1 not in lvl1_map:
-            lvl1_map[node.lvl1] = {}
-        if node.lvl2 and node.lvl2 not in lvl1_map[node.lvl1]:
-            lvl1_map[node.lvl1][node.lvl2] = []
-        if node.lvl2 and node.lvl3:
-            lvl1_map[node.lvl1][node.lvl2].append(node.lvl3)
+            # lvl1-only node
+            if not node.lvl2:
+                lvl1_map[node.lvl1] = (node.id, {})
+                continue
+            # lvl2+ node but lvl1 entry doesn't exist yet (shouldn't happen with seed)
+            lvl1_map[node.lvl1] = (0, {})
+        if not node.lvl2:
+            # Update lvl1 node_id if this is the lvl1-only row
+            lvl1_map[node.lvl1] = (node.id, lvl1_map[node.lvl1][1])
+            continue
+        lvl1_id, lvl2_dict = lvl1_map[node.lvl1]
+        if node.lvl2 not in lvl2_dict:
+            if not node.lvl3:
+                lvl2_dict[node.lvl2] = (node.id, {})
+                continue
+            lvl2_dict[node.lvl2] = (0, {})
+        if not node.lvl3:
+            lvl2_dict[node.lvl2] = (node.id, lvl2_dict[node.lvl2][1])
+            continue
+        lvl2_id, lvl3_dict = lvl2_dict[node.lvl2]
+        lvl3_dict[node.lvl3] = node.id
 
     items = []
-    for lvl1, lvl2_dict in lvl1_map.items():
+    for lvl1, (lvl1_nid, lvl2_dict) in lvl1_map.items():
         lvl2_children = []
-        for lvl2, lvl3_list in lvl2_dict.items():
+        for lvl2, (lvl2_nid, lvl3_dict) in lvl2_dict.items():
             lvl3_children = [
                 TaxonomyTreeItem(
+                    node_id=nid,
                     label=lvl3,
                     chunk_count=lvl3_counts.get((lvl1, lvl2, lvl3), 0),
                     children=[],
                 )
-                for lvl3 in lvl3_list
+                for lvl3, nid in lvl3_dict.items()
             ]
             lvl2_children.append(
                 TaxonomyTreeItem(
+                    node_id=lvl2_nid,
                     label=lvl2,
                     chunk_count=lvl2_counts.get((lvl1, lvl2), 0),
                     children=lvl3_children,
@@ -84,6 +103,7 @@ def get_taxonomy_tree(db: Session = Depends(get_db)) -> TaxonomyTree:
             )
         items.append(
             TaxonomyTreeItem(
+                node_id=lvl1_nid,
                 label=lvl1,
                 chunk_count=lvl1_counts.get(lvl1, 0),
                 children=lvl2_children,
