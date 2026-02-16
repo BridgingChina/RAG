@@ -10,6 +10,8 @@ import type {
   DashboardStats,
   IngestResponse,
   PaginatedResponse,
+  SourceDetail,
+  SourceListItem,
 } from "./types"
 
 const BASE = "/api/v1"
@@ -133,6 +135,7 @@ export function fetchChunks(params?: {
   page?: number
   page_size?: number
   bridge_id?: number
+  source_id?: number
   lvl1?: string
   lvl2?: string
   binding_status?: string
@@ -189,4 +192,19 @@ export function fetchBridgeChunks(
   id: number,
 ): Promise<PaginatedResponse<ChunkListItem>> {
   return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`)
+}
+
+// --- Sources ---
+
+export function fetchSources(params?: {
+  page?: number
+  page_size?: number
+  q?: string
+  type?: string
+}): Promise<PaginatedResponse<SourceListItem>> {
+  return get<PaginatedResponse<SourceListItem>>("/sources", params)
+}
+
+export function fetchSource(id: number): Promise<SourceDetail> {
+  return get<SourceDetail>(`/sources/${id}`)
 }

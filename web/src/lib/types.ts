@@ -209,3 +209,25 @@ export interface BridgeUpdateRequest {
   function?: string | null
   summary?: string | null
 }
+
+// --- Sources ---
+
+export interface SourceListItem {
+  id: number
+  type: string
+  title: string
+  url: string | null
+  chunk_count: number
+  created_at: string
+}
+
+export interface SourceDetail {
+  id: number
+  type: string
+  title: string
+  url: string | null
+  file_path: string | null
+  accessed_at: string | null
+  chunk_count: number
+  created_at: string
+}
