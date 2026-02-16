@@ -45,6 +45,9 @@ from .ingest import (
 # Source schemas
 from .source import SourceDetail, SourceListItem
 
+# System schemas
+from .system import SystemStatus
+
 # Stats schemas
 from .stats import (
     BindingDistribution,
@@ -98,6 +101,8 @@ __all__ = [
     # Source
     "SourceDetail",
     "SourceListItem",
+    # System
+    "SystemStatus",
     # Stats
     "BindingDistribution",
     "DashboardStats",
