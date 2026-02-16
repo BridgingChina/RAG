@@ -93,6 +93,7 @@ export function Component() {
       return fetchChunks({
         lvl1: selectedPath.lvl1,
         lvl2: selectedPath.lvl2,
+        lvl3: selectedPath.lvl3,
         page: 1,
         page_size: 100,
       })

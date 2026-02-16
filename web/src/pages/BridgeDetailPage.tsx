@@ -59,7 +59,7 @@ export function Component() {
     [id],
   )
 
-  const { data: chunksData } = useApi(
+  const { data: chunksData, refetch: refetchChunks } = useApi(
     () => fetchBridgeChunks(Number(id)),
     [id],
   )
@@ -258,7 +258,7 @@ export function Component() {
         targetBridge={bridge}
         open={isMergeDialogOpen}
         onOpenChange={setIsMergeDialogOpen}
-        onMerged={refetch}
+        onMerged={() => { refetch(); refetchChunks() }}
       />
     </>
   )

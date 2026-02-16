@@ -131,18 +131,24 @@ function TreeNode({
       {/* Render children */}
       {hasChildren && isExpanded && (
         <div>
-          {item.children.map((child) => (
-            <TreeNode
-              key={child.label}
-              item={child}
-              level={level + 1}
-              parentPath={currentPath as { lvl1: string; lvl2?: string }}
-              selectedPath={selectedPath}
-              onSelect={onSelect}
-              onAddNode={onAddNode}
-              onDeleteNode={onDeleteNode}
-            />
-          ))}
+          {item.children.map((child) => {
+            const childKey =
+              level === 1
+                ? `${currentPath.lvl1}/${child.label}`
+                : `${currentPath.lvl1}/${currentPath.lvl2}/${child.label}`
+            return (
+              <TreeNode
+                key={childKey}
+                item={child}
+                level={level + 1}
+                parentPath={currentPath as { lvl1: string; lvl2?: string }}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+                onAddNode={onAddNode}
+                onDeleteNode={onDeleteNode}
+              />
+            )
+          })}
         </div>
       )}
     </div>
@@ -160,7 +166,7 @@ export function TaxonomyTree({
     <div className="space-y-1">
       {items.map((item) => (
         <TreeNode
-          key={item.label}
+          key={`root/${item.label}`}
           item={item}
           level={1}
           selectedPath={selectedPath}

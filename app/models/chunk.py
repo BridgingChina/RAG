@@ -36,6 +36,7 @@ class Chunk(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_chunks_taxonomy", "lvl1", "lvl2", "lvl3"),
         Index("ix_chunks_bridge", "bridge_id"),
+        Index("ix_chunks_source", "source_id"),
         Index("ix_chunks_binding_status", "bridge_binding_status"),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
         # pgvector IVFFLAT index for cosine distance (<=>).

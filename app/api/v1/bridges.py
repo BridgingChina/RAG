@@ -276,12 +276,12 @@ def merge_bridges(
     )
 
     # 2. Migrate chunk_bridge_links (skip duplicates)
-    existing_links = set(
-        db.query(ChunkBridgeLink.chunk_id)
+    existing_links = {
+        row[0]
+        for row in db.query(ChunkBridgeLink.chunk_id)
         .filter(ChunkBridgeLink.bridge_id == target.id)
-        .scalars()
         .all()
-    )
+    }
     source_links = (
         db.query(ChunkBridgeLink)
         .filter(ChunkBridgeLink.bridge_id == source.id)

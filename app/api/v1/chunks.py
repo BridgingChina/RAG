@@ -23,6 +23,7 @@ def list_chunks(
     bridge_id: int | None = None,
     lvl1: str | None = None,
     lvl2: str | None = None,
+    lvl3: str | None = None,
     binding_status: str | None = None,
     source_id: int | None = None,
     q: str | None = None,
@@ -54,6 +55,8 @@ def list_chunks(
         query = query.filter(Chunk.lvl1 == lvl1)
     if lvl2 is not None:
         query = query.filter(Chunk.lvl2 == lvl2)
+    if lvl3 is not None:
+        query = query.filter(Chunk.lvl3 == lvl3)
     if binding_status is not None:
         query = query.filter(Chunk.bridge_binding_status == binding_status)
     if source_id is not None:

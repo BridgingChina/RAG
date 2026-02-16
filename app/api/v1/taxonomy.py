@@ -193,6 +193,26 @@ def batch_update_chunks(
     if not body.chunk_ids:
         raise HTTPException(status_code=422, detail="chunk_ids must not be empty")
 
+    # Validate: lvl3 requires lvl2
+    if body.lvl3 and not body.lvl2:
+        raise HTTPException(status_code=422, detail="lvl3 requires lvl2")
+
+    # Validate taxonomy path exists in taxonomy_nodes
+    node_query = db.query(TaxonomyNode).filter(TaxonomyNode.lvl1 == body.lvl1)
+    if body.lvl2:
+        node_query = node_query.filter(TaxonomyNode.lvl2 == body.lvl2)
+    else:
+        node_query = node_query.filter(TaxonomyNode.lvl2.is_(None))
+    if body.lvl3:
+        node_query = node_query.filter(TaxonomyNode.lvl3 == body.lvl3)
+    else:
+        node_query = node_query.filter(TaxonomyNode.lvl3.is_(None))
+    if not node_query.first():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Taxonomy path not found: {body.lvl1}/{body.lvl2 or ''}/{body.lvl3 or ''}",
+        )
+
     updated = (
         db.query(Chunk)
         .filter(Chunk.id.in_(body.chunk_ids))

@@ -30,6 +30,16 @@ function getBindingVariant(status: string) {
   return "secondary"
 }
 
+// Helper to validate URL uses safe protocol (prevents javascript: XSS)
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
 // Helper function for binding status label
 function getBindingLabel(status: string) {
   if (status === "primary") return "绑定"
@@ -125,14 +135,18 @@ export function Component() {
                 <p className="text-sm font-medium text-muted-foreground">URL</p>
                 <p className="mt-1 text-sm">
                   {source.url ? (
-                    <a
-                      href={source.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      {source.url}
-                    </a>
+                    isSafeUrl(source.url) ? (
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        {source.url}
+                      </a>
+                    ) : (
+                      <span>{source.url}</span>
+                    )
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}

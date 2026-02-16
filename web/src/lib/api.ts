@@ -144,6 +144,7 @@ export function fetchChunks(params?: {
   source_id?: number
   lvl1?: string
   lvl2?: string
+  lvl3?: string
   binding_status?: string
   q?: string
 }): Promise<PaginatedResponse<ChunkListItem>> {
