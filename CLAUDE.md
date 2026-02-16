@@ -10,6 +10,17 @@ Bridge RAG System v1.0.0 — 桥梁知识检索增强生成系统。云端 RAG �
 
 ## Commands
 
+### Frontend (web/)
+
+```bash
+cd web && npm run dev    # Vite dev server
+cd web && npm run build  # TypeScript check + production build
+cd web && npm run lint   # ESLint
+cd web && npx tsc --noEmit  # Type check only (no build)
+```
+
+**Pages:** Dashboard, Chunks (list/detail), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest, Ask, Settings
+
 ### Development Setup
 
 **Recommended (Works on all platforms):**
@@ -39,6 +50,7 @@ The database schema is automatically initialized on first startup. No need to ma
 
 ### Testing
 
+```bash
 # Run all tests
 pytest tests/ -v
 
@@ -65,10 +77,11 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. The database URL defaults
 ## Database Schema Management
 
 The system uses automatic schema versioning:
-- Schema version is tracked in the `schema_version` table
-- Current version: 1 (initial schema with 1024-dim vectors)
+- Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
+- Current version: 2 (multi-bridge ingest with 1024-dim vectors)
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
+- Schema migration: `python scripts/migrate_db.py`
 
 ## Architecture
 
@@ -88,8 +101,9 @@ The system uses automatic schema versioning:
 - `app/services/context_enricher.py` — 为 chunk 生成上下文描述（80-160字），包含来源、主题、指代消歧
 - `app/services/tagger.py` — LLM 自动标注 lvl1/lvl2/lvl3/bridge_id
 - `app/services/tokenizer.py` — jieba 中文分词，支持自定义词典。生成 `to_tsvector_text()` 和 `to_tsquery()`
-- `app/services/facet_extractor.py` — 从问题抽取结构化维度（bridge_type/material/era/region/function），带枚举约束
+- `app/services/facet_extractor.py` — 从问题抽取结构化维度（bridge_type/material/era/region/function），带枚举约束。**注意:** `Facet` 是 `@dataclass`（非 Pydantic），序列化用 `dataclasses.asdict()` 而非 `model_dump()`
 - `app/services/hybrid_retriever.py` — 三通道检索 + RRF 融合，每通道内部 vector + FTS 双路召回再 RRF 合并
+- `app/services/bridge_linker.py` — 将 chunks 关联到 bridges（通过 `chunk_bridge_links` 表）
 - `app/services/ranker.py` — RRF 算法 + `apply_diversity()` 多样性约束（analogy 通道限每桥 1 条）
 - `app/services/generator.py` — 基于证据生成回答，输出引用和置信度
 
@@ -98,12 +112,14 @@ The system uses automatic schema versioning:
 **Configuration:**
 
 - `config/taxonomy.yaml` — 三级知识分类体系，通过 `app/core/constants.py` 加载（`@lru_cache`）
+- `app/core/taxonomy_loader.py` — DB-backed taxonomy loader（API/admin 使用）。`constants.py` 仅供 `tagger.py` 使用，两者独立
 - `config/facets.yaml` — Facet 枚举值（桥型、材料、年代、区域、功能）
 
 **Data Model:**
 
 - `chunks` — 核心检索单元，1024 维向量（IVFFLAT 索引，IVFFLAT 和 HNSW 均有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
 - `bridges` — 桥梁档案（bridge_type/material/era/location/function）
+- `chunk_bridge_links` — chunks ↔ bridges 多对多关联表
 - `taxonomy_nodes` — 三级目录结构
 - `sources` — 来源元信息
 
@@ -112,6 +128,11 @@ The system uses automatic schema versioning:
 - `GET /health` — Health check
 - `POST /api/v1/ask` — 问答端点，三通道混合检索，返回 `confidence` 和 `evidence_groups`
 - `POST /api/v1/ingest` — 入库端点，接受 Markdown 格式文档
+- `GET /api/v1/system/status` — 系统状态（只读，DB/配置信息）
+- CRUD: `/api/v1/chunks`, `/api/v1/bridges`, `/api/v1/stats`
+- Read-only: `/api/v1/sources`（仅 GET list + detail）
+- Tree CRUD: `/api/v1/taxonomy`（`GET tree`, `POST/PUT/DELETE nodes`, `POST batch-update`）
+- `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 
 ## Testing
 
