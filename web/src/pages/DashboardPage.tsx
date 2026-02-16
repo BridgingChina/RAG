@@ -2,7 +2,8 @@ import { PageHeader } from "@/components/layout/PageHeader"
 import { useApi } from "@/hooks/useApi"
 import { fetchDashboardStats } from "@/lib/api"
 import { StatCard } from "@/components/dashboard/StatCard"
-import { DistributionBar } from "@/components/dashboard/DistributionBar"
+import { BindingPieChart } from "@/components/dashboard/BindingPieChart"
+import { Lvl1BarChart } from "@/components/dashboard/Lvl1BarChart"
 import { IngestTimeline } from "@/components/dashboard/IngestTimeline"
 import {
   Card,
@@ -64,25 +65,7 @@ export function Component() {
                 <CardTitle>绑定状态分布</CardTitle>
               </CardHeader>
               <CardContent>
-                <DistributionBar
-                  items={[
-                    {
-                      label: "绑定",
-                      count: data.binding_distribution.primary,
-                      color: "bg-emerald-500",
-                    },
-                    {
-                      label: "歧义",
-                      count: data.binding_distribution.ambiguous,
-                      color: "bg-amber-500",
-                    },
-                    {
-                      label: "未绑定",
-                      count: data.binding_distribution.none,
-                      color: "bg-gray-300",
-                    },
-                  ]}
-                />
+                <BindingPieChart distribution={data.binding_distribution} />
               </CardContent>
             </Card>
 
@@ -92,37 +75,7 @@ export function Component() {
                 <CardTitle>知识分类分布</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {(() => {
-                    const total = data.lvl1_distribution.reduce(
-                      (sum, d) => sum + d.count,
-                      0,
-                    )
-                    return data.lvl1_distribution.map((item) => {
-                      const percentage =
-                        total > 0 ? (item.count / total) * 100 : 0
-                      return (
-                        <div key={item.label} className="space-y-1">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              {item.label}
-                            </span>
-                            <span className="font-medium">{item.count}</span>
-                          </div>
-                          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                            <div
-                              className="h-full bg-blue-500"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })
-                  })()}
-                  {data.lvl1_distribution.length === 0 && (
-                    <p className="text-sm text-muted-foreground">暂无数据</p>
-                  )}
-                </div>
+                <Lvl1BarChart data={data.lvl1_distribution} />
               </CardContent>
             </Card>
 
