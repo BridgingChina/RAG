@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { BridgeForm } from "@/components/bridges/BridgeForm"
+import { BridgeMergeDialog } from "@/components/bridges/BridgeMergeDialog"
 import { useApi } from "@/hooks/useApi"
 import {
   fetchBridge,
@@ -50,6 +51,7 @@ export function Component() {
   const navigate = useNavigate()
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data: bridge, loading, error, refetch } = useApi(
@@ -57,8 +59,8 @@ export function Component() {
     [id],
   )
 
-  const { data: chunksData } = useApi(
-    () => fetchBridgeChunks(Number(id)),
+  const { data: chunksData, refetch: refetchChunks } = useApi(
+    () => fetchBridgeChunks(Number(id), { page_size: 100 }),
     [id],
   )
 
@@ -120,6 +122,9 @@ export function Component() {
   return (
     <>
       <PageHeader title="桥梁详情">
+        <Button variant="outline" onClick={() => setIsMergeDialogOpen(true)}>
+          合并桥梁
+        </Button>
         <Button onClick={() => navigate("/bridges")} variant="outline">
           返回列表
         </Button>
@@ -247,6 +252,14 @@ export function Component() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Merge Dialog */}
+      <BridgeMergeDialog
+        targetBridge={bridge}
+        open={isMergeDialogOpen}
+        onOpenChange={setIsMergeDialogOpen}
+        onMerged={() => { refetch(); refetchChunks() }}
+      />
     </>
   )
 }

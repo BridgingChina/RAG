@@ -11,7 +11,7 @@ from app.api.v1.schemas.chunk import (
 )
 from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
-from app.models import Bridge, Chunk, ChunkBridgeLink, Source
+from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -23,6 +23,7 @@ def list_chunks(
     bridge_id: int | None = None,
     lvl1: str | None = None,
     lvl2: str | None = None,
+    lvl3: str | None = None,
     binding_status: str | None = None,
     source_id: int | None = None,
     q: str | None = None,
@@ -54,6 +55,8 @@ def list_chunks(
         query = query.filter(Chunk.lvl1 == lvl1)
     if lvl2 is not None:
         query = query.filter(Chunk.lvl2 == lvl2)
+    if lvl3 is not None:
+        query = query.filter(Chunk.lvl3 == lvl3)
     if binding_status is not None:
         query = query.filter(Chunk.bridge_binding_status == binding_status)
     if source_id is not None:
@@ -176,6 +179,28 @@ def update_chunk(
 
     # Get update data, excluding unset fields
     update_data = body.model_dump(exclude_unset=True)
+
+    # Validate taxonomy path exists if any lvl field is being set
+    new_lvl1 = update_data.get("lvl1", chunk.lvl1)
+    new_lvl2 = update_data.get("lvl2", chunk.lvl2)
+    new_lvl3 = update_data.get("lvl3", chunk.lvl3)
+    if any(k in update_data for k in ("lvl1", "lvl2", "lvl3")) and new_lvl1:
+        if new_lvl3 and not new_lvl2:
+            raise HTTPException(status_code=422, detail="lvl3 requires lvl2")
+        node_q = db.query(TaxonomyNode).filter(TaxonomyNode.lvl1 == new_lvl1)
+        if new_lvl2:
+            node_q = node_q.filter(TaxonomyNode.lvl2 == new_lvl2)
+        else:
+            node_q = node_q.filter(TaxonomyNode.lvl2.is_(None))
+        if new_lvl3:
+            node_q = node_q.filter(TaxonomyNode.lvl3 == new_lvl3)
+        else:
+            node_q = node_q.filter(TaxonomyNode.lvl3.is_(None))
+        if not node_q.first():
+            raise HTTPException(
+                status_code=422,
+                detail=f"Taxonomy path not found: {new_lvl1}/{new_lvl2 or ''}/{new_lvl3 or ''}",
+            )
 
     # Validate bridge_id exists if being set
     if "bridge_id" in update_data and update_data["bridge_id"] is not None:

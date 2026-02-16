@@ -20,6 +20,7 @@ from .bridge import (
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
+    BridgeMergeRequest,
     BridgeUpdate,
 )
 
@@ -39,12 +40,26 @@ from .ingest import (
     IngestedChunkSummary,
 )
 
+# Source schemas
+from .source import SourceDetail, SourceListItem
+
 # Stats schemas
 from .stats import (
     BindingDistribution,
     DashboardStats,
     Lvl1Distribution,
     RecentIngest,
+)
+
+# Taxonomy schemas
+from .taxonomy import (
+    TaxonomyBatchUpdate,
+    TaxonomyBatchUpdateResult,
+    TaxonomyNodeCreate,
+    TaxonomyNodeDetail,
+    TaxonomyNodeUpdate,
+    TaxonomyTree,
+    TaxonomyTreeItem,
 )
 
 __all__ = [
@@ -64,6 +79,7 @@ __all__ = [
     "BridgeCreate",
     "BridgeDetail",
     "BridgeListItem",
+    "BridgeMergeRequest",
     "BridgeUpdate",
     # Chunk
     "ChunkBridgeLinkDetail",
@@ -75,9 +91,20 @@ __all__ = [
     "IngestRequest",
     "IngestResponse",
     "IngestedChunkSummary",
+    # Source
+    "SourceDetail",
+    "SourceListItem",
     # Stats
     "BindingDistribution",
     "DashboardStats",
     "Lvl1Distribution",
     "RecentIngest",
+    # Taxonomy
+    "TaxonomyBatchUpdate",
+    "TaxonomyBatchUpdateResult",
+    "TaxonomyNodeCreate",
+    "TaxonomyNodeDetail",
+    "TaxonomyNodeUpdate",
+    "TaxonomyTree",
+    "TaxonomyTreeItem",
 ]

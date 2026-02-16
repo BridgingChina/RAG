@@ -1,7 +1,7 @@
 """Chunk management schemas."""
 from datetime import datetime
 from typing import Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ChunkListItem(BaseModel):
@@ -51,3 +51,12 @@ class ChunkUpdate(BaseModel):
     lvl3: str | None = None
     bridge_id: int | None = None
     binding_status: Literal["none", "primary", "ambiguous"] | None = None
+
+    @field_validator("lvl1", "lvl2", "lvl3", mode="before")
+    @classmethod
+    def normalize_empty(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip() if isinstance(v, str) else v
+            if isinstance(v, str) and not v:
+                return None
+        return v

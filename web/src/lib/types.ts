@@ -209,3 +209,69 @@ export interface BridgeUpdateRequest {
   function?: string | null
   summary?: string | null
 }
+
+export interface BridgeMergeRequest {
+  source_bridge_id: number
+}
+
+// --- Sources ---
+
+export interface SourceListItem {
+  id: number
+  type: string
+  title: string
+  url: string | null
+  chunk_count: number
+  created_at: string
+}
+
+export interface SourceDetail {
+  id: number
+  type: string
+  title: string
+  url: string | null
+  file_path: string | null
+  accessed_at: string | null
+  chunk_count: number
+  created_at: string
+}
+
+// --- Taxonomy ---
+
+export interface TaxonomyTreeItem {
+  node_id: number
+  label: string
+  chunk_count: number
+  children: TaxonomyTreeItem[]
+}
+
+export interface TaxonomyTree {
+  items: TaxonomyTreeItem[]
+}
+
+export interface TaxonomyNodeDetail {
+  id: number
+  lvl1: string
+  lvl2: string | null
+  lvl3: string | null
+  description: string | null
+  chunk_count: number
+}
+
+export interface TaxonomyNodeCreate {
+  lvl1: string
+  lvl2?: string | null
+  lvl3?: string | null
+  description?: string | null
+}
+
+export interface TaxonomyBatchUpdate {
+  chunk_ids: number[]
+  lvl1: string
+  lvl2?: string | null
+  lvl3?: string | null
+}
+
+export interface TaxonomyBatchUpdateResult {
+  updated_count: number
+}

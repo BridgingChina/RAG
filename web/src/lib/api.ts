@@ -3,6 +3,7 @@ import type {
   BridgeCreateRequest,
   BridgeDetail,
   BridgeListItem,
+  BridgeMergeRequest,
   BridgeUpdateRequest,
   ChunkDetail,
   ChunkListItem,
@@ -10,6 +11,13 @@ import type {
   DashboardStats,
   IngestResponse,
   PaginatedResponse,
+  SourceDetail,
+  SourceListItem,
+  TaxonomyBatchUpdate,
+  TaxonomyBatchUpdateResult,
+  TaxonomyNodeCreate,
+  TaxonomyNodeDetail,
+  TaxonomyTree,
 } from "./types"
 
 const BASE = "/api/v1"
@@ -133,8 +141,10 @@ export function fetchChunks(params?: {
   page?: number
   page_size?: number
   bridge_id?: number
+  source_id?: number
   lvl1?: string
   lvl2?: string
+  lvl3?: string
   binding_status?: string
   q?: string
 }): Promise<PaginatedResponse<ChunkListItem>> {
@@ -187,6 +197,56 @@ export function deleteBridge(id: number): Promise<void> {
 
 export function fetchBridgeChunks(
   id: number,
+  params?: { page?: number; page_size?: number },
 ): Promise<PaginatedResponse<ChunkListItem>> {
-  return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`)
+  return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`, params)
+}
+
+export function mergeBridge(
+  targetId: number,
+  data: BridgeMergeRequest,
+): Promise<BridgeDetail> {
+  return post<BridgeDetail>(`/bridges/${targetId}/merge`, data)
+}
+
+// --- Sources ---
+
+export function fetchSources(params?: {
+  page?: number
+  page_size?: number
+  q?: string
+  type?: string
+}): Promise<PaginatedResponse<SourceListItem>> {
+  return get<PaginatedResponse<SourceListItem>>("/sources", params)
+}
+
+export function fetchSource(id: number): Promise<SourceDetail> {
+  return get<SourceDetail>(`/sources/${id}`)
+}
+
+// --- Taxonomy ---
+
+export function fetchTaxonomyTree(): Promise<TaxonomyTree> {
+  return get<TaxonomyTree>("/taxonomy/tree")
+}
+
+export function createTaxonomyNode(data: TaxonomyNodeCreate): Promise<TaxonomyNodeDetail> {
+  return post<TaxonomyNodeDetail>("/taxonomy/nodes", data)
+}
+
+export function updateTaxonomyNode(
+  id: number,
+  data: { description?: string | null },
+): Promise<TaxonomyNodeDetail> {
+  return put<TaxonomyNodeDetail>(`/taxonomy/nodes/${id}`, data)
+}
+
+export function deleteTaxonomyNode(id: number): Promise<void> {
+  return del(`/taxonomy/nodes/${id}`)
+}
+
+export function batchUpdateTaxonomy(
+  data: TaxonomyBatchUpdate,
+): Promise<TaxonomyBatchUpdateResult> {
+  return post<TaxonomyBatchUpdateResult>("/taxonomy/batch-update", data)
 }

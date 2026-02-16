@@ -228,6 +228,37 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         )
 
 
+def _seed_taxonomy_if_empty(conn: Connection) -> None:
+    """Seed taxonomy_nodes from config/taxonomy.yaml if table is empty."""
+    result = conn.execute(text("SELECT COUNT(*) FROM taxonomy_nodes"))
+    if result.scalar_one() > 0:
+        return
+
+    from app.core.constants import load_taxonomy
+
+    taxonomy = load_taxonomy()
+
+    for lvl1, lvl2_dict in taxonomy.items():
+        conn.execute(
+            text("INSERT INTO taxonomy_nodes (lvl1) VALUES (:lvl1)"),
+            {"lvl1": lvl1},
+        )
+        for lvl2, lvl3_list in lvl2_dict.items():
+            conn.execute(
+                text(
+                    "INSERT INTO taxonomy_nodes (lvl1, lvl2) VALUES (:lvl1, :lvl2)"
+                ),
+                {"lvl1": lvl1, "lvl2": lvl2},
+            )
+            for lvl3 in lvl3_list:
+                conn.execute(
+                    text(
+                        "INSERT INTO taxonomy_nodes (lvl1, lvl2, lvl3) VALUES (:lvl1, :lvl2, :lvl3)"
+                    ),
+                    {"lvl1": lvl1, "lvl2": lvl2, "lvl3": lvl3},
+                )
+
+
 def init_database() -> None:
     """Initialize database schema if needed.
 
@@ -273,6 +304,9 @@ def init_database() -> None:
 
             # Create all tables using the same connection/transaction
             Base.metadata.create_all(conn)
+
+            # Seed taxonomy_nodes from YAML if empty
+            _seed_taxonomy_if_empty(conn)
 
             # Verify schema compatibility before stamping version
             verify_schema_compatibility(engine, conn=conn)

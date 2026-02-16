@@ -49,3 +49,7 @@ class BridgeUpdate(BaseModel):
     location: str | None = None
     function: str | None = None
     summary: str | None = None
+
+
+class BridgeMergeRequest(BaseModel):
+    source_bridge_id: int

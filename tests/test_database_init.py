@@ -287,12 +287,13 @@ class TestInitDatabase:
     """Tests for init_database()."""
 
     @patch("app.models.Base")
+    @patch("app.core.database._seed_taxonomy_if_empty")
     @patch("app.core.database.verify_schema_compatibility")
     @patch("app.core.database.get_current_schema_version")
     @patch("app.core.database.set_schema_version")
     @patch("app.core.database.engine")
     def test_init_database_success(
-        self, mock_engine, mock_set_version, mock_get_version, mock_verify, mock_base
+        self, mock_engine, mock_set_version, mock_get_version, mock_verify, mock_seed, mock_base
     ):
         """Should initialize all tables and set version to 2."""
         # Database not initialized yet
@@ -307,6 +308,9 @@ class TestInitDatabase:
 
         # Verify tables created
         mock_base.metadata.create_all.assert_called_once_with(mock_conn)
+
+        # Verify taxonomy seeded
+        mock_seed.assert_called_once_with(mock_conn)
 
         # Verify schema compatibility checked
         mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)

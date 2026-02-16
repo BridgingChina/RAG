@@ -22,3 +22,8 @@ def test_bridges_create_accepts_post():
 def test_bridges_chunks_endpoint_exists():
     route_paths = [route.path for route in app.routes]
     assert "/api/v1/bridges/{bridge_id}/chunks" in route_paths
+
+
+def test_bridges_merge_endpoint_exists():
+    route_paths = [route.path for route in app.routes]
+    assert "/api/v1/bridges/{target_id}/merge" in route_paths
