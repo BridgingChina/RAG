@@ -210,6 +210,10 @@ export interface BridgeUpdateRequest {
   summary?: string | null
 }
 
+export interface BridgeMergeRequest {
+  source_bridge_id: number
+}
+
 // --- Sources ---
 
 export interface SourceListItem {

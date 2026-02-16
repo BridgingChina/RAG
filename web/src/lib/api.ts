@@ -3,6 +3,7 @@ import type {
   BridgeCreateRequest,
   BridgeDetail,
   BridgeListItem,
+  BridgeMergeRequest,
   BridgeUpdateRequest,
   ChunkDetail,
   ChunkListItem,
@@ -197,6 +198,13 @@ export function fetchBridgeChunks(
   id: number,
 ): Promise<PaginatedResponse<ChunkListItem>> {
   return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`)
+}
+
+export function mergeBridge(
+  targetId: number,
+  data: BridgeMergeRequest,
+): Promise<BridgeDetail> {
+  return post<BridgeDetail>(`/bridges/${targetId}/merge`, data)
 }
 
 // --- Sources ---
