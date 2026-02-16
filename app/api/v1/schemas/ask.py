@@ -57,7 +57,7 @@ class ChannelDebugResponse(BaseModel):
     filter_desc: str
     vec_ids: list[int]
     fts_ids: list[int]
-    rrf_scores: list[list]  # [[chunk_id, score], ...]
+    rrf_scores: list[list[int | float]]  # [[chunk_id, score], ...]
     final_ids: list[int]
 
 

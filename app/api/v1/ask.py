@@ -69,6 +69,7 @@ def ask(
     async def _run():
         degraded: list[str] = []
         want_debug = request.debug
+        t_start = t_facet = t_gen = 0.0
 
         if want_debug:
             t_start = time.perf_counter()
@@ -78,16 +79,14 @@ def ask(
             target_bridge_id = request.context.bridge_id
 
         facet = None
+        if want_debug:
+            t0 = time.perf_counter()
         try:
-            if want_debug:
-                t0 = time.perf_counter()
             facet = await facet_extractor.extract(request.question)
-            if want_debug:
-                t_facet = time.perf_counter() - t0
         except Exception:
             degraded.append("facet")
-            if want_debug:
-                t_facet = time.perf_counter() - t0
+        if want_debug:
+            t_facet = time.perf_counter() - t0
 
         try:
             evidence = await retriever.retrieve(

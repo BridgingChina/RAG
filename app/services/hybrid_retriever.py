@@ -175,7 +175,8 @@ class HybridRetriever:
         channel_debugs: list[ChannelDebug] = []
 
         # Get query embedding
-        t0 = time.perf_counter()
+        if debug:
+            t0 = time.perf_counter()
         embeddings = await self.provider.embed([query])
         query_embedding = embeddings[0]
         if debug:
@@ -189,7 +190,8 @@ class HybridRetriever:
         # Execute three channels
         anchor_chunks: list[RetrievedChunk] = []
         if target_bridge_id is not None and anchor_quota > 0:
-            t0 = time.perf_counter()
+            if debug:
+                t0 = time.perf_counter()
             anchor_chunks, anchor_dbg = await self._retrieve_channel(
                 db,
                 query,
@@ -206,7 +208,8 @@ class HybridRetriever:
 
         concept_chunks: list[RetrievedChunk] = []
         if concept_quota > 0:
-            t0 = time.perf_counter()
+            if debug:
+                t0 = time.perf_counter()
             concept_chunks, concept_dbg = await self._retrieve_channel(
                 db,
                 query,
@@ -224,7 +227,8 @@ class HybridRetriever:
 
         analogy_chunks: list[RetrievedChunk] = []
         if analogy_bridge_ids and analogy_quota > 0:
-            t0 = time.perf_counter()
+            if debug:
+                t0 = time.perf_counter()
             analogy_chunks, analogy_dbg = await self._retrieve_channel(
                 db,
                 query,

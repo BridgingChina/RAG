@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.system import SystemStatus
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import engine, get_current_schema_version, get_db
 from app.services.hybrid_retriever import DEFAULT_QUOTA, RRF_K
 
 router = APIRouter(prefix="/system")
@@ -20,13 +20,9 @@ def system_status(db: Session = Depends(get_db)):
     db_version = None
     schema_version = None
     try:
-        row = db.execute(text("SELECT version()")).scalar()
-        db_version = row
+        db_version = db.execute(text("SELECT version()")).scalar()
         db_connected = True
-        sv = db.execute(
-            text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
-        ).scalar()
-        schema_version = sv
+        schema_version = get_current_schema_version(engine)
     except Exception:
         pass
 
