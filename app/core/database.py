@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 
 
 def get_db():
@@ -228,6 +228,19 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         )
 
 
+def _migrate_schema(engine: Engine, current_version: int, *, conn: Connection) -> None:
+    """Run incremental schema migrations."""
+    if current_version < 3:
+        logger.info("Migrating schema v2 → v3: adding users and audit_logs tables...")
+        from app.models.user import User
+        from app.models.audit_log import AuditLog
+
+        User.__table__.create(conn, checkfirst=True)
+        AuditLog.__table__.create(conn, checkfirst=True)
+        set_schema_version(engine, 3, "Add users and audit_logs tables", conn=conn)
+        logger.info("Migration to v3 complete.")
+
+
 def _seed_taxonomy_if_empty(conn: Connection) -> None:
     """Seed taxonomy_nodes from config/taxonomy.yaml if table is empty."""
     result = conn.execute(text("SELECT COUNT(*) FROM taxonomy_nodes"))
@@ -285,13 +298,15 @@ def init_database() -> None:
             # Re-check version after acquiring lock (another process may have just initialized)
             current_version = get_current_schema_version(engine, conn=conn)
             if current_version is not None:
-                verify_schema_compatibility(engine, conn=conn)
-                if current_version != LATEST_SCHEMA_VERSION:
+                if current_version < LATEST_SCHEMA_VERSION:
+                    _migrate_schema(engine, current_version, conn=conn)
+                elif current_version > LATEST_SCHEMA_VERSION:
                     raise RuntimeError(
                         f"Unsupported database schema version {current_version}. "
                         f"Expected {LATEST_SCHEMA_VERSION}. Migration required."
                     )
-                logger.info(f"Database already initialized at version {current_version}")
+                verify_schema_compatibility(engine, conn=conn)
+                logger.info(f"Database already initialized at version {get_current_schema_version(engine, conn=conn)}")
                 return
 
             logger.info("Initializing database schema...")
@@ -313,7 +328,7 @@ def init_database() -> None:
 
             # Set initial version
             set_schema_version(
-                engine, LATEST_SCHEMA_VERSION, "Schema v2 multi-bridge ingest", conn=conn
+                engine, LATEST_SCHEMA_VERSION, "Schema v3 with users and audit_logs", conn=conn
             )
 
             logger.info("Database initialization completed successfully")

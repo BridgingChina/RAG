@@ -9,6 +9,7 @@ from app.core.database import (
     set_schema_version,
     init_database,
     verify_schema_compatibility,
+    LATEST_SCHEMA_VERSION,
 )
 
 
@@ -295,7 +296,7 @@ class TestInitDatabase:
     def test_init_database_success(
         self, mock_engine, mock_set_version, mock_get_version, mock_verify, mock_seed, mock_base
     ):
-        """Should initialize all tables and set version to 2."""
+        """Should initialize all tables and set version to LATEST_SCHEMA_VERSION."""
         # Database not initialized yet
         mock_get_version.return_value = None
 
@@ -315,9 +316,9 @@ class TestInitDatabase:
         # Verify schema compatibility checked
         mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)
 
-        # Verify version set to 2
+        # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, 2, "Schema v2 multi-bridge ingest", conn=mock_conn
+            mock_engine, LATEST_SCHEMA_VERSION, "Schema v3 with users and audit_logs", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")
@@ -328,9 +329,9 @@ class TestInitDatabase:
     def test_init_database_already_initialized(
         self, mock_logger, mock_engine, mock_set_version, mock_get_version, mock_verify
     ):
-        """Should skip initialization when version=2 exists."""
-        # Database already initialized
-        mock_get_version.return_value = 2
+        """Should skip initialization when version=LATEST_SCHEMA_VERSION exists."""
+        # Database already initialized at latest version
+        mock_get_version.return_value = LATEST_SCHEMA_VERSION
 
         mock_conn = MagicMock()
         mock_engine.begin.return_value.__enter__ = Mock(return_value=mock_conn)
@@ -373,13 +374,12 @@ class TestInitDatabase:
         # Verify error was logged
         mock_logger.error.assert_called()
 
-    @patch("app.core.database.verify_schema_compatibility")
     @patch("app.core.database.get_current_schema_version")
     @patch("app.core.database.engine")
     def test_init_database_fails_on_version_mismatch(
-        self, mock_engine, mock_get_version, mock_verify
+        self, mock_engine, mock_get_version
     ):
-        """Should fail fast when schema_version doesn't match LATEST_SCHEMA_VERSION."""
+        """Should fail fast when schema_version is higher than LATEST_SCHEMA_VERSION."""
         mock_get_version.return_value = 999
 
         mock_conn = MagicMock()
@@ -390,4 +390,3 @@ class TestInitDatabase:
             init_database()
 
         assert "Unsupported database schema version" in str(exc_info.value)
-        mock_verify.assert_called_once_with(mock_engine, conn=mock_conn)
