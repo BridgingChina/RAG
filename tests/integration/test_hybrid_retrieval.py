@@ -79,7 +79,7 @@ async def test_retrieve_channel_rrf_fuses_vec_and_fts(db_session, test_bridges, 
     retriever = HybridRetriever(provider=provider, tokenizer=Tokenizer())
 
     limit = 3
-    results = await retriever._retrieve_channel(
+    results, _dbg = await retriever._retrieve_channel(
         db_session,
         query,
         query_embedding,
@@ -109,7 +109,7 @@ async def test_apply_diversity_limits_one_per_bridge_for_analogy_channel(
     query_embedding = _emb(1.0, 0.0)
     retriever = HybridRetriever(provider=MockProvider(query_embedding), tokenizer=Tokenizer())
 
-    results = await retriever._retrieve_channel(
+    results, _dbg = await retriever._retrieve_channel(
         db_session,
         query="石拱桥",
         query_embedding=query_embedding,
