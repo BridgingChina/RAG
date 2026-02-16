@@ -1,8 +1,9 @@
 """Chunks CRUD API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.chunk import (
     ChunkBridgeLinkDetail,
     ChunkDetail,
@@ -11,7 +12,8 @@ from app.api.v1.schemas.chunk import (
 )
 from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
-from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode
+from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -169,7 +171,11 @@ def get_chunk(chunk_id: int, db: Session = Depends(get_db)) -> ChunkDetail:
 
 @router.put("/{chunk_id}", response_model=ChunkDetail)
 def update_chunk(
-    chunk_id: int, body: ChunkUpdate, db: Session = Depends(get_db)
+    chunk_id: int,
+    body: ChunkUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ChunkDetail:
     """Update a chunk's metadata."""
     # Fetch the chunk
@@ -224,17 +230,41 @@ def update_chunk(
     db.commit()
     db.refresh(chunk)
 
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="chunk",
+        user_id=current_user.id,
+        resource_id=str(chunk_id),
+        ip_address=get_client_ip(request),
+    )
+
     # Return full detail using the get endpoint
     return get_chunk(chunk_id, db)
 
 
 @router.delete("/{chunk_id}", status_code=204)
-def delete_chunk(chunk_id: int, db: Session = Depends(get_db)) -> None:
+def delete_chunk(
+    chunk_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
     """Delete a chunk and its bridge links."""
     # Fetch the chunk
     chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
+
+    # Audit log before delete so flush happens before the row is removed
+    AuditService.log(
+        db,
+        action=AuditService.DELETE,
+        resource_type="chunk",
+        user_id=current_user.id,
+        resource_id=str(chunk_id),
+        ip_address=get_client_ip(request),
+    )
 
     # Delete associated bridge links first
     db.query(ChunkBridgeLink).filter(ChunkBridgeLink.chunk_id == chunk_id).delete()

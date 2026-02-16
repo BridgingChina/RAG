@@ -1,8 +1,9 @@
 """Bridges CRUD API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.bridge import (
     BridgeCreate,
     BridgeDetail,
@@ -13,7 +14,8 @@ from app.api.v1.schemas.bridge import (
 from app.api.v1.schemas.chunk import ChunkListItem
 from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
-from app.models import Bridge, Chunk, ChunkBridgeLink, Source
+from app.models import Bridge, Chunk, ChunkBridgeLink, Source, User
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/bridges", tags=["bridges"])
 
@@ -110,7 +112,10 @@ def get_bridge(bridge_id: int, db: Session = Depends(get_db)) -> BridgeDetail:
 
 @router.post("", response_model=BridgeDetail, status_code=201)
 def create_bridge(
-    body: BridgeCreate, db: Session = Depends(get_db)
+    body: BridgeCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> BridgeDetail:
     """Create a new bridge."""
     # Create the bridge
@@ -118,6 +123,15 @@ def create_bridge(
     db.add(bridge)
     db.commit()
     db.refresh(bridge)
+
+    AuditService.log(
+        db,
+        action=AuditService.CREATE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        resource_id=str(bridge.id),
+        ip_address=get_client_ip(request),
+    )
 
     # Return detail with chunk_count = 0 for new bridge
     return BridgeDetail(
@@ -137,7 +151,11 @@ def create_bridge(
 
 @router.put("/{bridge_id}", response_model=BridgeDetail)
 def update_bridge(
-    bridge_id: int, body: BridgeUpdate, db: Session = Depends(get_db)
+    bridge_id: int,
+    body: BridgeUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> BridgeDetail:
     """Update a bridge's metadata."""
     # Fetch the bridge
@@ -155,12 +173,26 @@ def update_bridge(
     db.commit()
     db.refresh(bridge)
 
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        resource_id=str(bridge_id),
+        ip_address=get_client_ip(request),
+    )
+
     # Return full detail using the get endpoint
     return get_bridge(bridge_id, db)
 
 
 @router.delete("/{bridge_id}", status_code=204)
-def delete_bridge(bridge_id: int, db: Session = Depends(get_db)) -> None:
+def delete_bridge(
+    bridge_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
     """Delete a bridge if it has no associated chunks."""
     # Fetch the bridge
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
@@ -174,6 +206,16 @@ def delete_bridge(bridge_id: int, db: Session = Depends(get_db)) -> None:
             status_code=409,
             detail=f"Cannot delete bridge with {chunk_count} associated chunks",
         )
+
+    # Audit log before delete so flush happens before the row is removed
+    AuditService.log(
+        db,
+        action=AuditService.DELETE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        resource_id=str(bridge_id),
+        ip_address=get_client_ip(request),
+    )
 
     # Delete any secondary bridge links referencing this bridge
     db.query(ChunkBridgeLink).filter(
@@ -253,7 +295,11 @@ def get_bridge_chunks(
 
 @router.post("/{target_id}/merge", response_model=BridgeDetail)
 def merge_bridges(
-    target_id: int, body: BridgeMergeRequest, db: Session = Depends(get_db)
+    target_id: int,
+    body: BridgeMergeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> BridgeDetail:
     """Merge source bridge into target bridge.
 
@@ -303,6 +349,16 @@ def merge_bridges(
     # 4. Delete source bridge
     db.delete(source)
     db.commit()
+
+    AuditService.log(
+        db,
+        action=AuditService.MERGE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        resource_id=str(target_id),
+        detail={"source_bridge_id": body.source_bridge_id},
+        ip_address=get_client_ip(request),
+    )
 
     # Return updated target
     return get_bridge(target_id, db)
