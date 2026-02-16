@@ -39,6 +39,9 @@ from .ingest import (
     IngestedChunkSummary,
 )
 
+# Source schemas
+from .source import SourceDetail, SourceListItem
+
 # Stats schemas
 from .stats import (
     BindingDistribution,
@@ -75,6 +78,9 @@ __all__ = [
     "IngestRequest",
     "IngestResponse",
     "IngestedChunkSummary",
+    # Source
+    "SourceDetail",
+    "SourceListItem",
     # Stats
     "BindingDistribution",
     "DashboardStats",
