@@ -7,6 +7,7 @@ from app.api.v1.schemas.bridge import (
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
+    BridgeMergeRequest,
     BridgeUpdate,
 )
 from app.api.v1.schemas.chunk import ChunkListItem
@@ -248,3 +249,60 @@ def get_bridge_chunks(
         page_size=page_size,
         total_pages=total_pages,
     )
+
+
+@router.post("/{target_id}/merge", response_model=BridgeDetail)
+def merge_bridges(
+    target_id: int, body: BridgeMergeRequest, db: Session = Depends(get_db)
+) -> BridgeDetail:
+    """Merge source bridge into target bridge.
+
+    Migrates all chunks, links, and aliases from source to target, then deletes source.
+    """
+    if body.source_bridge_id == target_id:
+        raise HTTPException(status_code=422, detail="Cannot merge a bridge into itself")
+
+    target = db.query(Bridge).filter(Bridge.id == target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target bridge not found")
+
+    source = db.query(Bridge).filter(Bridge.id == body.source_bridge_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source bridge not found")
+
+    # 1. Migrate primary chunks (bridge_id FK)
+    db.query(Chunk).filter(Chunk.bridge_id == source.id).update(
+        {Chunk.bridge_id: target.id}, synchronize_session=False
+    )
+
+    # 2. Migrate chunk_bridge_links (skip duplicates)
+    existing_links = set(
+        db.query(ChunkBridgeLink.chunk_id)
+        .filter(ChunkBridgeLink.bridge_id == target.id)
+        .scalars()
+        .all()
+    )
+    source_links = (
+        db.query(ChunkBridgeLink)
+        .filter(ChunkBridgeLink.bridge_id == source.id)
+        .all()
+    )
+    for link in source_links:
+        if link.chunk_id in existing_links:
+            db.delete(link)
+        else:
+            link.bridge_id = target.id
+
+    # 3. Merge aliases (dedupe, preserve order)
+    source_aliases = [s.strip() for s in (source.aliases or "").split(",") if s.strip()]
+    source_aliases.append(source.name)
+    target_aliases = [s.strip() for s in (target.aliases or "").split(",") if s.strip()]
+    merged = list(dict.fromkeys(target_aliases + source_aliases))
+    target.aliases = ", ".join(merged) if merged else None
+
+    # 4. Delete source bridge
+    db.delete(source)
+    db.commit()
+
+    # Return updated target
+    return get_bridge(target_id, db)
