@@ -8,10 +8,12 @@ from .ask import (
     AskContext,
     AskRequest,
     AskResponse,
+    ChannelDebugResponse,
     ChunkSummary,
     CitationResponse,
     ConfidenceLevel,
     ConfidenceResponse,
+    DebugResponse,
     EvidenceGroupsResponse,
 )
 
@@ -43,6 +45,9 @@ from .ingest import (
 # Source schemas
 from .source import SourceDetail, SourceListItem
 
+# System schemas
+from .system import SystemStatus
+
 # Stats schemas
 from .stats import (
     BindingDistribution,
@@ -70,10 +75,12 @@ __all__ = [
     "AskContext",
     "AskRequest",
     "AskResponse",
+    "ChannelDebugResponse",
     "ChunkSummary",
     "CitationResponse",
     "ConfidenceLevel",
     "ConfidenceResponse",
+    "DebugResponse",
     "EvidenceGroupsResponse",
     # Bridge
     "BridgeCreate",
@@ -94,6 +101,8 @@ __all__ = [
     # Source
     "SourceDetail",
     "SourceListItem",
+    # System
+    "SystemStatus",
     # Stats
     "BindingDistribution",
     "DashboardStats",

@@ -29,3 +29,14 @@ def test_ask_v1_endpoint_schema(client):
     assert response.status_code == 422  # Missing required field 'question'
 
 
+def test_ask_v1_accepts_debug_param():
+    """Ask endpoint accepts debug field without error (422)."""
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.post("/api/v1/ask", json={
+        "question": "测试问题",
+        "debug": True,
+    })
+    # May get 500 (no DB / no API key), but must NOT be 422 (validation)
+    assert response.status_code != 422
+
+

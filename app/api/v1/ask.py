@@ -1,5 +1,6 @@
 """V1 Ask API endpoint."""
 import asyncio
+import time
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -7,9 +8,11 @@ from sqlalchemy.orm import Session
 from app.api.v1.schemas import (
     AskRequest,
     AskResponse,
+    ChannelDebugResponse,
     ChunkSummary,
     CitationResponse,
     ConfidenceResponse,
+    DebugResponse,
     EvidenceGroupsResponse,
 )
 from app.core.database import get_db
@@ -65,16 +68,25 @@ def ask(
 
     async def _run():
         degraded: list[str] = []
+        want_debug = request.debug
+        t_start = t_facet = t_gen = 0.0
+
+        if want_debug:
+            t_start = time.perf_counter()
 
         target_bridge_id = request.target_bridge_id
         if not target_bridge_id and request.context:
             target_bridge_id = request.context.bridge_id
 
         facet = None
+        if want_debug:
+            t0 = time.perf_counter()
         try:
             facet = await facet_extractor.extract(request.question)
         except Exception:
             degraded.append("facet")
+        if want_debug:
+            t_facet = time.perf_counter() - t0
 
         try:
             evidence = await retriever.retrieve(
@@ -82,6 +94,7 @@ def ask(
                 request.question,
                 target_bridge_id=target_bridge_id,
                 facet=facet,
+                debug=want_debug,
             )
             degraded.extend(retriever.last_degraded)
         except Exception:
@@ -96,7 +109,11 @@ def ask(
 
         degraded = list(dict.fromkeys(degraded))
 
+        if want_debug:
+            t0 = time.perf_counter()
         result = await generator.generate_v2(request.question, evidence)
+        if want_debug:
+            t_gen = time.perf_counter() - t0
 
         evidence_groups = EvidenceGroupsResponse(
             anchor=[
@@ -134,6 +151,44 @@ def ask(
             ],
         )
 
+        # Build debug response if requested
+        debug_response = None
+        if want_debug:
+            # Merge retriever-level timings with ask-level timings
+            timings: dict[str, float] = {}
+            if evidence.debug and evidence.debug.timings:
+                timings.update(evidence.debug.timings)
+            timings["facet"] = t_facet
+            timings["generate"] = t_gen
+            timings["total"] = time.perf_counter() - t_start
+
+            # Convert ChannelDebug dataclasses → ChannelDebugResponse schemas
+            channels: list[ChannelDebugResponse] = []
+            if evidence.debug and evidence.debug.channels:
+                for cd in evidence.debug.channels:
+                    channels.append(
+                        ChannelDebugResponse(
+                            channel=cd.channel,
+                            filter_desc=cd.filter_desc,
+                            vec_ids=cd.vec_ids,
+                            fts_ids=cd.fts_ids,
+                            rrf_scores=[
+                                [cid, score] for cid, score in cd.rrf_scores
+                            ],
+                            final_ids=cd.final_ids,
+                        )
+                    )
+
+            debug_response = DebugResponse(
+                facet=(
+                    evidence.debug.facet
+                    if evidence.debug
+                    else None
+                ),
+                channels=channels,
+                timings=timings,
+            )
+
         return AskResponse(
             summary=result.summary,
             details=result.details,
@@ -153,6 +208,7 @@ def ask(
             ),
             evidence_groups=evidence_groups,
             degraded=degraded if degraded else None,
+            debug=debug_response,
         )
 
     return asyncio.run(_run())

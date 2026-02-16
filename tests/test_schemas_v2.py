@@ -53,3 +53,36 @@ def test_evidence_groups_response_has_three_channels():
     assert groups.anchor[0].preview == "Anchor text"
     assert groups.concept[0].preview == "Concept text"
     assert groups.analogy[0].preview == "Analogy text"
+
+
+def test_debug_response_schema():
+    """DebugResponse serializes correctly."""
+    from app.api.v1.schemas.ask import ChannelDebugResponse, DebugResponse
+
+    channel = ChannelDebugResponse(
+        channel="anchor",
+        filter_desc="bridge_id=1",
+        vec_ids=[10, 20],
+        fts_ids=[20, 30],
+        rrf_scores=[[20, 0.033], [10, 0.016], [30, 0.016]],
+        final_ids=[20, 10],
+    )
+    debug = DebugResponse(
+        facet={"bridge_type": "拱桥"},
+        channels=[channel],
+        timings={"embed": 0.12, "anchor": 0.08},
+    )
+    data = debug.model_dump()
+    assert data["channels"][0]["channel"] == "anchor"
+    assert data["timings"]["embed"] == 0.12
+
+
+def test_ask_request_accepts_debug_flag():
+    """AskRequest accepts optional debug field."""
+    from app.api.v1.schemas.ask import AskRequest
+
+    req = AskRequest(question="test", debug=True)
+    assert req.debug is True
+
+    req_default = AskRequest(question="test")
+    assert req_default.debug is False

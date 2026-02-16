@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react"
 import type { AskResponse } from "@/lib/types"
 import { ConfidenceBadge } from "./ConfidenceBadge"
 import { EvidenceGrid } from "./EvidenceGrid"
+import { DebugPanel } from "./DebugPanel"
 
 export function AnswerDisplay({ data }: { data: AskResponse }) {
   return (
@@ -52,6 +53,8 @@ export function AnswerDisplay({ data }: { data: AskResponse }) {
           </ul>
         </div>
       )}
+
+      {data.debug && <DebugPanel debug={data.debug} />}
     </div>
   )
 }

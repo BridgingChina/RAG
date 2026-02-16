@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 import { Search, ChevronDown, Loader2 } from "lucide-react"
 import { askQuestion } from "@/lib/api"
 import type { AskResponse } from "@/lib/types"
@@ -10,6 +12,7 @@ export function AskPanel() {
   const [question, setQuestion] = useState("")
   const [bridgeId, setBridgeId] = useState("")
   const [showFilters, setShowFilters] = useState(false)
+  const [debug, setDebug] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<AskResponse | null>(null)
@@ -22,7 +25,7 @@ export function AskPanel() {
     setResult(null)
     try {
       const bid = bridgeId ? parseInt(bridgeId, 10) : undefined
-      const res = await askQuestion(q, isNaN(bid as number) ? undefined : bid)
+      const res = await askQuestion(q, isNaN(bid as number) ? undefined : bid, debug)
       setResult(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : "请求失败")
@@ -62,6 +65,10 @@ export function AskPanel() {
             )}
             {loading ? "检索中…" : "提问"}
           </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch id="debug-mode" checked={debug} onCheckedChange={setDebug} />
+          <Label htmlFor="debug-mode" className="text-xs text-slate-500 cursor-pointer">调试模式</Label>
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}

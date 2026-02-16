@@ -18,6 +18,7 @@ import {
   FolderTree,
   Upload,
   MessageSquare,
+  Settings,
 } from "lucide-react"
 
 const navGroups = [
@@ -41,6 +42,12 @@ const navGroups = [
     items: [
       { path: "/ingest", icon: Upload, label: "入库" },
       { path: "/ask", icon: MessageSquare, label: "问答测试" },
+    ],
+  },
+  {
+    label: "系统",
+    items: [
+      { path: "/settings", icon: Settings, label: "设置" },
     ],
   },
 ]

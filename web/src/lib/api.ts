@@ -13,6 +13,7 @@ import type {
   PaginatedResponse,
   SourceDetail,
   SourceListItem,
+  SystemStatus,
   TaxonomyBatchUpdate,
   TaxonomyBatchUpdateResult,
   TaxonomyNodeCreate,
@@ -104,10 +105,12 @@ async function del(url: string): Promise<void> {
 export function askQuestion(
   question: string,
   targetBridgeId?: number | null,
+  debug?: boolean,
 ): Promise<AskResponse> {
   return post<AskResponse>("/ask", {
     question,
     target_bridge_id: targetBridgeId ?? null,
+    debug: debug ?? false,
   })
 }
 
@@ -249,4 +252,10 @@ export function batchUpdateTaxonomy(
   data: TaxonomyBatchUpdate,
 ): Promise<TaxonomyBatchUpdateResult> {
   return post<TaxonomyBatchUpdateResult>("/taxonomy/batch-update", data)
+}
+
+// --- System ---
+
+export function fetchSystemStatus(): Promise<SystemStatus> {
+  return get<SystemStatus>("/system/status")
 }

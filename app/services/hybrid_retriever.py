@@ -4,7 +4,8 @@ Implements Anchor (target bridge), Concept (general knowledge), and
 Analogy (similar bridges) retrieval channels.
 """
 
-from dataclasses import dataclass
+import time
+from dataclasses import asdict, dataclass
 from typing import Optional, TypedDict
 
 from sqlalchemy import bindparam, or_, select, text
@@ -43,11 +44,31 @@ class RetrievedChunk:
 
 
 @dataclass
+class ChannelDebug:
+    """Debug info for a single retrieval channel."""
+    channel: str                         # "anchor" | "concept" | "analogy"
+    filter_desc: str                     # e.g. "bridge_id=42"
+    vec_ids: list[int]                   # vector search raw results
+    fts_ids: list[int]                   # FTS raw results
+    rrf_scores: list[tuple[int, float]]  # after RRF merge
+    final_ids: list[int]                 # after diversity + limit
+
+
+@dataclass
+class RetrievalDebug:
+    """Full debug info for a retrieval request."""
+    facet: dict | None
+    channels: list[ChannelDebug]
+    timings: dict[str, float]  # stage -> seconds
+
+
+@dataclass
 class HybridRetrievalResult:
     """Result of three-channel retrieval."""
     anchor_chunks: list[RetrievedChunk]
     concept_chunks: list[RetrievedChunk]
     analogy_chunks: list[RetrievedChunk]
+    debug: RetrievalDebug | None = None
 
     def all_chunks(self) -> list[RetrievedChunk]:
         """Return all chunks from all channels as a flat list."""
@@ -133,6 +154,7 @@ class HybridRetriever:
         target_bridge_id: Optional[int] = None,
         quota: tuple[int, int, int] = DEFAULT_QUOTA,
         facet: Optional[Facet] = None,
+        debug: bool = False,
     ) -> HybridRetrievalResult:
         """Perform three-channel retrieval.
 
@@ -142,59 +164,99 @@ class HybridRetriever:
             target_bridge_id: Optional target bridge for anchor channel
             quota: (anchor_limit, concept_limit, analogy_limit)
             facet: Optional Facet for analogy bridge selection
+            debug: If True, populate result.debug with RetrievalDebug
 
         Returns:
             HybridRetrievalResult with chunks from each channel
         """
         self.last_degraded = []
         anchor_quota, concept_quota, analogy_quota = quota
+        timings: dict[str, float] = {}
+        channel_debugs: list[ChannelDebug] = []
 
         # Get query embedding
+        if debug:
+            t0 = time.perf_counter()
         embeddings = await self.provider.embed([query])
         query_embedding = embeddings[0]
+        if debug:
+            timings["embed"] = time.perf_counter() - t0
 
         # Select candidate bridges for analogy channel
         analogy_bridge_ids = self._select_candidate_bridges(
             db, target_bridge_id, facet
         )
 
-        # Execute three channels in parallel conceptually
-        anchor_chunks = []
+        # Execute three channels
+        anchor_chunks: list[RetrievedChunk] = []
         if target_bridge_id is not None and anchor_quota > 0:
-            anchor_chunks = await self._retrieve_channel(
+            if debug:
+                t0 = time.perf_counter()
+            anchor_chunks, anchor_dbg = await self._retrieve_channel(
                 db,
                 query,
                 query_embedding,
                 bridge_filter=target_bridge_id,
                 limit=anchor_quota,
+                debug=debug,
+                channel_name="anchor",
             )
+            if debug:
+                timings["anchor"] = time.perf_counter() - t0
+                if anchor_dbg:
+                    channel_debugs.append(anchor_dbg)
 
-        concept_chunks = []
+        concept_chunks: list[RetrievedChunk] = []
         if concept_quota > 0:
-            concept_chunks = await self._retrieve_channel(
+            if debug:
+                t0 = time.perf_counter()
+            concept_chunks, concept_dbg = await self._retrieve_channel(
                 db,
                 query,
                 query_embedding,
                 bridge_filter=None,
                 require_no_bridge_id=True,
                 limit=concept_quota,
+                debug=debug,
+                channel_name="concept",
             )
+            if debug:
+                timings["concept"] = time.perf_counter() - t0
+                if concept_dbg:
+                    channel_debugs.append(concept_dbg)
 
-        analogy_chunks = []
+        analogy_chunks: list[RetrievedChunk] = []
         if analogy_bridge_ids and analogy_quota > 0:
-            analogy_chunks = await self._retrieve_channel(
+            if debug:
+                t0 = time.perf_counter()
+            analogy_chunks, analogy_dbg = await self._retrieve_channel(
                 db,
                 query,
                 query_embedding,
                 bridge_filter=analogy_bridge_ids,
                 limit=analogy_quota,
+                debug=debug,
+                channel_name="analogy",
             )
+            if debug:
+                timings["analogy"] = time.perf_counter() - t0
+                if analogy_dbg:
+                    channel_debugs.append(analogy_dbg)
 
-        return HybridRetrievalResult(
+        result = HybridRetrievalResult(
             anchor_chunks=anchor_chunks,
             concept_chunks=concept_chunks,
             analogy_chunks=analogy_chunks,
         )
+
+        if debug:
+            result.debug = RetrievalDebug(
+                facet=asdict(facet) if facet else None,
+                channels=channel_debugs,
+                timings=timings,
+            )
+
+        return result
 
     async def _retrieve_channel(
         self,
@@ -204,7 +266,9 @@ class HybridRetriever:
         bridge_filter: Optional[int | list[int]] = None,
         require_no_bridge_id: bool = False,
         limit: int = 10,
-    ) -> list[RetrievedChunk]:
+        debug: bool = False,
+        channel_name: str = "",
+    ) -> tuple[list[RetrievedChunk], ChannelDebug | None]:
         """Retrieve chunks for a single channel using RRF fusion.
 
         Args:
@@ -214,9 +278,11 @@ class HybridRetriever:
             bridge_filter: Single bridge_id, list of bridge_ids, or None for all
             require_no_bridge_id: If True, only return chunks without bridge_id
             limit: Number of chunks to return
+            debug: If True, return ChannelDebug alongside chunks
+            channel_name: Channel label for debug output
 
         Returns:
-            List of RetrievedChunk sorted by relevance
+            Tuple of (chunks, ChannelDebug | None)
         """
         # Get more than needed for diversity filtering
         fetch_limit = limit * FETCH_MULTIPLIER
@@ -233,7 +299,17 @@ class HybridRetriever:
         merged = rrf_merge(vec_results, fts_results, k=RRF_K)
 
         if not merged:
-            return []
+            if debug:
+                filter_desc = self._build_filter_desc(bridge_filter, require_no_bridge_id)
+                return [], ChannelDebug(
+                    channel=channel_name,
+                    filter_desc=filter_desc,
+                    vec_ids=list(vec_results),
+                    fts_ids=list(fts_results),
+                    rrf_scores=[],
+                    final_ids=[],
+                )
+            return [], None
 
         chunk_ids = [cid for cid, _ in merged]
         details_by_id = self._fetch_chunk_details(db, chunk_ids)
@@ -259,7 +335,33 @@ class HybridRetriever:
 
         # Take top N and fetch full details
         top_ids = [c.chunk_id for c in diverse[:limit]]
-        return self._build_retrieved_chunks(top_ids, merged, details_by_id)
+        chunks = self._build_retrieved_chunks(top_ids, merged, details_by_id)
+
+        if debug:
+            filter_desc = self._build_filter_desc(bridge_filter, require_no_bridge_id)
+            return chunks, ChannelDebug(
+                channel=channel_name,
+                filter_desc=filter_desc,
+                vec_ids=list(vec_results),
+                fts_ids=list(fts_results),
+                rrf_scores=list(merged),
+                final_ids=top_ids,
+            )
+        return chunks, None
+
+    @staticmethod
+    def _build_filter_desc(
+        bridge_filter: Optional[int | list[int]],
+        require_no_bridge_id: bool = False,
+    ) -> str:
+        """Build a human-readable filter description for debug output."""
+        if isinstance(bridge_filter, int):
+            return f"bridge_id = {bridge_filter}"
+        if isinstance(bridge_filter, list):
+            return f"bridge_id IN {bridge_filter}"
+        if require_no_bridge_id:
+            return "bridge_id IS NULL"
+        return "(no filter)"
 
     def _vector_search(
         self,

@@ -17,6 +17,7 @@ class AskRequest(BaseModel):
     question: str
     target_bridge_id: int | None = None
     context: AskContext | None = None
+    debug: bool = False
 
 
 class CitationResponse(BaseModel):
@@ -50,6 +51,23 @@ class EvidenceGroupsResponse(BaseModel):
     analogy: list[ChunkSummary]
 
 
+class ChannelDebugResponse(BaseModel):
+    """Debug info for a single retrieval channel."""
+    channel: str
+    filter_desc: str
+    vec_ids: list[int]
+    fts_ids: list[int]
+    rrf_scores: list[list[int | float]]  # [[chunk_id, score], ...]
+    final_ids: list[int]
+
+
+class DebugResponse(BaseModel):
+    """Full debug info for a retrieval request."""
+    facet: dict | None = None
+    channels: list[ChannelDebugResponse] = []
+    timings: dict[str, float] = {}
+
+
 class AskResponse(BaseModel):
     """Response body for /api/v1/ask endpoint."""
     summary: str
@@ -60,3 +78,4 @@ class AskResponse(BaseModel):
     confidence: ConfidenceResponse
     evidence_groups: EvidenceGroupsResponse | None = None
     degraded: list[str] | None = None
+    debug: DebugResponse | None = None

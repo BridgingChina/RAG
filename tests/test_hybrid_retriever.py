@@ -7,6 +7,8 @@ from app.services.hybrid_retriever import (
     DEFAULT_QUOTA,
     RetrievedChunk,
     HybridRetrievalResult,
+    ChannelDebug,
+    RetrievalDebug,
     format_evidence_for_llm,
 )
 
@@ -124,3 +126,134 @@ def test_format_evidence_for_llm_empty_channels():
 
     # Should indicate no data
     assert "无相关资料" in formatted
+
+
+def test_channel_debug_dataclass():
+    """ChannelDebug holds per-channel retrieval debug info."""
+    cd = ChannelDebug(
+        channel="anchor",
+        filter_desc="bridge_id=42",
+        vec_ids=[1, 2, 3],
+        fts_ids=[2, 4],
+        rrf_scores=[(2, 0.03), (1, 0.02), (3, 0.01), (4, 0.005)],
+        final_ids=[2, 1, 3],
+    )
+    assert cd.channel == "anchor"
+    assert len(cd.vec_ids) == 3
+    assert len(cd.rrf_scores) == 4
+
+
+def test_retrieval_debug_dataclass():
+    """RetrievalDebug aggregates channels and timings."""
+    rd = RetrievalDebug(
+        facet={"bridge_type": "拱桥"},
+        channels=[],
+        timings={"embed": 0.12, "anchor": 0.08},
+    )
+    assert rd.facet["bridge_type"] == "拱桥"
+    assert rd.timings["embed"] == 0.12
+
+
+def test_retrieve_channel_returns_debug_tuple():
+    """When debug=True, _retrieve_channel returns (chunks, ChannelDebug)."""
+    from unittest.mock import MagicMock
+    from app.services.hybrid_retriever import HybridRetriever, ChannelDebug
+
+    provider = MagicMock()
+    retriever = HybridRetriever(provider=provider)
+
+    # Mock internal methods to avoid DB
+    retriever._vector_search = MagicMock(return_value=[10, 20])
+    retriever._fts_search = MagicMock(return_value=[20, 30])
+    retriever._fetch_chunk_details = MagicMock(return_value={
+        10: {"content": "c10", "bridge_id": 1, "bridge_name": "B1"},
+        20: {"content": "c20", "bridge_id": 1, "bridge_name": "B1"},
+        30: {"content": "c30", "bridge_id": 1, "bridge_name": "B1"},
+    })
+
+    import asyncio
+    chunks, debug = asyncio.run(retriever._retrieve_channel(
+        db=MagicMock(),
+        query="test",
+        query_embedding=[0.1] * 1024,
+        bridge_filter=1,
+        limit=3,
+        debug=True,
+        channel_name="anchor",
+    ))
+    assert isinstance(debug, ChannelDebug)
+    assert debug.channel == "anchor"
+    assert debug.vec_ids == [10, 20]
+    assert debug.fts_ids == [20, 30]
+    assert len(debug.final_ids) <= 3
+
+
+def test_retrieve_channel_no_debug_returns_none():
+    """When debug=False (default), _retrieve_channel returns (chunks, None)."""
+    from unittest.mock import MagicMock
+    from app.services.hybrid_retriever import HybridRetriever
+
+    provider = MagicMock()
+    retriever = HybridRetriever(provider=provider)
+
+    retriever._vector_search = MagicMock(return_value=[10, 20])
+    retriever._fts_search = MagicMock(return_value=[20, 30])
+    retriever._fetch_chunk_details = MagicMock(return_value={
+        10: {"content": "c10", "bridge_id": 1, "bridge_name": "B1"},
+        20: {"content": "c20", "bridge_id": 1, "bridge_name": "B1"},
+        30: {"content": "c30", "bridge_id": 1, "bridge_name": "B1"},
+    })
+
+    import asyncio
+    chunks, debug = asyncio.run(retriever._retrieve_channel(
+        db=MagicMock(),
+        query="test",
+        query_embedding=[0.1] * 1024,
+        bridge_filter=1,
+        limit=3,
+    ))
+    assert debug is None
+    assert isinstance(chunks, list)
+
+
+def test_retrieve_channel_debug_filter_desc_variants():
+    """filter_desc is built correctly for different bridge_filter values."""
+    from unittest.mock import MagicMock
+    from app.services.hybrid_retriever import HybridRetriever
+
+    provider = MagicMock()
+    retriever = HybridRetriever(provider=provider)
+
+    retriever._vector_search = MagicMock(return_value=[])
+    retriever._fts_search = MagicMock(return_value=[])
+    retriever._fetch_chunk_details = MagicMock(return_value={})
+
+    import asyncio
+
+    # bridge_filter=int
+    _, debug = asyncio.run(retriever._retrieve_channel(
+        db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
+        bridge_filter=42, limit=3, debug=True, channel_name="anchor",
+    ))
+    assert debug.filter_desc == "bridge_id = 42"
+
+    # bridge_filter=list
+    _, debug = asyncio.run(retriever._retrieve_channel(
+        db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
+        bridge_filter=[5, 12, 28], limit=3, debug=True, channel_name="analogy",
+    ))
+    assert debug.filter_desc == "bridge_id IN [5, 12, 28]"
+
+    # require_no_bridge_id=True
+    _, debug = asyncio.run(retriever._retrieve_channel(
+        db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
+        require_no_bridge_id=True, limit=3, debug=True, channel_name="concept",
+    ))
+    assert debug.filter_desc == "bridge_id IS NULL"
+
+    # no filter
+    _, debug = asyncio.run(retriever._retrieve_channel(
+        db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
+        limit=3, debug=True, channel_name="test",
+    ))
+    assert debug.filter_desc == "(no filter)"

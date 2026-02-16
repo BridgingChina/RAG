@@ -38,6 +38,7 @@ export interface AskResponse {
   confidence: ConfidenceResponse
   evidence_groups: EvidenceGroupsResponse | null
   degraded: string[] | null
+  debug?: DebugInfo | null
 }
 
 // --- Ingest ---
@@ -274,4 +275,39 @@ export interface TaxonomyBatchUpdate {
 
 export interface TaxonomyBatchUpdateResult {
   updated_count: number
+}
+
+// --- Debug ---
+
+export interface ChannelDebug {
+  channel: string
+  filter_desc: string
+  vec_ids: number[]
+  fts_ids: number[]
+  rrf_scores: [number, number][]
+  final_ids: number[]
+}
+
+export interface DebugInfo {
+  facet: Record<string, unknown> | null
+  channels: ChannelDebug[]
+  timings: Record<string, number>
+}
+
+// --- System ---
+
+export interface SystemStatus {
+  version: string
+  python_version: string
+  db_connected: boolean
+  db_version: string | null
+  schema_version: number | null
+  vector_dimension: number
+  index_type: string
+  llm_provider: string
+  embedding_model: string
+  chat_model: string
+  chunk_quota: Record<string, number>
+  rrf_k: number
+  api_key_configured: boolean
 }
