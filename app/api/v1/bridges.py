@@ -1,6 +1,6 @@
 """Bridges CRUD API endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.bridge import (
@@ -46,11 +46,8 @@ def list_bridges(
     if q is not None:
         query = query.filter(Bridge.name.ilike(f"%{q}%"))
 
-    # Get total count using a subquery
-    count_query = select(func.count()).select_from(
-        query.with_only_columns(Bridge.id).subquery()
-    )
-    total = db.execute(count_query).scalar_one()
+    # Get total count (Query.count wraps grouped query as subquery)
+    total = query.count()
 
     # Apply pagination and ordering
     offset = (page - 1) * page_size

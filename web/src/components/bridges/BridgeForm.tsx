@@ -16,6 +16,9 @@ interface BridgeFormProps {
   submitLabel: string
 }
 
+// Sentinel value for "unset" — Radix Select rejects empty string as value
+const NONE = "__none__"
+
 // Facet enum values from config/facets.yaml
 const BRIDGE_TYPES = [
   "石拱桥",
@@ -109,14 +112,16 @@ export function BridgeForm({
         <div className="space-y-2">
           <label className="text-sm font-medium">桥型</label>
           <Select
-            value={form.bridge_type || ""}
-            onValueChange={(v) => setForm({ ...form, bridge_type: v || null })}
+            value={form.bridge_type || NONE}
+            onValueChange={(v) =>
+              setForm({ ...form, bridge_type: v === NONE ? null : v })
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="选择桥型" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">无</SelectItem>
+              <SelectItem value={NONE}>无</SelectItem>
               {BRIDGE_TYPES.map((type) => (
                 <SelectItem key={type} value={type}>
                   {type}
@@ -130,14 +135,16 @@ export function BridgeForm({
         <div className="space-y-2">
           <label className="text-sm font-medium">材料</label>
           <Select
-            value={form.material || ""}
-            onValueChange={(v) => setForm({ ...form, material: v || null })}
+            value={form.material || NONE}
+            onValueChange={(v) =>
+              setForm({ ...form, material: v === NONE ? null : v })
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="选择材料" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">无</SelectItem>
+              <SelectItem value={NONE}>无</SelectItem>
               {MATERIALS.map((material) => (
                 <SelectItem key={material} value={material}>
                   {material}
@@ -151,14 +158,16 @@ export function BridgeForm({
         <div className="space-y-2">
           <label className="text-sm font-medium">年代</label>
           <Select
-            value={form.era || ""}
-            onValueChange={(v) => setForm({ ...form, era: v || null })}
+            value={form.era || NONE}
+            onValueChange={(v) =>
+              setForm({ ...form, era: v === NONE ? null : v })
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="选择年代" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">无</SelectItem>
+              <SelectItem value={NONE}>无</SelectItem>
               {ERAS.map((era) => (
                 <SelectItem key={era} value={era}>
                   {era}
@@ -184,14 +193,16 @@ export function BridgeForm({
         <div className="space-y-2">
           <label className="text-sm font-medium">功能</label>
           <Select
-            value={form.function || ""}
-            onValueChange={(v) => setForm({ ...form, function: v || null })}
+            value={form.function || NONE}
+            onValueChange={(v) =>
+              setForm({ ...form, function: v === NONE ? null : v })
+            }
           >
             <SelectTrigger>
               <SelectValue placeholder="选择功能" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">无</SelectItem>
+              <SelectItem value={NONE}>无</SelectItem>
               {FUNCTIONS.map((func) => (
                 <SelectItem key={func} value={func}>
                   {func}
