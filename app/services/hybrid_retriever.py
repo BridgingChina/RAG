@@ -5,7 +5,7 @@ Analogy (similar bridges) retrieval channels.
 """
 
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional, TypedDict
 
 from sqlalchemy import bindparam, or_, select, text
@@ -247,7 +247,7 @@ class HybridRetriever:
 
         if debug:
             result.debug = RetrievalDebug(
-                facet=facet.model_dump() if facet else None,
+                facet=asdict(facet) if facet else None,
                 channels=channel_debugs,
                 timings=timings,
             )
