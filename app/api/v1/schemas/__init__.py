@@ -3,6 +3,9 @@
 # Common schemas
 from .common import PageParams, PaginatedResponse
 
+# Auth schemas
+from .auth import ChangePasswordRequest, LoginRequest, LoginResponse, UserInfo
+
 # Ask schemas
 from .ask import (
     AskContext,
@@ -71,6 +74,11 @@ __all__ = [
     # Common
     "PageParams",
     "PaginatedResponse",
+    # Auth
+    "ChangePasswordRequest",
+    "LoginRequest",
+    "LoginResponse",
+    "UserInfo",
     # Ask
     "AskContext",
     "AskRequest",
