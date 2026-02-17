@@ -113,14 +113,9 @@ def ingest(
         source_type = doc.frontmatter.get("source_type", body.source_type)
         bridge_hints = _extract_bridge_hints(doc.frontmatter, body.bridge_candidates)
 
-        # Combine sections into text with headings
-        text_parts = []
-        for section in doc.sections:
-            heading = "#" * section.level + " " + section.title
-            text_parts.append(f"{heading}\n\n{section.content}")
-        text_content = "\n\n".join(text_parts)
-
-        if not text_content.strip():
+        # Validate sections have content
+        has_content = any(s.content.strip() for s in doc.sections)
+        if not has_content:
             raise HTTPException(
                 status_code=400,
                 detail="No content found in document",
@@ -142,7 +137,7 @@ def ingest(
         )
 
         # Chunk the text
-        chunk_results = await chunker.chunk(text_content)
+        chunk_results = await chunker.chunk(doc.sections)
 
         if not chunk_results:
             raise HTTPException(
