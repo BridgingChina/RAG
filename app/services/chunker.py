@@ -133,10 +133,11 @@ class SemanticChunker:
 
         # Build content preserving Markdown headings
         parts: list[str] = []
-        for heading_path, content, _level in buffer:
+        for heading_path, content, level in buffer:
             if len(buffer) > 1 and heading_path:
                 last_title = heading_path.split(" > ")[-1]
-                parts.append(f"## {last_title}\n\n{content}")
+                hashes = "#" * max(level, 1)
+                parts.append(f"{hashes} {last_title}\n\n{content}")
             else:
                 parts.append(content)
 

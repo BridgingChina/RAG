@@ -151,6 +151,26 @@ async def test_chunk_empty_sections_skipped(chunker):
 
 
 @pytest.mark.asyncio
+async def test_chunk_root_change_flush_short_sections(chunker):
+    """H1(short)→H2(short)→H1(short): root topic change flushes buffer."""
+    sections = [
+        Section(title="历史沿革", level=1, content="清代始建。"),
+        Section(title="历史沿革", level=1, content=""),
+        Section(title="重修记录", level=2, content="民国重修。"),
+        Section(title="地理环境", level=1, content="位于山区。"),
+    ]
+    chunks = await chunker.chunk(sections)
+
+    # "历史沿革" sections and "地理环境" must NOT merge (different root topics)
+    assert len(chunks) == 2
+    chunk_texts = [c.content for c in chunks]
+    # First chunk: 历史沿革 content
+    assert any("清代始建" in t and "民国重修" in t for t in chunk_texts)
+    # Second chunk: 地理环境 content
+    assert any("位于山区" in t and "地理环境" in t for t in chunk_texts)
+
+
+@pytest.mark.asyncio
 async def test_chunk_bibolangqiao_no_text_loss():
     """Integration test: 碧波廊桥.md chunks preserve all content."""
     from app.services.markdown_parser import parse_markdown
