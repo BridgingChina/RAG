@@ -26,6 +26,7 @@ from app.models import Base, Bridge, Chunk, Source
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
+from app.services.markdown_parser import parse_markdown
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
 
@@ -86,9 +87,10 @@ async def ingest_text(
     )
     tagger = MetadataTagger(provider=provider, taxonomy_lvl2=get_taxonomy_lvl2_map())
 
-    # Step 1: Chunk the text
+    # Step 1: Parse and chunk the text
     print(f"正在切块...")
-    chunk_results = await chunker.chunk(text)
+    doc = parse_markdown(text)
+    chunk_results = await chunker.chunk(doc.sections)
     print(f"  切块完成: {len(chunk_results)} 个块")
 
     if not chunk_results:

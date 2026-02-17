@@ -46,11 +46,14 @@ class SemanticChunker:
         for heading_path, content, level in items:
             content_len = len(content)
 
-            # Flush buffer when a higher-level heading appears (smaller level number)
-            if buffer_sections and level > 0 and level < buffer_sections[0][2]:
-                chunks.extend(self._flush_buffer(buffer_sections))
-                buffer_sections = []
-                buffer_length = 0
+            # Flush buffer when the top-level topic changes
+            if buffer_sections and heading_path and buffer_sections[0][0]:
+                prev_root = buffer_sections[0][0].split(" > ")[0]
+                curr_root = heading_path.split(" > ")[0]
+                if prev_root != curr_root:
+                    chunks.extend(self._flush_buffer(buffer_sections))
+                    buffer_sections = []
+                    buffer_length = 0
 
             # Check if adding this section would exceed max
             if buffer_length > 0 and buffer_length + content_len > self.max_chunk_size:
