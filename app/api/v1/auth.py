@@ -52,6 +52,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         user_id=user.id,
         ip_address=get_client_ip(request),
     )
+    db.commit()
     return LoginResponse(
         access_token=token,
         user=UserInfo(

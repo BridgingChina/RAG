@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as v1_router
+from app.core.config import settings
 from app.core.database import init_database
 from app.core.logging import logger
 
@@ -13,6 +14,12 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler for startup/shutdown tasks."""
     # Startup: Initialize database
     logger.info("Starting application...")
+    if settings.secret_key == "change-me-in-production":
+        logger.warning(
+            "SECRET_KEY is using the default value! "
+            "Set SECRET_KEY in .env for production use."
+        )
+
     try:
         init_database()
         logger.info("Database initialization complete")

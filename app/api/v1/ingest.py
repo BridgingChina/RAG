@@ -299,6 +299,7 @@ def ingest(
             detail={"title": title, "chunk_count": len(chunk_rows)},
             ip_address=get_client_ip(request),
         )
+        db.commit()
 
         return IngestResponse(
             source_id=source.id,

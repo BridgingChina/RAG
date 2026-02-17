@@ -238,6 +238,7 @@ def update_chunk(
         resource_id=str(chunk_id),
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     # Return full detail using the get endpoint
     return get_chunk(chunk_id, db)

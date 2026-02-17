@@ -132,6 +132,7 @@ def create_bridge(
         resource_id=str(bridge.id),
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     # Return detail with chunk_count = 0 for new bridge
     return BridgeDetail(
@@ -181,6 +182,7 @@ def update_bridge(
         resource_id=str(bridge_id),
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     # Return full detail using the get endpoint
     return get_bridge(bridge_id, db)
@@ -359,6 +361,7 @@ def merge_bridges(
         detail={"source_bridge_id": body.source_bridge_id},
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     # Return updated target
     return get_bridge(target_id, db)

@@ -160,6 +160,7 @@ def create_taxonomy_node(
         resource_id=str(node.id),
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     return TaxonomyNodeDetail(
         id=node.id,
@@ -199,6 +200,7 @@ def update_taxonomy_node(
         resource_id=str(node_id),
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     # Count chunks for this node
     chunk_count = _count_chunks_for_node(db, node)
@@ -300,6 +302,7 @@ def batch_update_chunks(
         detail={"chunk_ids": body.chunk_ids, "lvl1": body.lvl1, "lvl2": body.lvl2, "lvl3": body.lvl3},
         ip_address=get_client_ip(request),
     )
+    db.commit()
 
     return TaxonomyBatchUpdateResult(updated_count=updated)
 
