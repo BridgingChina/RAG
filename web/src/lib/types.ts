@@ -311,3 +311,41 @@ export interface SystemStatus {
   rrf_k: number
   api_key_configured: boolean
 }
+
+// Auth
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  user: UserInfo
+}
+
+export interface UserInfo {
+  id: number
+  username: string
+  display_name: string | null
+  is_active: boolean
+  created_at: string
+}
+
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}
+
+// Audit
+export interface AuditLogItem {
+  id: number
+  user_id: number | null
+  username: string | null
+  action: string
+  resource_type: string
+  resource_id: string | null
+  detail: Record<string, unknown> | null
+  ip_address: string | null
+  created_at: string
+}

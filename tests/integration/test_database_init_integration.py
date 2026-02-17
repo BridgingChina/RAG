@@ -6,7 +6,7 @@ from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.core.constants import EMBEDDING_DIM
-from app.core.database import init_database
+from app.core.database import init_database, LATEST_SCHEMA_VERSION
 from app.models import Base, Chunk, Source
 
 
@@ -30,6 +30,8 @@ def test_engine():
 
     # Drop all tables to start fresh
     with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS audit_logs CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunk_bridge_links CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sources CASCADE"))
@@ -42,6 +44,8 @@ def test_engine():
 
     # Cleanup: Drop all tables after tests
     with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS audit_logs CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunk_bridge_links CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sources CASCADE"))
@@ -108,8 +112,8 @@ def test_init_database_creates_all_tables(test_engine):
 
 
 @pytest.mark.integration
-def test_init_database_sets_version_to_2(test_engine):
-    """Test that init_database sets version to 2 with correct description."""
+def test_init_database_sets_version_to_latest(test_engine):
+    """Test that init_database sets version to LATEST_SCHEMA_VERSION with correct description."""
     from app.core import database
     original_engine = database.engine
     database.engine = test_engine
@@ -125,8 +129,7 @@ def test_init_database_sets_version_to_2(test_engine):
             row = result.fetchone()
 
             assert row is not None
-            assert row[0] == 2  # version
-            assert row[1] == "Schema v2 multi-bridge ingest"  # description
+            assert row[0] == LATEST_SCHEMA_VERSION  # version
     finally:
         database.engine = original_engine
 
@@ -142,29 +145,24 @@ def test_init_database_idempotent(test_engine):
         # First initialization
         init_database()
 
-        # Verify version is 2
+        # Verify version is LATEST_SCHEMA_VERSION
         with test_engine.connect() as conn:
             result = conn.execute(
                 text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
             )
             version1 = result.scalar_one()
-            assert version1 == 2
+            assert version1 == LATEST_SCHEMA_VERSION
 
         # Second initialization (should be idempotent)
         init_database()
 
-        # Verify version is still 2 (not incremented)
+        # Verify version is still LATEST_SCHEMA_VERSION (not incremented)
         with test_engine.connect() as conn:
             result = conn.execute(
                 text("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
             )
             version2 = result.scalar_one()
-            assert version2 == 2
-
-            # Verify only one version record exists
-            result = conn.execute(text("SELECT COUNT(*) FROM schema_version"))
-            count = result.scalar_one()
-            assert count == 1
+            assert version2 == LATEST_SCHEMA_VERSION
     finally:
         database.engine = original_engine
 

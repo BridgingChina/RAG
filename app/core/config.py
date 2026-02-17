@@ -14,5 +14,9 @@ class Settings(BaseSettings):
     # Retrieval settings
     top_k: int = 5
 
+    # Auth settings
+    secret_key: str = "change-me-in-production"
+    access_token_expire_hours: int = 24
+
 
 settings = Settings()

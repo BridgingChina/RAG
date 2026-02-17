@@ -19,7 +19,7 @@ cd web && npm run lint   # ESLint
 cd web && npx tsc --noEmit  # Type check only (no build)
 ```
 
-**Pages:** Dashboard, Chunks (list/detail), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest, Ask, Settings
+**Pages:** Dashboard, Chunks (list/detail), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest, Ask, Settings, Audit Logs, Login
 
 ### Development Setup
 
@@ -68,17 +68,20 @@ python scripts/seed_test_data.py
 
 # Reset database (drop all tables and recreate)
 python scripts/reset_db.py
+
+# Create a user account
+python3 scripts/create_user.py --username admin --password <password>
 ```
 
 ## Environment Setup
 
-Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml).
+Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production.
 
 ## Database Schema Management
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 2 (multi-bridge ingest with 1024-dim vectors)
+- Current version: 3 (adds users and audit_logs tables)
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`
@@ -122,6 +125,8 @@ The system uses automatic schema versioning:
 - `chunk_bridge_links` — chunks ↔ bridges 多对多关联表
 - `taxonomy_nodes` — 三级目录结构
 - `sources` — 来源元信息
+- `users` — 用户账户（username/hashed_password/display_name/is_active）
+- `audit_logs` — 审计日志（user_id/action/resource_type/resource_id/detail/ip_address）
 
 **API Endpoints:**
 
@@ -133,6 +138,10 @@ The system uses automatic schema versioning:
 - Read-only: `/api/v1/sources`（仅 GET list + detail）
 - Tree CRUD: `/api/v1/taxonomy`（`GET tree`, `POST/PUT/DELETE nodes`, `POST batch-update`）
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
+- Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
+- Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
+- 除 `/health` 和 `/auth/login` 外，所有端点均需 JWT Bearer token 认证
+- 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
 

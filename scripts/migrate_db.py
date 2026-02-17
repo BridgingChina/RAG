@@ -155,7 +155,7 @@ def main(
 ) -> None:
     db_url = database_url or settings.database_url
     target_schema_version = LATEST_SCHEMA_VERSION
-    target_schema_description = "Schema v2 multi-bridge ingest"
+    target_schema_description = "Schema v3 with users and audit_logs"
     click.echo(f"DB migrate/backfill starting...")
     click.echo(f"- database_url: {db_url}")
     click.echo(f"- dry_run: {dry_run}")

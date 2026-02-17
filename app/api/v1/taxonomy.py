@@ -1,8 +1,9 @@
 """Taxonomy API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.taxonomy import (
     TaxonomyBatchUpdate,
     TaxonomyBatchUpdateResult,
@@ -14,7 +15,8 @@ from app.api.v1.schemas.taxonomy import (
 )
 from app.core.database import get_db
 from app.core.taxonomy_loader import invalidate_taxonomy_cache
-from app.models import Chunk, TaxonomyNode
+from app.models import Chunk, TaxonomyNode, User
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/taxonomy", tags=["taxonomy"])
 
@@ -115,7 +117,10 @@ def get_taxonomy_tree(db: Session = Depends(get_db)) -> TaxonomyTree:
 
 @router.post("/nodes", response_model=TaxonomyNodeDetail, status_code=201)
 def create_taxonomy_node(
-    body: TaxonomyNodeCreate, db: Session = Depends(get_db)
+    body: TaxonomyNodeCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TaxonomyNodeDetail:
     """Create a new taxonomy node."""
     # Validate: lvl3 requires lvl2, lvl2 requires lvl1
@@ -147,6 +152,16 @@ def create_taxonomy_node(
     db.refresh(node)
     invalidate_taxonomy_cache()
 
+    AuditService.log(
+        db,
+        action=AuditService.CREATE,
+        resource_type="taxonomy",
+        user_id=current_user.id,
+        resource_id=str(node.id),
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
     return TaxonomyNodeDetail(
         id=node.id,
         lvl1=node.lvl1,
@@ -159,7 +174,11 @@ def create_taxonomy_node(
 
 @router.put("/nodes/{node_id}", response_model=TaxonomyNodeDetail)
 def update_taxonomy_node(
-    node_id: int, body: TaxonomyNodeUpdate, db: Session = Depends(get_db)
+    node_id: int,
+    body: TaxonomyNodeUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TaxonomyNodeDetail:
     """Update a taxonomy node's description."""
     node = db.query(TaxonomyNode).filter(TaxonomyNode.id == node_id).first()
@@ -172,6 +191,16 @@ def update_taxonomy_node(
     db.commit()
     db.refresh(node)
     invalidate_taxonomy_cache()
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="taxonomy",
+        user_id=current_user.id,
+        resource_id=str(node_id),
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
 
     # Count chunks for this node
     chunk_count = _count_chunks_for_node(db, node)
@@ -187,7 +216,12 @@ def update_taxonomy_node(
 
 
 @router.delete("/nodes/{node_id}", status_code=204)
-def delete_taxonomy_node(node_id: int, db: Session = Depends(get_db)) -> None:
+def delete_taxonomy_node(
+    node_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
     """Delete a taxonomy node if no chunks reference it."""
     node = db.query(TaxonomyNode).filter(TaxonomyNode.id == node_id).first()
     if not node:
@@ -200,6 +234,16 @@ def delete_taxonomy_node(node_id: int, db: Session = Depends(get_db)) -> None:
             detail=f"Cannot delete taxonomy node with {chunk_count} associated chunks",
         )
 
+    # Audit log before delete so flush happens before the row is removed
+    AuditService.log(
+        db,
+        action=AuditService.DELETE,
+        resource_type="taxonomy",
+        user_id=current_user.id,
+        resource_id=str(node_id),
+        ip_address=get_client_ip(request),
+    )
+
     db.delete(node)
     db.commit()
     invalidate_taxonomy_cache()
@@ -207,7 +251,10 @@ def delete_taxonomy_node(node_id: int, db: Session = Depends(get_db)) -> None:
 
 @router.post("/batch-update", response_model=TaxonomyBatchUpdateResult)
 def batch_update_chunks(
-    body: TaxonomyBatchUpdate, db: Session = Depends(get_db)
+    body: TaxonomyBatchUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> TaxonomyBatchUpdateResult:
     """Batch update taxonomy labels on multiple chunks."""
     if not body.chunk_ids:
@@ -244,6 +291,16 @@ def batch_update_chunks(
             },
             synchronize_session=False,
         )
+    )
+    db.commit()
+
+    AuditService.log(
+        db,
+        action=AuditService.BATCH_UPDATE,
+        resource_type="taxonomy",
+        user_id=current_user.id,
+        detail={"chunk_ids": body.chunk_ids, "lvl1": body.lvl1, "lvl2": body.lvl2, "lvl3": body.lvl3},
+        ip_address=get_client_ip(request),
     )
     db.commit()
 

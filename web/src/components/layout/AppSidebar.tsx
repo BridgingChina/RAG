@@ -19,7 +19,10 @@ import {
   Upload,
   MessageSquare,
   Settings,
+  ScrollText,
+  LogOut,
 } from "lucide-react"
+import { useAuth } from "@/contexts/AuthContext"
 
 const navGroups = [
   {
@@ -48,11 +51,14 @@ const navGroups = [
     label: "系统",
     items: [
       { path: "/settings", icon: Settings, label: "设置" },
+      { path: "/audit-logs", icon: ScrollText, label: "审计日志" },
     ],
   },
 ]
 
 export function AppSidebar() {
+  const { user, logout } = useAuth()
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -93,7 +99,13 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="sm" className="text-muted-foreground">
-              v1.0.0
+              {user?.display_name || user?.username || ""}
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="sm" onClick={logout} className="text-muted-foreground">
+              <LogOut />
+              <span>退出登录</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

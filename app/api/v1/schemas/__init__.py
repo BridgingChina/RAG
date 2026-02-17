@@ -3,6 +3,12 @@
 # Common schemas
 from .common import PageParams, PaginatedResponse
 
+# Audit schemas
+from .audit import AuditLogItem
+
+# Auth schemas
+from .auth import ChangePasswordRequest, LoginRequest, LoginResponse, UserInfo
+
 # Ask schemas
 from .ask import (
     AskContext,
@@ -68,9 +74,16 @@ from .taxonomy import (
 )
 
 __all__ = [
+    # Audit
+    "AuditLogItem",
     # Common
     "PageParams",
     "PaginatedResponse",
+    # Auth
+    "ChangePasswordRequest",
+    "LoginRequest",
+    "LoginResponse",
+    "UserInfo",
     # Ask
     "AskContext",
     "AskRequest",

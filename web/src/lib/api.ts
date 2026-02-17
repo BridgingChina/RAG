@@ -1,15 +1,19 @@
 import type {
   AskResponse,
+  AuditLogItem,
   BridgeCreateRequest,
   BridgeDetail,
   BridgeListItem,
   BridgeMergeRequest,
   BridgeUpdateRequest,
+  ChangePasswordRequest,
   ChunkDetail,
   ChunkListItem,
   ChunkUpdateRequest,
   DashboardStats,
   IngestResponse,
+  LoginRequest,
+  LoginResponse,
   PaginatedResponse,
   SourceDetail,
   SourceListItem,
@@ -19,9 +23,18 @@ import type {
   TaxonomyNodeCreate,
   TaxonomyNodeDetail,
   TaxonomyTree,
+  UserInfo,
 } from "./types"
 
 const BASE = "/api/v1"
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth-token")
+  if (token) {
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+  }
+  return { "Content-Type": "application/json" }
+}
 
 // --- Core HTTP methods ---
 
@@ -47,11 +60,15 @@ async function get<T>(
 
   const res = await fetch(fullUrl, {
     method: "GET",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
   })
 
   if (!res.ok) {
     const text = await res.text()
+    if (res.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -61,12 +78,16 @@ async function get<T>(
 async function post<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const text = await res.text()
+    if (res.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -76,12 +97,16 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 async function put<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const text = await res.text()
+    if (res.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -91,11 +116,15 @@ async function put<T>(url: string, body: unknown): Promise<T> {
 async function del(url: string): Promise<void> {
   const res = await fetch(`${BASE}${url}`, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
   })
 
   if (!res.ok) {
     const text = await res.text()
+    if (res.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 }
@@ -258,4 +287,42 @@ export function batchUpdateTaxonomy(
 
 export function fetchSystemStatus(): Promise<SystemStatus> {
   return get<SystemStatus>("/system/status")
+}
+
+// --- Auth ---
+
+export function login(data: LoginRequest): Promise<LoginResponse> {
+  return fetch(`${BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(text || `HTTP ${res.status}`)
+    }
+    return res.json()
+  })
+}
+
+export function fetchMe(): Promise<UserInfo> {
+  return get<UserInfo>("/auth/me")
+}
+
+export function changePassword(data: ChangePasswordRequest): Promise<void> {
+  return put<void>("/auth/password", data)
+}
+
+// --- Audit ---
+
+export function fetchAuditLogs(params?: {
+  page?: number
+  page_size?: number
+  user_id?: number
+  action?: string
+  resource_type?: string
+  start?: string
+  end?: string
+}): Promise<PaginatedResponse<AuditLogItem>> {
+  return get<PaginatedResponse<AuditLogItem>>("/audit-logs", params)
 }

@@ -2,17 +2,19 @@
 import asyncio
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text as sql_text
 
+from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas import (
     IngestRequest,
     IngestResponse,
     IngestedChunkSummary,
 )
 from app.core.database import get_db
-from app.models import Chunk, ChunkBridgeLink, Source
+from app.models import Chunk, ChunkBridgeLink, Source, User
+from app.services.audit_service import AuditService
 from app.providers import ZhipuProvider
 from app.services.bridge_linker import BridgeLinker
 from app.services.chunker import SemanticChunker
@@ -84,10 +86,12 @@ def _extract_bridge_hints(frontmatter: dict, request_candidates: list[str] | Non
 
 @router.post("/ingest", response_model=IngestResponse)
 def ingest(
-    request: IngestRequest,
+    body: IngestRequest,
+    request: Request,
     db: Session = Depends(get_db),
     provider=Depends(_get_provider),
     tokenizer: Tokenizer = Depends(_get_tokenizer),
+    current_user: User = Depends(get_current_user),
 ):
     """Ingest a Markdown document.
 
@@ -102,12 +106,12 @@ def ingest(
     """
     async def _run():
         # Parse markdown
-        doc = parse_markdown(request.content)
+        doc = parse_markdown(body.content)
 
         # Extract metadata from front matter
         title = doc.frontmatter.get("title", "导入资料")
-        source_type = doc.frontmatter.get("source_type", request.source_type)
-        bridge_hints = _extract_bridge_hints(doc.frontmatter, request.bridge_candidates)
+        source_type = doc.frontmatter.get("source_type", body.source_type)
+        bridge_hints = _extract_bridge_hints(doc.frontmatter, body.bridge_candidates)
 
         # Combine sections into text with headings
         text_parts = []
@@ -133,8 +137,8 @@ def ingest(
         tagger = MetadataTagger(provider=provider, taxonomy_lvl2=_get_taxonomy_lvl2_map())
         bridge_linker = BridgeLinker(
             provider=provider,
-            min_primary_confidence=request.min_primary_confidence,
-            enable_auto_bridge_detection=request.enable_auto_bridge_detection,
+            min_primary_confidence=body.min_primary_confidence,
+            enable_auto_bridge_detection=body.enable_auto_bridge_detection,
         )
 
         # Chunk the text
@@ -188,9 +192,9 @@ def ingest(
                 db=db,
                 content=chunk_result.content,
                 hint_bridge_names=bridge_hints,
-                bridge_candidates=request.bridge_candidates,
-                min_primary_confidence=request.min_primary_confidence,
-                enable_auto_bridge_detection=request.enable_auto_bridge_detection,
+                bridge_candidates=body.bridge_candidates,
+                min_primary_confidence=body.min_primary_confidence,
+                enable_auto_bridge_detection=body.enable_auto_bridge_detection,
             )
             auto_created_bridges.update(bridge_link_result.auto_created_bridge_names)
             if bridge_link_result.binding_status == "ambiguous":
@@ -283,6 +287,17 @@ def ingest(
                 "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"
             ),
             mappings,
+        )
+        db.commit()
+
+        AuditService.log(
+            db,
+            action=AuditService.INGEST,
+            resource_type="source",
+            user_id=current_user.id,
+            resource_id=str(source.id),
+            detail={"title": title, "chunk_count": len(chunk_rows)},
+            ip_address=get_client_ip(request),
         )
         db.commit()
 
