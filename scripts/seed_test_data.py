@@ -129,13 +129,7 @@ async def seed_documents(
         # Process sections
         if use_llm and chunker:
             # Use full LLM pipeline
-            text_parts = []
-            for section in doc.sections:
-                heading = "#" * section.level + " " + section.title
-                text_parts.append(f"{heading}\n\n{section.content}")
-            full_text = "\n\n".join(text_parts)
-
-            chunk_results = await chunker.chunk(full_text)
+            chunk_results = await chunker.chunk(doc.sections)
             for i, cr in enumerate(chunk_results):
                 # Enrich context
                 contextual_text = ""
