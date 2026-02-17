@@ -100,7 +100,7 @@ The system uses automatic schema versioning:
 
 - `app/providers/` — LLM Provider 抽象层 (`LLMProvider` ABC)，`embed()` 返回 1024 维向量（智谱 embedding-3，可配置 512/1024/2048），`chat()` 返回 `ChatResponse`
 - `app/services/markdown_parser.py` — Markdown 解析，提取 front matter 和章节结构
-- `app/services/chunker.py` — 语义切块，按 embedding 相似度判断断点
+- `app/services/chunker.py` — Heading-aware 语义切块，`chunk(sections: list[Section])` 接收解析后的章节列表。短节合并、长节按 embedding 相似度子分割，保留 `[章节: path]` 前缀
 - `app/services/context_enricher.py` — 为 chunk 生成上下文描述（80-160字），包含来源、主题、指代消歧
 - `app/services/tagger.py` — LLM 自动标注 lvl1/lvl2/lvl3/bridge_id
 - `app/services/tokenizer.py` — jieba 中文分词，支持自定义词典。生成 `to_tsvector_text()` 和 `to_tsquery()`
@@ -181,6 +181,7 @@ title: 资料标题
 - `AuditService.log()` 只做 `db.flush()` 不 commit — 调用者必须自行 `db.commit()`，否则审计记录静默丢失。delete 端点除外（audit+delete 在同一事务内原子提交）
 - `passlib[bcrypt]` 在 pyproject.toml 中声明但未使用 — `auth_service.py` 直接用 `bcrypt` 库（passlib 1.7.4 与 bcrypt 5.0.0 不兼容）
 - `get_db()` 的 session 是 `autocommit=False` — 不显式 commit 则所有写入在 session close 时丢失
+- `SemanticChunker.chunk()` 接收 `list[Section]`（非 `str`）— 调用方必须先 `parse_markdown()` 再传 `doc.sections`
 
 ## Worktrees
 
