@@ -176,6 +176,12 @@ title: 资料标题
 正文内容...
 ```
 
+## Gotchas
+
+- `AuditService.log()` 只做 `db.flush()` 不 commit — 调用者必须自行 `db.commit()`，否则审计记录静默丢失。delete 端点除外（audit+delete 在同一事务内原子提交）
+- `passlib[bcrypt]` 在 pyproject.toml 中声明但未使用 — `auth_service.py` 直接用 `bcrypt` 库（passlib 1.7.4 与 bcrypt 5.0.0 不兼容）
+- `get_db()` 的 session 是 `autocommit=False` — 不显式 commit 则所有写入在 session close 时丢失
+
 ## Worktrees
 
 项目使用 `.worktrees/` 存放 git worktrees，已在 .gitignore 中忽略。
