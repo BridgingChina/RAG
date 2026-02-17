@@ -148,3 +148,40 @@ async def test_chunk_empty_sections_skipped(chunker):
 
     assert len(chunks) == 1
     assert "有内容" in chunks[0].section_title
+
+
+@pytest.mark.asyncio
+async def test_chunk_bibolangqiao_no_text_loss():
+    """Integration test: 碧波廊桥.md chunks preserve all content."""
+    from app.services.markdown_parser import parse_markdown
+
+    doc_path = pathlib.Path("data/seed/documents/碧波廊桥.md")
+    if not doc_path.exists():
+        pytest.skip("Seed document not available")
+
+    doc = parse_markdown(doc_path.read_text())
+
+    chunker = SemanticChunker(
+        provider=MockProvider(),
+        min_chunk_size=200,
+        max_chunk_size=500,
+    )
+    chunks = await chunker.chunk(doc.sections)
+
+    # Verify no text loss: all section content appears in chunks
+    all_chunk_text = "\n".join(c.content for c in chunks)
+    for section in doc.sections:
+        if section.content.strip():
+            for line in section.content.strip().split("\n"):
+                line = line.strip()
+                if line:
+                    assert line in all_chunk_text, f"Lost text: {line!r}"
+
+    # Verify [章节:] prefix has \n\n separator
+    for chunk in chunks:
+        if "[章节:" in chunk.content:
+            assert "]\n\n" in chunk.content, f"Missing newline after [章节:] in: {chunk.content[:80]}"
+
+    # Verify we got reasonable number of chunks
+    assert len(chunks) >= 2
+    assert len(chunks) <= 5
