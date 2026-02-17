@@ -40,20 +40,17 @@ class SemanticChunker:
 
         # Group into chunks: merge short, split long
         chunks: list[ChunkResult] = []
-        buffer_sections: list[tuple[str, str]] = []  # (heading_path, content)
+        buffer_sections: list[tuple[str, str, int]] = []  # (heading_path, content, level)
         buffer_length = 0
 
-        for heading_path, content in items:
+        for heading_path, content, level in items:
             content_len = len(content)
 
-            # Flush buffer when top-level heading changes
-            if buffer_sections and heading_path:
-                prev_root = buffer_sections[0][0].split(" > ")[0]
-                curr_root = heading_path.split(" > ")[0]
-                if prev_root and curr_root and prev_root != curr_root:
-                    chunks.extend(self._flush_buffer(buffer_sections))
-                    buffer_sections = []
-                    buffer_length = 0
+            # Flush buffer when a higher-level heading appears (smaller level number)
+            if buffer_sections and level > 0 and level < buffer_sections[0][2]:
+                chunks.extend(self._flush_buffer(buffer_sections))
+                buffer_sections = []
+                buffer_length = 0
 
             # Check if adding this section would exceed max
             if buffer_length > 0 and buffer_length + content_len > self.max_chunk_size:
@@ -75,7 +72,7 @@ class SemanticChunker:
                 continue
 
             # Add to buffer
-            buffer_sections.append((heading_path, content))
+            buffer_sections.append((heading_path, content, level))
             buffer_length += content_len
 
             # If buffer >= min_chunk_size, it's eligible to flush
@@ -92,13 +89,13 @@ class SemanticChunker:
 
     def _prepare_sections(
         self, sections: list[Section]
-    ) -> list[tuple[str, str]]:
+    ) -> list[tuple[str, str, int]]:
         """Build heading paths and filter empty sections.
 
-        Returns list of (heading_path, content) tuples.
+        Returns list of (heading_path, content, level) tuples.
         """
         parent_stack: list[tuple[int, str]] = []  # (level, title)
-        items: list[tuple[str, str]] = []
+        items: list[tuple[str, str, int]] = []
 
         for section in sections:
             # Update parent stack
@@ -118,12 +115,12 @@ class SemanticChunker:
             else:
                 heading_path = ""
 
-            items.append((heading_path, section.content))
+            items.append((heading_path, section.content, section.level))
 
         return items
 
     def _flush_buffer(
-        self, buffer: list[tuple[str, str]]
+        self, buffer: list[tuple[str, str, int]]
     ) -> list[ChunkResult]:
         """Convert buffered sections into a single ChunkResult."""
         if not buffer:
@@ -133,7 +130,7 @@ class SemanticChunker:
 
         # Build content preserving Markdown headings
         parts: list[str] = []
-        for heading_path, content in buffer:
+        for heading_path, content, _level in buffer:
             if len(buffer) > 1 and heading_path:
                 last_title = heading_path.split(" > ")[-1]
                 parts.append(f"## {last_title}\n\n{content}")
@@ -212,7 +209,7 @@ class SemanticChunker:
 
     def _split_into_sentences(self, text: str) -> list[str]:
         """Split text into sentences using punctuation and newlines."""
-        pattern = r'(?<=[。！？.!?])\s*|\n\n+'
+        pattern = r'(?<=[。！？.!?])\s*|\n'
         sentences = re.split(pattern, text)
         return [s.strip() for s in sentences if s.strip()]
 
