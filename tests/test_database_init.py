@@ -145,6 +145,7 @@ class TestVerifySchemaCompatibility:
                 "contextual_text",
                 "search_text",
                 "tsv",
+                "needs_reindex",
                 "created_at",
             },
             "chunk_bridge_links": {
@@ -230,6 +231,7 @@ class TestVerifySchemaCompatibility:
                 "contextual_text",
                 "search_text",
                 "tsv",
+                "needs_reindex",
                 "created_at",
             },
             "chunk_bridge_links": {
@@ -318,7 +320,7 @@ class TestInitDatabase:
 
         # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, LATEST_SCHEMA_VERSION, "Schema v3 with users and audit_logs", conn=mock_conn
+            mock_engine, LATEST_SCHEMA_VERSION, "Schema v4 with chunk needs_reindex flag", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")

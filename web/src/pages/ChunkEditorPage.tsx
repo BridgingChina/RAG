@@ -28,7 +28,6 @@ import {
   fetchChunk,
   fetchSource,
   fetchTaxonomyTree,
-  fetchBridges,
   updateChunk,
   deleteChunk,
   splitChunk,
