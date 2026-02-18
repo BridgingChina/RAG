@@ -26,6 +26,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://bridge:${POSTGRES_PASSWORD:-bridge}@db:5432/bridge_rag
       ZHIPU_API_KEY: ${ZHIPU_API_KEY}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
     depends_on:
       db:
         condition: service_healthy
