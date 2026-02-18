@@ -192,6 +192,7 @@ title: 资料标题
 - `AuditService.log()` 的 detail dict 必须是 JSON 可序列化的 — 不能放 `func.now()` 等 SQLAlchemy 对象
 - Pydantic response schema 加 required field 后，端点构造器必须同步传值，否则 500 ValidationError
 - FastAPI 路由顺序：literal 路由（`/merge`、`/batch`）必须在 parametric 路由（`/{chunk_id}/split`）之前注册，否则 "merge" 被当作 chunk_id 解析导致 422
+- 所有分页端点（chunks/bridges/sources/audit）强制 `page_size ≤ 100`（`Query(le=100)`）— 前端请求不可超出，否则 422
 - Dockerfile 只 COPY `app/`, `config/`, `data/` — `scripts/` 和 `tests/` 不在镜像中，容器内迁移需用 `docker exec python -c "..."`
 
 ## Worktrees
