@@ -10,6 +10,7 @@ from app.api.v1.schemas.chunk import (
     ChunkBridgeLinkDetail,
     ChunkDetail,
     ChunkListItem,
+    ChunkMergeRequest,
     ChunkSplitRequest,
     ChunkSplitResponse,
     ChunkUpdate,
@@ -344,3 +345,34 @@ def split_chunk_endpoint(
     db.commit()
 
     return ChunkSplitResponse(chunks=[get_chunk(c.id, db) for c in new_chunks])
+
+
+@router.post("/merge", response_model=ChunkDetail)
+def merge_chunks_endpoint(
+    body: ChunkMergeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChunkDetail:
+    """Merge multiple chunks into one."""
+    from app.services.chunk_editor import merge_chunks as do_merge
+
+    try:
+        merged = do_merge(db=db, chunk_ids=body.chunk_ids, tokenizer=_get_tokenizer())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    db.commit()
+
+    AuditService.log(
+        db,
+        action="merge",
+        resource_type="chunk",
+        user_id=current_user.id,
+        resource_id=str(merged.id),
+        detail={"merged_chunk_ids": body.chunk_ids},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return get_chunk(merged.id, db)

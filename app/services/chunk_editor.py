@@ -142,3 +142,55 @@ def split_chunk(
     db.flush()
 
     return [chunk_a, chunk_b]
+
+
+def merge_chunks(
+    *,
+    db: Session,
+    chunk_ids: list[int],
+    tokenizer: Tokenizer,
+) -> Chunk:
+    """Merge multiple chunks into the first one. Deletes the rest."""
+    if len(chunk_ids) < 2:
+        raise ValueError("At least 2 chunk_ids required for merge")
+
+    chunks = []
+    for cid in chunk_ids:
+        c = db.query(Chunk).filter(Chunk.id == cid).first()
+        if c is None:
+            raise ValueError(f"Chunk {cid} not found")
+        chunks.append(c)
+
+    # Validate same source
+    source_ids = {c.source_id for c in chunks}
+    if len(source_ids) > 1:
+        raise ValueError("All chunks must belong to the same source")
+
+    # Merge into the first chunk
+    primary = chunks[0]
+    primary.content = "\n\n".join(c.content for c in chunks)
+
+    # Recompute search_text
+    if primary.contextual_text:
+        primary.search_text = f"{primary.contextual_text}\n\n{primary.content}"
+    else:
+        primary.search_text = primary.content
+
+    primary.needs_reindex = True
+    db.flush()
+
+    # Recompute tsv
+    tsv_text = tokenizer.to_tsvector_text(primary.search_text)
+    db.execute(
+        sql_text("UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"),
+        {"tsv_text": tsv_text, "id": primary.id},
+    )
+
+    # Delete the other chunks and their bridge links
+    other_ids = [c.id for c in chunks[1:]]
+    db.query(ChunkBridgeLink).filter(ChunkBridgeLink.chunk_id.in_(other_ids)).delete()
+    for c in chunks[1:]:
+        db.delete(c)
+
+    db.flush()
+    return primary

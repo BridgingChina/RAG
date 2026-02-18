@@ -174,3 +174,68 @@ def test_split_chunk_invalid_position(db_session, sample_chunk, tokenizer):
             db=db_session, chunk=sample_chunk,
             position=len(sample_chunk.content), tokenizer=tokenizer,
         )
+
+
+def test_merge_chunks(db_session, test_source, tokenizer):
+    """Merging chunks should combine content and delete extras."""
+    from app.models import Chunk
+    from app.services.chunk_editor import merge_chunks
+
+    for text_content in ["第一段内容。", "第二段内容。", "第三段内容。"]:
+        c = Chunk(
+            source_id=test_source.id,
+            content=text_content,
+            lvl1="形制与技术",
+            embedding=[0.0] * EMBEDDING_DIM,
+            search_text=text_content,
+        )
+        db_session.add(c)
+    db_session.flush()
+
+    chunks = db_session.query(Chunk).filter(
+        Chunk.source_id == test_source.id
+    ).order_by(Chunk.id).all()
+    ids = [c.id for c in chunks]
+
+    merged = merge_chunks(db=db_session, chunk_ids=ids, tokenizer=tokenizer)
+
+    assert merged.content == "第一段内容。\n\n第二段内容。\n\n第三段内容。"
+    assert merged.lvl1 == "形制与技术"  # inherited from first
+    assert merged.needs_reindex is True
+    assert merged.id == ids[0]  # kept first chunk
+
+    remaining = db_session.query(Chunk).filter(Chunk.id.in_(ids[1:])).all()
+    assert len(remaining) == 0
+
+
+def test_merge_chunks_cross_source(db_session, test_source, tokenizer):
+    """Merging chunks from different sources should raise ValueError."""
+    import pytest as _pytest
+    from app.models import Chunk, Source
+    from app.services.chunk_editor import merge_chunks
+
+    other_source = Source(type="note", title="Other")
+    db_session.add(other_source)
+    db_session.flush()
+
+    c1 = Chunk(source_id=test_source.id, content="A", embedding=[0.0] * EMBEDDING_DIM)
+    c2 = Chunk(source_id=other_source.id, content="B", embedding=[0.0] * EMBEDDING_DIM)
+    db_session.add_all([c1, c2])
+    db_session.flush()
+
+    with _pytest.raises(ValueError, match="source"):
+        merge_chunks(db=db_session, chunk_ids=[c1.id, c2.id], tokenizer=tokenizer)
+
+
+def test_merge_chunks_single_id(db_session, test_source, tokenizer):
+    """Merging with less than 2 IDs should raise ValueError."""
+    import pytest as _pytest
+    from app.models import Chunk
+    from app.services.chunk_editor import merge_chunks
+
+    c = Chunk(source_id=test_source.id, content="A", embedding=[0.0] * EMBEDDING_DIM)
+    db_session.add(c)
+    db_session.flush()
+
+    with _pytest.raises(ValueError, match="2"):
+        merge_chunks(db=db_session, chunk_ids=[c.id], tokenizer=tokenizer)
