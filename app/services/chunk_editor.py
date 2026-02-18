@@ -106,9 +106,12 @@ def split_chunk(
     chunk_a = Chunk(content=content_a, embedding=zero_embedding, **shared_attrs)
     chunk_b = Chunk(content=content_b, embedding=zero_embedding, **shared_attrs)
 
-    # Compute search_text for each
+    # Compute search_text for each (include contextual_text if inherited)
     for new_chunk in (chunk_a, chunk_b):
-        new_chunk.search_text = new_chunk.content
+        if chunk.contextual_text:
+            new_chunk.search_text = f"{chunk.contextual_text}\n\n{new_chunk.content}"
+        else:
+            new_chunk.search_text = new_chunk.content
         db.add(new_chunk)
     db.flush()
 
