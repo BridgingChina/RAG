@@ -15,6 +15,7 @@ class ChunkListItem(BaseModel):
     source_id: int
     source_title: str | None
     created_at: datetime
+    needs_reindex: bool
 
 
 class ChunkBridgeLinkDetail(BaseModel):
@@ -43,6 +44,7 @@ class ChunkDetail(BaseModel):
     source_title: str | None
     created_at: datetime
     bridge_links: list[ChunkBridgeLinkDetail]
+    needs_reindex: bool
 
 
 class ChunkUpdate(BaseModel):

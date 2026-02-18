@@ -19,3 +19,8 @@ def test_chunk_has_tsv_field():
 def test_chunk_has_bridge_binding_status_field():
     from app.models.chunk import Chunk
     assert hasattr(Chunk, "bridge_binding_status")
+
+
+def test_chunk_has_needs_reindex_field():
+    from app.models.chunk import Chunk
+    assert hasattr(Chunk, "needs_reindex")

@@ -123,6 +123,7 @@ export interface ChunkListItem {
   source_id: number
   source_title: string | null
   created_at: string
+  needs_reindex: boolean
 }
 
 export interface ChunkBridgeLinkDetail {
@@ -151,6 +152,7 @@ export interface ChunkDetail {
   source_title: string | null
   created_at: string
   bridge_links: ChunkBridgeLinkDetail[]
+  needs_reindex: boolean
 }
 
 export interface ChunkUpdateRequest {

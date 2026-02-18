@@ -45,6 +45,7 @@ def list_chunks(
             Chunk.source_id,
             Source.title.label("source_title"),
             Chunk.created_at,
+            Chunk.needs_reindex,
         )
         .outerjoin(Bridge, Chunk.bridge_id == Bridge.id)
         .outerjoin(Source, Chunk.source_id == Source.id)
@@ -92,6 +93,7 @@ def list_chunks(
                 source_id=row.source_id,
                 source_title=row.source_title,
                 created_at=row.created_at,
+                needs_reindex=row.needs_reindex,
             )
         )
 
@@ -166,6 +168,7 @@ def get_chunk(chunk_id: int, db: Session = Depends(get_db)) -> ChunkDetail:
         source_title=source_title,
         created_at=chunk.created_at,
         bridge_links=bridge_links,
+        needs_reindex=chunk.needs_reindex,
     )
 
 
