@@ -98,6 +98,7 @@ def split_chunk(
         bridge_id=chunk.bridge_id,
         bridge_binding_status=chunk.bridge_binding_status,
         page_range=chunk.page_range,
+        contextual_text=chunk.contextual_text,
         needs_reindex=True,
     )
 
