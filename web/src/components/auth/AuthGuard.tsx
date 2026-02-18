@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Outlet, useNavigate } from "react-router"
 import { fetchMe } from "@/lib/api"
 import { useAuth } from "@/contexts/AuthContext"
@@ -7,8 +7,12 @@ export function AuthGuard() {
   const navigate = useNavigate()
   const { setUser } = useAuth()
   const [checking, setChecking] = useState(true)
+  const checkedRef = useRef(false)
 
   useEffect(() => {
+    if (checkedRef.current) return
+    checkedRef.current = true
+
     const token = localStorage.getItem("auth-token")
     if (!token) {
       navigate("/login", { replace: true })

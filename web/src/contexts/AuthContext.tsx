@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 import type { UserInfo } from "@/lib/types"
 
 interface AuthContextType {
@@ -12,14 +12,16 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null>(null)
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem("auth-token")
     setUser(null)
     window.location.href = "/login"
-  }
+  }, [])
+
+  const value = useMemo(() => ({ user, setUser, logout }), [user, logout])
 
   return (
-    <AuthContext.Provider value={{ user, setUser, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )
