@@ -1,7 +1,9 @@
 """Service for chunk editing operations (content update, split, merge, reindex)."""
 import asyncio
+from datetime import datetime
 from functools import lru_cache
 
+from fastapi import HTTPException
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,21 @@ from app.core.constants import EMBEDDING_DIM
 from app.core.logging import logger
 from app.models import Chunk, ChunkBridgeLink
 from app.services.tokenizer import Tokenizer, default_user_dict_path
+
+
+def check_optimistic_lock(chunk, expected: datetime | None) -> None:
+    """Raise 409 if chunk was modified since the expected timestamp."""
+    if expected is None:
+        return
+    if chunk.updated_at != expected:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "detail": "Chunk has been modified by another user",
+                "current_updated_at": chunk.updated_at.isoformat(),
+                "chunk_id": chunk.id,
+            },
+        )
 
 
 @lru_cache(maxsize=1)
