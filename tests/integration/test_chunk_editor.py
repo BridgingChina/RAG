@@ -296,3 +296,30 @@ def test_reindex_skips_clean_chunks(db_session, test_source, tokenizer):
     )
 
     assert result["chunks_reindexed"] == 0
+
+
+def test_optimistic_lock_conflict(db_session, sample_chunk):
+    """check_optimistic_lock should raise 409 when timestamps don't match."""
+    from datetime import datetime, timezone
+
+    import pytest
+    from fastapi import HTTPException
+
+    from app.services.chunk_editor import check_optimistic_lock
+
+    # Record a stale timestamp
+    stale_ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+    # Simulate another user's edit by setting a different updated_at
+    sample_chunk.updated_at = datetime(2026, 2, 18, tzinfo=timezone.utc)
+    db_session.flush()
+
+    # Attempting to use the stale timestamp should raise 409
+    with pytest.raises(HTTPException) as exc_info:
+        check_optimistic_lock(sample_chunk, expected=stale_ts)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["chunk_id"] == sample_chunk.id
+
+    # Using the correct timestamp should pass
+    check_optimistic_lock(sample_chunk, expected=sample_chunk.updated_at)
