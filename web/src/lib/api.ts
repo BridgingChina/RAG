@@ -7,14 +7,19 @@ import type {
   BridgeMergeRequest,
   BridgeUpdateRequest,
   ChangePasswordRequest,
+  ChunkBatchRequest,
   ChunkDetail,
   ChunkListItem,
+  ChunkMergeRequest,
+  ChunkSplitRequest,
+  ChunkSplitResponse,
   ChunkUpdateRequest,
   DashboardStats,
   IngestResponse,
   LoginRequest,
   LoginResponse,
   PaginatedResponse,
+  ReindexResponse,
   SourceDetail,
   SourceListItem,
   SystemStatus,
@@ -129,6 +134,25 @@ async function del(url: string): Promise<void> {
   }
 }
 
+async function patch<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    if (res.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+
+  return res.json()
+}
+
 // --- Ask & Ingest (existing endpoints) ---
 
 export function askQuestion(
@@ -196,6 +220,30 @@ export function updateChunk(
 
 export function deleteChunk(id: number): Promise<void> {
   return del(`/chunks/${id}`)
+}
+
+export function splitChunk(
+  id: number,
+  data: ChunkSplitRequest,
+): Promise<ChunkSplitResponse> {
+  return post<ChunkSplitResponse>(`/chunks/${id}/split`, data)
+}
+
+export function mergeChunks(data: ChunkMergeRequest): Promise<ChunkDetail> {
+  return post<ChunkDetail>("/chunks/merge", data)
+}
+
+export function batchChunks(
+  data: ChunkBatchRequest,
+): Promise<{ updated?: number; deleted?: number }> {
+  return patch<{ updated?: number; deleted?: number }>("/chunks/batch", data)
+}
+
+export function reindexSource(
+  sourceId: number,
+  force = false,
+): Promise<ReindexResponse> {
+  return post<ReindexResponse>(`/sources/${sourceId}/reindex?force=${force}`, {})
 }
 
 // --- Bridges ---

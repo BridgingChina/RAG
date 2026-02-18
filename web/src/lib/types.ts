@@ -161,6 +161,48 @@ export interface ChunkUpdateRequest {
   lvl3?: string | null
   bridge_id?: number | null
   binding_status?: "none" | "primary" | "ambiguous"
+  content?: string | null
+  section_title?: string | null
+  bridge_links?: BridgeLinkInput[] | null
+}
+
+export interface BridgeLinkInput {
+  bridge_id: number
+  role: "primary" | "secondary" | "candidate"
+  confidence?: number
+  method?: "hint" | "rule" | "llm" | "manual"
+}
+
+export interface ChunkSplitRequest {
+  position: number
+}
+
+export interface ChunkSplitResponse {
+  chunks: ChunkDetail[]
+}
+
+export interface ChunkMergeRequest {
+  chunk_ids: number[]
+}
+
+export interface ChunkBatchUpdate {
+  lvl1?: string | null
+  lvl2?: string | null
+  lvl3?: string | null
+  bridge_id?: number | null
+  binding_status?: "none" | "primary" | "ambiguous"
+}
+
+export interface ChunkBatchRequest {
+  chunk_ids: number[]
+  action: "update" | "delete"
+  updates?: ChunkBatchUpdate
+}
+
+export interface ReindexResponse {
+  source_id: number
+  chunks_reindexed: number
+  chunks_failed: number[]
 }
 
 // --- Bridges ---
