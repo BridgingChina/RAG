@@ -2,6 +2,7 @@
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
+from app.core.constants import EMBEDDING_DIM
 from app.models import Chunk, ChunkBridgeLink
 from app.services.tokenizer import Tokenizer
 
@@ -70,3 +71,74 @@ def replace_bridge_links(
 
     db.flush()
     return chunk
+
+
+def split_chunk(
+    *,
+    db: Session,
+    chunk: Chunk,
+    position: int,
+    tokenizer: Tokenizer,
+) -> list[Chunk]:
+    """Split a chunk at the given character position. Returns [chunk_a, chunk_b]."""
+    content = chunk.content
+    if position <= 0 or position >= len(content):
+        raise ValueError(f"position must be between 1 and {len(content) - 1}, got {position}")
+
+    content_a = content[:position]
+    content_b = content[position:]
+
+    # Inherit metadata from original
+    shared_attrs = dict(
+        source_id=chunk.source_id,
+        section_title=chunk.section_title,
+        lvl1=chunk.lvl1,
+        lvl2=chunk.lvl2,
+        lvl3=chunk.lvl3,
+        bridge_id=chunk.bridge_id,
+        bridge_binding_status=chunk.bridge_binding_status,
+        page_range=chunk.page_range,
+        needs_reindex=True,
+    )
+
+    zero_embedding = [0.0] * EMBEDDING_DIM
+
+    chunk_a = Chunk(content=content_a, embedding=zero_embedding, **shared_attrs)
+    chunk_b = Chunk(content=content_b, embedding=zero_embedding, **shared_attrs)
+
+    # Compute search_text for each
+    for new_chunk in (chunk_a, chunk_b):
+        new_chunk.search_text = new_chunk.content
+        db.add(new_chunk)
+    db.flush()
+
+    # Compute tsv for each
+    for new_chunk in (chunk_a, chunk_b):
+        tsv_text = tokenizer.to_tsvector_text(new_chunk.search_text)
+        db.execute(
+            sql_text("UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"),
+            {"tsv_text": tsv_text, "id": new_chunk.id},
+        )
+
+    # Copy bridge_links from original to both new chunks
+    original_links = (
+        db.query(ChunkBridgeLink)
+        .filter(ChunkBridgeLink.chunk_id == chunk.id)
+        .all()
+    )
+    for link in original_links:
+        for new_chunk in (chunk_a, chunk_b):
+            db.add(ChunkBridgeLink(
+                chunk_id=new_chunk.id,
+                bridge_id=link.bridge_id,
+                role=link.role,
+                confidence=link.confidence,
+                method=link.method,
+            ))
+
+    # Delete original chunk and its links
+    db.query(ChunkBridgeLink).filter(ChunkBridgeLink.chunk_id == chunk.id).delete()
+    db.delete(chunk)
+    db.flush()
+
+    return [chunk_a, chunk_b]

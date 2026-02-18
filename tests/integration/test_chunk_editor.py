@@ -129,3 +129,48 @@ def test_replace_bridge_links_no_primary(db_session, sample_chunk, test_bridges)
 
     assert sample_chunk.bridge_id is None
     assert sample_chunk.bridge_binding_status == "ambiguous"
+
+
+def test_split_chunk(db_session, sample_chunk, tokenizer):
+    """Splitting a chunk should create two new chunks and delete the original."""
+    from app.models import Chunk
+    from app.services.chunk_editor import split_chunk
+
+    original_id = sample_chunk.id
+    original_content = sample_chunk.content  # "赵州桥是一座石拱桥，建于隋代。"
+    position = 9  # Split after "赵州桥是一座石拱桥"
+
+    new_chunks = split_chunk(
+        db=db_session,
+        chunk=sample_chunk,
+        position=position,
+        tokenizer=tokenizer,
+    )
+
+    assert len(new_chunks) == 2
+    assert new_chunks[0].content == original_content[:position]
+    assert new_chunks[1].content == original_content[position:]
+    assert new_chunks[0].lvl1 == "形制与技术"  # inherited
+    assert new_chunks[1].lvl1 == "形制与技术"  # inherited
+    assert new_chunks[0].source_id == sample_chunk.source_id
+    assert new_chunks[1].source_id == sample_chunk.source_id
+    assert new_chunks[0].needs_reindex is True
+    assert new_chunks[1].needs_reindex is True
+
+    # Original chunk should be gone
+    assert db_session.query(Chunk).filter(Chunk.id == original_id).first() is None
+
+
+def test_split_chunk_invalid_position(db_session, sample_chunk, tokenizer):
+    """Split at invalid position should raise ValueError."""
+    import pytest as _pytest
+    from app.services.chunk_editor import split_chunk
+
+    with _pytest.raises(ValueError, match="position"):
+        split_chunk(db=db_session, chunk=sample_chunk, position=0, tokenizer=tokenizer)
+
+    with _pytest.raises(ValueError, match="position"):
+        split_chunk(
+            db=db_session, chunk=sample_chunk,
+            position=len(sample_chunk.content), tokenizer=tokenizer,
+        )

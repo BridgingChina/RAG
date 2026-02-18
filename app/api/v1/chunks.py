@@ -10,6 +10,8 @@ from app.api.v1.schemas.chunk import (
     ChunkBridgeLinkDetail,
     ChunkDetail,
     ChunkListItem,
+    ChunkSplitRequest,
+    ChunkSplitResponse,
     ChunkUpdate,
 )
 from app.api.v1.schemas.common import PaginatedResponse
@@ -304,3 +306,41 @@ def delete_chunk(
     # Delete the chunk
     db.delete(chunk)
     db.commit()
+
+
+@router.post("/{chunk_id}/split", response_model=ChunkSplitResponse)
+def split_chunk_endpoint(
+    chunk_id: int,
+    body: ChunkSplitRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChunkSplitResponse:
+    """Split a chunk at the given character position."""
+    from app.services.chunk_editor import split_chunk as do_split
+
+    chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    try:
+        new_chunks = do_split(
+            db=db, chunk=chunk, position=body.position, tokenizer=_get_tokenizer(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    db.commit()
+
+    AuditService.log(
+        db,
+        action="split",
+        resource_type="chunk",
+        user_id=current_user.id,
+        resource_id=str(chunk_id),
+        detail={"new_chunk_ids": [c.id for c in new_chunks]},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return ChunkSplitResponse(chunks=[get_chunk(c.id, db) for c in new_chunks])
