@@ -226,7 +226,24 @@ def update_chunk(
     if "binding_status" in update_data:
         update_data["bridge_binding_status"] = update_data.pop("binding_status")
 
-    # Apply updates
+    # Handle content update (requires search_text + tsv recomputation)
+    if "content" in update_data:
+        from app.services.chunk_editor import update_chunk_content
+        from app.services.tokenizer import Tokenizer, default_user_dict_path
+        tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
+        update_chunk_content(
+            db=db, chunk=chunk, new_content=update_data.pop("content"), tokenizer=tokenizer,
+        )
+
+    # Handle section_title separately (simple field update)
+    if "section_title" in update_data:
+        chunk.section_title = update_data.pop("section_title")
+
+    # Handle bridge_links replacement (placeholder for Task 4)
+    if "bridge_links" in update_data:
+        update_data.pop("bridge_links")  # Will be implemented in Task 4
+
+    # Apply remaining updates (lvl1/2/3, bridge_id, bridge_binding_status)
     for key, value in update_data.items():
         setattr(chunk, key, value)
 
