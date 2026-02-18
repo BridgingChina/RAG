@@ -1,4 +1,6 @@
 """Chunks CRUD API endpoints."""
+from functools import lru_cache
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -14,8 +16,15 @@ from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
+from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
+
+
+@lru_cache(maxsize=1)
+def _get_tokenizer() -> Tokenizer:
+    """Get or create cached tokenizer instance."""
+    return Tokenizer(user_dict_path=default_user_dict_path())
 
 
 @router.get("", response_model=PaginatedResponse[ChunkListItem])
@@ -229,19 +238,21 @@ def update_chunk(
     # Handle content update (requires search_text + tsv recomputation)
     if "content" in update_data:
         from app.services.chunk_editor import update_chunk_content
-        from app.services.tokenizer import Tokenizer, default_user_dict_path
-        tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
+        tokenizer = _get_tokenizer()
         update_chunk_content(
             db=db, chunk=chunk, new_content=update_data.pop("content"), tokenizer=tokenizer,
         )
 
-    # Handle section_title separately (simple field update)
-    if "section_title" in update_data:
-        chunk.section_title = update_data.pop("section_title")
-
-    # Handle bridge_links replacement (placeholder for Task 4)
+    # Handle bridge_links replacement
     if "bridge_links" in update_data:
-        update_data.pop("bridge_links")  # Will be implemented in Task 4
+        from app.services.chunk_editor import replace_bridge_links
+        bridge_links_data = update_data.pop("bridge_links")
+        if bridge_links_data is not None:
+            # Validate all bridge_ids exist
+            for bl in bridge_links_data:
+                if not db.query(Bridge).filter(Bridge.id == bl["bridge_id"]).first():
+                    raise HTTPException(status_code=422, detail=f"Bridge {bl['bridge_id']} not found")
+            replace_bridge_links(db=db, chunk=chunk, links=bridge_links_data)
 
     # Apply remaining updates (lvl1/2/3, bridge_id, bridge_binding_status)
     for key, value in update_data.items():

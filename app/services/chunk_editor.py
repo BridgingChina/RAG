@@ -32,3 +32,41 @@ def update_chunk_content(
     chunk.needs_reindex = True
     db.flush()
     return chunk
+
+
+def replace_bridge_links(
+    *,
+    db: Session,
+    chunk: Chunk,
+    links: list[dict],
+) -> Chunk:
+    """Replace all bridge links for a chunk. Updates chunk.bridge_id from primary link."""
+    # Delete existing links
+    db.query(ChunkBridgeLink).filter(ChunkBridgeLink.chunk_id == chunk.id).delete()
+
+    # Insert new links
+    primary_bridge_id = None
+    for link_data in links:
+        db.add(ChunkBridgeLink(
+            chunk_id=chunk.id,
+            bridge_id=link_data["bridge_id"],
+            role=link_data["role"],
+            confidence=link_data["confidence"],
+            method=link_data.get("method", "manual"),
+        ))
+        if link_data["role"] == "primary" and primary_bridge_id is None:
+            primary_bridge_id = link_data["bridge_id"]
+
+    # Sync chunk.bridge_id and binding_status
+    if primary_bridge_id is not None:
+        chunk.bridge_id = primary_bridge_id
+        chunk.bridge_binding_status = "primary"
+    elif links:
+        chunk.bridge_id = None
+        chunk.bridge_binding_status = "ambiguous"
+    else:
+        chunk.bridge_id = None
+        chunk.bridge_binding_status = "none"
+
+    db.flush()
+    return chunk

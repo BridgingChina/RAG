@@ -78,3 +78,54 @@ def test_update_chunk_content_no_contextual_text(db_session, test_source, tokeni
     assert result.content == "新内容"
     assert result.search_text == "新内容"
     assert result.needs_reindex is True
+
+
+def test_replace_bridge_links(db_session, sample_chunk, test_bridges):
+    """Replacing bridge_links should delete old links and insert new ones."""
+    from app.models import ChunkBridgeLink
+    from app.services.chunk_editor import replace_bridge_links
+
+    target = test_bridges["target"]
+    candidate1 = test_bridges["candidate1"]
+
+    links_input = [
+        {"bridge_id": target.id, "role": "primary", "confidence": 0.95, "method": "manual"},
+        {"bridge_id": candidate1.id, "role": "secondary", "confidence": 0.6, "method": "manual"},
+    ]
+
+    replace_bridge_links(db=db_session, chunk=sample_chunk, links=links_input)
+
+    db_links = (
+        db_session.query(ChunkBridgeLink)
+        .filter(ChunkBridgeLink.chunk_id == sample_chunk.id)
+        .order_by(ChunkBridgeLink.role)
+        .all()
+    )
+    assert len(db_links) == 2
+    assert sample_chunk.bridge_id == target.id
+    assert sample_chunk.bridge_binding_status == "primary"
+
+
+def test_replace_bridge_links_empty(db_session, sample_chunk):
+    """Replacing with empty list should clear all links and set status to none."""
+    from app.services.chunk_editor import replace_bridge_links
+
+    replace_bridge_links(db=db_session, chunk=sample_chunk, links=[])
+
+    assert sample_chunk.bridge_id is None
+    assert sample_chunk.bridge_binding_status == "none"
+
+
+def test_replace_bridge_links_no_primary(db_session, sample_chunk, test_bridges):
+    """Links without primary role should set status to ambiguous."""
+    from app.services.chunk_editor import replace_bridge_links
+
+    links_input = [
+        {"bridge_id": test_bridges["target"].id, "role": "candidate", "confidence": 0.5, "method": "manual"},
+        {"bridge_id": test_bridges["candidate1"].id, "role": "candidate", "confidence": 0.4, "method": "manual"},
+    ]
+
+    replace_bridge_links(db=db_session, chunk=sample_chunk, links=links_input)
+
+    assert sample_chunk.bridge_id is None
+    assert sample_chunk.bridge_binding_status == "ambiguous"
