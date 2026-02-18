@@ -34,6 +34,7 @@ import {
   mergeChunks,
   batchChunks,
   reindexSource,
+  ConflictError,
 } from "@/lib/api"
 import type {
   ChunkListItem,
@@ -201,6 +202,10 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   const [splitPos, setSplitPos] = useState("")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
+  // Conflict dialog state
+  const [conflictOpen, setConflictOpen] = useState(false)
+  const [conflictRetryFn, setConflictRetryFn] = useState<(() => void) | null>(null)
+
   // Action state
   const [saving, setSaving] = useState(false)
   const [splitting, setSplitting] = useState(false)
@@ -229,6 +234,15 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   const lvl2Options = getLvl2Options(taxItems, lvl1)
   const lvl3Options = getLvl3Options(taxItems, lvl1, lvl2)
 
+  function handleConflictError(err: unknown, retryWithoutLock: () => void): boolean {
+    if (err instanceof ConflictError) {
+      setConflictRetryFn(() => retryWithoutLock)
+      setConflictOpen(true)
+      return true
+    }
+    return false
+  }
+
   const handleSave = useCallback(async () => {
     if (!chunk) return
     setSaving(true)
@@ -251,10 +265,35 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
         updates.bridge_links = newLinks
       }
 
+      // Include optimistic lock timestamp
+      updates.expected_updated_at = chunk.updated_at
+
       await updateChunk(chunk.id, updates)
       refetch()
       onMutated()
     } catch (e) {
+      if (handleConflictError(e, () => {
+        // Retry without the lock — force overwrite
+        const updates: Parameters<typeof updateChunk>[1] = {}
+        if (content !== chunk.content) updates.content = content
+        if ((sectionTitle || null) !== chunk.section_title)
+          updates.section_title = sectionTitle || null
+        if (lvl1 !== chunk.lvl1) updates.lvl1 = lvl1
+        if (lvl2 !== chunk.lvl2) updates.lvl2 = lvl2
+        if (lvl3 !== chunk.lvl3) updates.lvl3 = lvl3
+        const newLinks = bridgeLinkRowsToInput(bridgeLinks)
+        const origLinks = bridgeLinkRowsToInput(
+          bridgeLinkRowsFromDetail(chunk.bridge_links),
+        )
+        if (JSON.stringify(newLinks) !== JSON.stringify(origLinks)) {
+          updates.bridge_links = newLinks
+        }
+        setSaving(true)
+        updateChunk(chunk.id, updates)
+          .then(() => { refetch(); onMutated() })
+          .catch((err2) => setActionError(err2 instanceof Error ? err2.message : String(err2)))
+          .finally(() => setSaving(false))
+      })) return
       setActionError(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
@@ -267,10 +306,20 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     setActionError(null)
     try {
       const pos = Number(splitPos)
-      await splitChunk(chunk.id, { position: pos })
+      await splitChunk(chunk.id, { position: pos, expected_updated_at: chunk.updated_at })
       setSplitDialogOpen(false)
       onMutated()
     } catch (e) {
+      if (handleConflictError(e, () => {
+        // Retry without lock — force overwrite
+        const pos = Number(splitPos)
+        setSplitting(true)
+        setSplitDialogOpen(false)
+        splitChunk(chunk.id, { position: pos })
+          .then(() => onMutated())
+          .catch((err2) => setActionError(err2 instanceof Error ? err2.message : String(err2)))
+          .finally(() => setSplitting(false))
+      })) return
       setActionError(e instanceof Error ? e.message : String(e))
     } finally {
       setSplitting(false)
@@ -282,10 +331,19 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     setDeleting(true)
     setActionError(null)
     try {
-      await deleteChunk(chunk.id)
+      await deleteChunk(chunk.id, chunk.updated_at)
       setDeleteDialogOpen(false)
       onMutated()
     } catch (e) {
+      if (handleConflictError(e, () => {
+        // Retry without lock — force delete
+        setDeleting(true)
+        setDeleteDialogOpen(false)
+        deleteChunk(chunk.id)
+          .then(() => onMutated())
+          .catch((err2) => setActionError(err2 instanceof Error ? err2.message : String(err2)))
+          .finally(() => setDeleting(false))
+      })) return
       setActionError(e instanceof Error ? e.message : String(e))
     } finally {
       setDeleting(false)
@@ -602,6 +660,38 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
               disabled={deleting}
             >
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Conflict dialog */}
+      <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>编辑冲突</DialogTitle>
+            <DialogDescription>
+              该 Chunk 已被其他用户修改。您可以强制覆盖或放弃本次更改。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConflictOpen(false)
+                refetch()
+              }}
+            >
+              放弃修改
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConflictOpen(false)
+                conflictRetryFn?.()
+              }}
+            >
+              强制覆盖
             </Button>
           </DialogFooter>
         </DialogContent>
