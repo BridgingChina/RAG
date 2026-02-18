@@ -16,6 +16,7 @@ class ChunkListItem(BaseModel):
     source_title: str | None
     created_at: datetime
     needs_reindex: bool
+    updated_at: datetime
 
 
 class ChunkBridgeLinkDetail(BaseModel):
@@ -45,6 +46,7 @@ class ChunkDetail(BaseModel):
     created_at: datetime
     bridge_links: list[ChunkBridgeLinkDetail]
     needs_reindex: bool
+    updated_at: datetime
 
 
 class BridgeLinkInput(BaseModel):
@@ -63,6 +65,7 @@ class ChunkUpdate(BaseModel):
     content: str | None = None
     section_title: str | None = None
     bridge_links: list[BridgeLinkInput] | None = None
+    expected_updated_at: datetime | None = None
 
     @field_validator("lvl1", "lvl2", "lvl3", mode="before")
     @classmethod
@@ -76,6 +79,7 @@ class ChunkUpdate(BaseModel):
 
 class ChunkSplitRequest(BaseModel):
     position: int
+    expected_updated_at: datetime | None = None
 
 
 class ChunkSplitResponse(BaseModel):

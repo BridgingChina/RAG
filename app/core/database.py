@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 4
+LATEST_SCHEMA_VERSION = 5
 
 
 def get_db():
@@ -129,6 +129,7 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "search_text",
             "tsv",
             "needs_reindex",
+            "updated_at",
             "created_at",
         },
         "chunk_bridge_links": {
@@ -252,6 +253,19 @@ def _migrate_schema(engine: Engine, current_version: int, *, conn: Connection) -
         set_schema_version(engine, 4, "Add chunk needs_reindex flag", conn=conn)
         logger.info("Migration to v4 complete.")
 
+    if current_version < 5:
+        logger.info("Migrating schema v4 → v5: adding chunks.updated_at column...")
+        conn.execute(
+            text(
+                "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS "
+                "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+            )
+        )
+        # Backfill: set updated_at = created_at for existing rows
+        conn.execute(text("UPDATE chunks SET updated_at = created_at"))
+        set_schema_version(engine, 5, "Add chunk updated_at for optimistic locking", conn=conn)
+        logger.info("Migration to v5 complete.")
+
 
 def _seed_taxonomy_if_empty(conn: Connection) -> None:
     """Seed taxonomy_nodes from config/taxonomy.yaml if table is empty."""
@@ -340,7 +354,7 @@ def init_database() -> None:
 
             # Set initial version
             set_schema_version(
-                engine, LATEST_SCHEMA_VERSION, "Schema v4 with chunk needs_reindex flag", conn=conn
+                engine, LATEST_SCHEMA_VERSION, "Schema v5 with chunk updated_at for optimistic locking", conn=conn
             )
 
             logger.info("Database initialization completed successfully")
