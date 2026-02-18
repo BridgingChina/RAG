@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.chunk import (
+    ChunkBatchRequest,
     ChunkBridgeLinkDetail,
     ChunkDetail,
     ChunkListItem,
@@ -376,3 +377,68 @@ def merge_chunks_endpoint(
     db.commit()
 
     return get_chunk(merged.id, db)
+
+
+@router.patch("/batch", status_code=200)
+def batch_chunks(
+    body: ChunkBatchRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Batch update or delete chunks."""
+    # Validate all chunk_ids exist
+    existing = db.query(Chunk.id).filter(Chunk.id.in_(body.chunk_ids)).all()
+    existing_ids = {row.id for row in existing}
+    missing = set(body.chunk_ids) - existing_ids
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Chunks not found: {sorted(missing)}")
+
+    if body.action == "delete":
+        db.query(ChunkBridgeLink).filter(
+            ChunkBridgeLink.chunk_id.in_(body.chunk_ids)
+        ).delete()
+        count = db.query(Chunk).filter(Chunk.id.in_(body.chunk_ids)).delete()
+        db.flush()
+
+        AuditService.log(
+            db,
+            action="batch_delete",
+            resource_type="chunk",
+            user_id=current_user.id,
+            detail={"chunk_ids": body.chunk_ids},
+            ip_address=get_client_ip(request),
+        )
+        db.commit()
+        return {"deleted": count}
+
+    elif body.action == "update":
+        if not body.updates:
+            raise HTTPException(status_code=400, detail="updates required for action=update")
+
+        update_data = body.updates.model_dump(exclude_unset=True)
+        if "binding_status" in update_data:
+            update_data["bridge_binding_status"] = update_data.pop("binding_status")
+
+        # Validate bridge_id if present
+        if "bridge_id" in update_data and update_data["bridge_id"] is not None:
+            if not db.query(Bridge).filter(Bridge.id == update_data["bridge_id"]).first():
+                raise HTTPException(
+                    status_code=422, detail=f"Bridge {update_data['bridge_id']} not found"
+                )
+
+        count = db.query(Chunk).filter(Chunk.id.in_(body.chunk_ids)).update(
+            update_data, synchronize_session="fetch"
+        )
+        db.flush()
+
+        AuditService.log(
+            db,
+            action="batch_update",
+            resource_type="chunk",
+            user_id=current_user.id,
+            detail={"chunk_ids": body.chunk_ids, "updates": update_data},
+            ip_address=get_client_ip(request),
+        )
+        db.commit()
+        return {"updated": count}
