@@ -1,7 +1,8 @@
 import { useState } from "react"
+import { useNavigate } from "react-router"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Upload, Loader2 } from "lucide-react"
+import { Upload, Loader2, PenLine } from "lucide-react"
 import { ingestDocument } from "@/lib/api"
 import type { IngestResponse } from "@/lib/types"
 import { ChunkList } from "./ChunkList"
@@ -12,6 +13,7 @@ const SOURCE_TYPES = ["document", "note"]
 // For production deployment, implement authentication and authorization checks.
 // See web/SECURITY.md for details.
 export function IngestPanel() {
+  const navigate = useNavigate()
   const [content, setContent] = useState("")
   const [sourceType, setSourceType] = useState("document")
   const [bridgeCandidates, setBridgeCandidates] = useState("")
@@ -124,9 +126,22 @@ export function IngestPanel() {
                   : ""}
               </p>
             </div>
-            <span className="text-sm text-slate-500">
-              共 <span className="font-semibold text-blue-500">{result.chunk_count}</span> 个知识块
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-500">
+                共 <span className="font-semibold text-blue-500">{result.chunk_count}</span> 个知识块
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                onClick={() =>
+                  navigate(`/sources/${result.source_id}/chunks/edit`)
+                }
+              >
+                <PenLine className="h-3 w-3" />
+                去校对
+              </Button>
+            </div>
           </div>
           <ChunkList chunks={result.chunks} />
         </div>
