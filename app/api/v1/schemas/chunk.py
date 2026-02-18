@@ -15,6 +15,8 @@ class ChunkListItem(BaseModel):
     source_id: int
     source_title: str | None
     created_at: datetime
+    needs_reindex: bool
+    updated_at: datetime
 
 
 class ChunkBridgeLinkDetail(BaseModel):
@@ -43,9 +45,52 @@ class ChunkDetail(BaseModel):
     source_title: str | None
     created_at: datetime
     bridge_links: list[ChunkBridgeLinkDetail]
+    needs_reindex: bool
+    updated_at: datetime
+
+
+class BridgeLinkInput(BaseModel):
+    bridge_id: int
+    role: Literal["primary", "secondary", "candidate"]
+    confidence: float = 1.0
+    method: Literal["hint", "rule", "llm", "manual"] = "manual"
 
 
 class ChunkUpdate(BaseModel):
+    lvl1: str | None = None
+    lvl2: str | None = None
+    lvl3: str | None = None
+    bridge_id: int | None = None
+    binding_status: Literal["none", "primary", "ambiguous"] | None = None
+    content: str | None = None
+    section_title: str | None = None
+    bridge_links: list[BridgeLinkInput] | None = None
+    expected_updated_at: datetime | None = None
+
+    @field_validator("lvl1", "lvl2", "lvl3", mode="before")
+    @classmethod
+    def normalize_empty(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip() if isinstance(v, str) else v
+            if isinstance(v, str) and not v:
+                return None
+        return v
+
+
+class ChunkSplitRequest(BaseModel):
+    position: int
+    expected_updated_at: datetime | None = None
+
+
+class ChunkSplitResponse(BaseModel):
+    chunks: list[ChunkDetail]
+
+
+class ChunkMergeRequest(BaseModel):
+    chunk_ids: list[int]
+
+
+class ChunkBatchUpdate(BaseModel):
     lvl1: str | None = None
     lvl2: str | None = None
     lvl3: str | None = None
@@ -60,3 +105,15 @@ class ChunkUpdate(BaseModel):
             if isinstance(v, str) and not v:
                 return None
         return v
+
+
+class ChunkBatchRequest(BaseModel):
+    chunk_ids: list[int]
+    action: Literal["update", "delete"]
+    updates: ChunkBatchUpdate | None = None
+
+
+class ReindexResponse(BaseModel):
+    source_id: int
+    chunks_reindexed: int
+    chunks_failed: list[int]

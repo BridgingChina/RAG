@@ -34,10 +34,17 @@ from .bridge import (
 
 # Chunk schemas
 from .chunk import (
+    BridgeLinkInput,
+    ChunkBatchRequest,
+    ChunkBatchUpdate,
     ChunkBridgeLinkDetail,
     ChunkDetail,
     ChunkListItem,
+    ChunkMergeRequest,
+    ChunkSplitRequest,
+    ChunkSplitResponse,
     ChunkUpdate,
+    ReindexResponse,
 )
 
 # Ingest schemas
@@ -102,10 +109,17 @@ __all__ = [
     "BridgeMergeRequest",
     "BridgeUpdate",
     # Chunk
+    "BridgeLinkInput",
+    "ChunkBatchRequest",
+    "ChunkBatchUpdate",
     "ChunkBridgeLinkDetail",
     "ChunkDetail",
     "ChunkListItem",
+    "ChunkMergeRequest",
+    "ChunkSplitRequest",
+    "ChunkSplitResponse",
     "ChunkUpdate",
+    "ReindexResponse",
     # Ingest
     "BridgeBindingStatus",
     "IngestRequest",

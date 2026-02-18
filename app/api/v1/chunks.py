@@ -1,19 +1,26 @@
 """Chunks CRUD API endpoints."""
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.chunk import (
+    ChunkBatchRequest,
     ChunkBridgeLinkDetail,
     ChunkDetail,
     ChunkListItem,
+    ChunkMergeRequest,
+    ChunkSplitRequest,
+    ChunkSplitResponse,
     ChunkUpdate,
 )
 from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
+from app.services.chunk_editor import check_optimistic_lock, get_tokenizer
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -45,6 +52,8 @@ def list_chunks(
             Chunk.source_id,
             Source.title.label("source_title"),
             Chunk.created_at,
+            Chunk.needs_reindex,
+            Chunk.updated_at,
         )
         .outerjoin(Bridge, Chunk.bridge_id == Bridge.id)
         .outerjoin(Source, Chunk.source_id == Source.id)
@@ -92,6 +101,8 @@ def list_chunks(
                 source_id=row.source_id,
                 source_title=row.source_title,
                 created_at=row.created_at,
+                needs_reindex=row.needs_reindex,
+                updated_at=row.updated_at,
             )
         )
 
@@ -166,6 +177,8 @@ def get_chunk(chunk_id: int, db: Session = Depends(get_db)) -> ChunkDetail:
         source_title=source_title,
         created_at=chunk.created_at,
         bridge_links=bridge_links,
+        needs_reindex=chunk.needs_reindex,
+        updated_at=chunk.updated_at,
     )
 
 
@@ -183,8 +196,12 @@ def update_chunk(
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
+    # Optimistic lock check
+    check_optimistic_lock(chunk, body.expected_updated_at)
+
     # Get update data, excluding unset fields
     update_data = body.model_dump(exclude_unset=True)
+    update_data.pop("expected_updated_at", None)
 
     # Validate taxonomy path exists if any lvl field is being set
     new_lvl1 = update_data.get("lvl1", chunk.lvl1)
@@ -223,7 +240,31 @@ def update_chunk(
     if "binding_status" in update_data:
         update_data["bridge_binding_status"] = update_data.pop("binding_status")
 
-    # Apply updates
+    # Handle content update (requires search_text + tsv recomputation)
+    if "content" in update_data:
+        from app.services.chunk_editor import update_chunk_content
+        tokenizer = get_tokenizer()
+        update_chunk_content(
+            db=db, chunk=chunk, new_content=update_data.pop("content"), tokenizer=tokenizer,
+        )
+
+    # Handle bridge_links replacement
+    if "bridge_links" in update_data:
+        from app.services.chunk_editor import replace_bridge_links
+        bridge_links_data = update_data.pop("bridge_links")
+        if bridge_links_data is not None:
+            # Validate all bridge_ids exist in a single query
+            requested_ids = {bl["bridge_id"] for bl in bridge_links_data}
+            existing_ids = {
+                row.id
+                for row in db.query(Bridge.id).filter(Bridge.id.in_(requested_ids)).all()
+            }
+            missing = requested_ids - existing_ids
+            if missing:
+                raise HTTPException(status_code=422, detail=f"Bridges not found: {sorted(missing)}")
+            replace_bridge_links(db=db, chunk=chunk, links=bridge_links_data)
+
+    # Apply remaining updates (lvl1/2/3, bridge_id, bridge_binding_status)
     for key, value in update_data.items():
         setattr(chunk, key, value)
 
@@ -248,6 +289,7 @@ def update_chunk(
 def delete_chunk(
     chunk_id: int,
     request: Request,
+    expected_updated_at: datetime | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
@@ -256,6 +298,9 @@ def delete_chunk(
     chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
+
+    # Optimistic lock check
+    check_optimistic_lock(chunk, expected_updated_at)
 
     # Audit log before delete so flush happens before the row is removed
     AuditService.log(
@@ -273,3 +318,140 @@ def delete_chunk(
     # Delete the chunk
     db.delete(chunk)
     db.commit()
+
+
+@router.post("/merge", response_model=ChunkDetail)
+def merge_chunks_endpoint(
+    body: ChunkMergeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChunkDetail:
+    """Merge multiple chunks into one."""
+    from app.services.chunk_editor import merge_chunks as do_merge
+
+    try:
+        merged = do_merge(db=db, chunk_ids=body.chunk_ids, tokenizer=get_tokenizer())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    AuditService.log(
+        db,
+        action="merge",
+        resource_type="chunk",
+        user_id=current_user.id,
+        resource_id=str(merged.id),
+        detail={"merged_chunk_ids": body.chunk_ids},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return get_chunk(merged.id, db)
+
+
+@router.patch("/batch", status_code=200)
+def batch_chunks(
+    body: ChunkBatchRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Batch update or delete chunks."""
+    # Validate all chunk_ids exist
+    existing = db.query(Chunk.id).filter(Chunk.id.in_(body.chunk_ids)).all()
+    existing_ids = {row.id for row in existing}
+    missing = set(body.chunk_ids) - existing_ids
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Chunks not found: {sorted(missing)}")
+
+    if body.action == "delete":
+        db.query(ChunkBridgeLink).filter(
+            ChunkBridgeLink.chunk_id.in_(body.chunk_ids)
+        ).delete()
+        count = db.query(Chunk).filter(Chunk.id.in_(body.chunk_ids)).delete()
+        db.flush()
+
+        AuditService.log(
+            db,
+            action="batch_delete",
+            resource_type="chunk",
+            user_id=current_user.id,
+            detail={"chunk_ids": body.chunk_ids},
+            ip_address=get_client_ip(request),
+        )
+        db.commit()
+        return {"deleted": count}
+
+    elif body.action == "update":
+        if not body.updates:
+            raise HTTPException(status_code=400, detail="updates required for action=update")
+
+        update_data = body.updates.model_dump(exclude_unset=True)
+        if "binding_status" in update_data:
+            update_data["bridge_binding_status"] = update_data.pop("binding_status")
+
+        # Validate bridge_id if present
+        if "bridge_id" in update_data and update_data["bridge_id"] is not None:
+            if not db.query(Bridge).filter(Bridge.id == update_data["bridge_id"]).first():
+                raise HTTPException(
+                    status_code=422, detail=f"Bridge {update_data['bridge_id']} not found"
+                )
+
+        # Log audit detail before adding non-serializable func.now()
+        audit_updates = dict(update_data)
+
+        update_data["updated_at"] = func.now()
+        count = db.query(Chunk).filter(Chunk.id.in_(body.chunk_ids)).update(
+            update_data, synchronize_session="fetch"
+        )
+        db.flush()
+
+        AuditService.log(
+            db,
+            action="batch_update",
+            resource_type="chunk",
+            user_id=current_user.id,
+            detail={"chunk_ids": body.chunk_ids, "updates": audit_updates},
+            ip_address=get_client_ip(request),
+        )
+        db.commit()
+        return {"updated": count}
+
+
+@router.post("/{chunk_id}/split", response_model=ChunkSplitResponse)
+def split_chunk_endpoint(
+    chunk_id: int,
+    body: ChunkSplitRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ChunkSplitResponse:
+    """Split a chunk at the given character position."""
+    from app.services.chunk_editor import split_chunk as do_split
+
+    chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    # Optimistic lock check
+    check_optimistic_lock(chunk, body.expected_updated_at)
+
+    try:
+        new_chunks = do_split(
+            db=db, chunk=chunk, position=body.position, tokenizer=get_tokenizer(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    AuditService.log(
+        db,
+        action="split",
+        resource_type="chunk",
+        user_id=current_user.id,
+        resource_id=str(chunk_id),
+        detail={"new_chunk_ids": [c.id for c in new_chunks]},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return ChunkSplitResponse(chunks=[get_chunk(c.id, db) for c in new_chunks])

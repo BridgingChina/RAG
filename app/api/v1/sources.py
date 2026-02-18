@@ -1,12 +1,15 @@
 """Sources API endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
+from app.api.v1.dependencies import get_client_ip, get_current_user
+from app.api.v1.schemas.chunk import ReindexResponse
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.schemas.source import SourceDetail, SourceListItem
 from app.core.database import get_db
-from app.models import Chunk, Source
+from app.models import Chunk, Source, User
+from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -84,3 +87,44 @@ def get_source(source_id: int, db: Session = Depends(get_db)) -> SourceDetail:
         chunk_count=chunk_count,
         created_at=source.created_at,
     )
+
+
+@router.post("/{source_id}/reindex", response_model=ReindexResponse)
+def reindex_source(
+    source_id: int,
+    request: Request,
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReindexResponse:
+    """Reindex chunks for a source (recompute search_text, tsv, embedding)."""
+    from app.providers import ZhipuProvider
+    from app.services.chunk_editor import get_tokenizer, reindex_source_chunks
+
+    source = db.query(Source).filter(Source.id == source_id).first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    tokenizer = get_tokenizer()
+    provider = ZhipuProvider()
+
+    result = reindex_source_chunks(
+        db=db,
+        source_id=source_id,
+        tokenizer=tokenizer,
+        provider=provider,
+        force=force,
+    )
+
+    AuditService.log(
+        db,
+        action="reindex",
+        resource_type="source",
+        user_id=current_user.id,
+        resource_id=str(source_id),
+        detail={"chunks_reindexed": result["chunks_reindexed"]},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return ReindexResponse(**result)

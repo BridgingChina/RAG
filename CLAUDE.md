@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 3 (adds users and audit_logs tables)
+- Current version: 3 (adds users and audit_logs tables); v4 adds needs_reindex; v5 adds updated_at
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`
@@ -184,6 +184,9 @@ title: 资料标题
 - `SemanticChunker.chunk()` 接收 `list[Section]`（非 `str`）— 调用方必须先 `parse_markdown()` 再传 `doc.sections`
 - `ask` 端点自动从问题文本匹配桥梁名（`_resolve_bridge_from_question`），无需调用方传 `target_bridge_id`
 - Radix UI `<SelectItem value="">` 不工作 — 必须用哨兵值（如 `"__all__"`、`"__none__"`）
+- SQLAlchemy `onupdate=func.now()` 仅对 ORM 级别 UPDATE 生效 — raw SQL / `.update()` 需手动 `SET updated_at = now()`
+- `AuditService.log()` 的 detail dict 必须是 JSON 可序列化的 — 不能放 `func.now()` 等 SQLAlchemy 对象
+- Pydantic response schema 加 required field 后，端点构造器必须同步传值，否则 500 ValidationError
 
 ## Worktrees
 

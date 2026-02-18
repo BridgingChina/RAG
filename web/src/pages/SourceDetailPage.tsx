@@ -96,6 +96,12 @@ export function Component() {
   return (
     <>
       <PageHeader title="来源详情">
+        <Button
+          onClick={() => navigate(`/sources/${id}/chunks/edit`)}
+          variant="outline"
+        >
+          校对 Chunks
+        </Button>
         <Button onClick={() => navigate("/sources")} variant="outline">
           返回列表
         </Button>

@@ -27,6 +27,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database initialization failed: {e}")
         raise
 
+    import asyncio as _asyncio
+    from app.services.reindex_cron import reindex_cron_loop
+    _asyncio.get_event_loop().create_task(reindex_cron_loop())
+    logger.info("Reindex cron task scheduled")
+
     yield
 
     # Shutdown (if needed in future)

@@ -7,14 +7,19 @@ import type {
   BridgeMergeRequest,
   BridgeUpdateRequest,
   ChangePasswordRequest,
+  ChunkBatchRequest,
   ChunkDetail,
   ChunkListItem,
+  ChunkMergeRequest,
+  ChunkSplitRequest,
+  ChunkSplitResponse,
   ChunkUpdateRequest,
   DashboardStats,
   IngestResponse,
   LoginRequest,
   LoginResponse,
   PaginatedResponse,
+  ReindexResponse,
   SourceDetail,
   SourceListItem,
   SystemStatus,
@@ -34,6 +39,18 @@ function authHeaders(): Record<string, string> {
     return { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
   }
   return { "Content-Type": "application/json" }
+}
+
+export class ConflictError extends Error {
+  currentUpdatedAt: string
+  chunkId: number
+
+  constructor(currentUpdatedAt: string, chunkId: number) {
+    super("Chunk has been modified by another user")
+    this.name = "ConflictError"
+    this.currentUpdatedAt = currentUpdatedAt
+    this.chunkId = chunkId
+  }
 }
 
 // --- Core HTTP methods ---
@@ -88,6 +105,10 @@ async function post<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -107,6 +128,10 @@ async function put<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -125,8 +150,35 @@ async function del(url: string): Promise<void> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
+}
+
+async function patch<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${url}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    if (res.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+
+  return res.json()
 }
 
 // --- Ask & Ingest (existing endpoints) ---
@@ -194,8 +246,38 @@ export function updateChunk(
   return put<ChunkDetail>(`/chunks/${id}`, data)
 }
 
-export function deleteChunk(id: number): Promise<void> {
-  return del(`/chunks/${id}`)
+export function deleteChunk(
+  id: number,
+  expectedUpdatedAt?: string,
+): Promise<void> {
+  const params = expectedUpdatedAt
+    ? `?expected_updated_at=${encodeURIComponent(expectedUpdatedAt)}`
+    : ""
+  return del(`/chunks/${id}${params}`)
+}
+
+export function splitChunk(
+  id: number,
+  data: ChunkSplitRequest,
+): Promise<ChunkSplitResponse> {
+  return post<ChunkSplitResponse>(`/chunks/${id}/split`, data)
+}
+
+export function mergeChunks(data: ChunkMergeRequest): Promise<ChunkDetail> {
+  return post<ChunkDetail>("/chunks/merge", data)
+}
+
+export function batchChunks(
+  data: ChunkBatchRequest,
+): Promise<{ updated?: number; deleted?: number }> {
+  return patch<{ updated?: number; deleted?: number }>("/chunks/batch", data)
+}
+
+export function reindexSource(
+  sourceId: number,
+  force = false,
+): Promise<ReindexResponse> {
+  return post<ReindexResponse>(`/sources/${sourceId}/reindex?force=${force}`, {})
 }
 
 // --- Bridges ---

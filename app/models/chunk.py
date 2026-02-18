@@ -1,7 +1,8 @@
+from datetime import datetime
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Index, String, Text, text as sql_text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func, text as sql_text
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +33,15 @@ class Chunk(Base, TimestampMixin):
     contextual_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     search_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tsv: Mapped[Optional[str]] = mapped_column(TSVECTOR, nullable=True)
+    needs_reindex: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sql_text("false")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     __table_args__ = (
         Index("ix_chunks_taxonomy", "lvl1", "lvl2", "lvl3"),

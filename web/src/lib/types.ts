@@ -123,6 +123,8 @@ export interface ChunkListItem {
   source_id: number
   source_title: string | null
   created_at: string
+  needs_reindex: boolean
+  updated_at: string
 }
 
 export interface ChunkBridgeLinkDetail {
@@ -151,6 +153,8 @@ export interface ChunkDetail {
   source_title: string | null
   created_at: string
   bridge_links: ChunkBridgeLinkDetail[]
+  needs_reindex: boolean
+  updated_at: string
 }
 
 export interface ChunkUpdateRequest {
@@ -159,6 +163,50 @@ export interface ChunkUpdateRequest {
   lvl3?: string | null
   bridge_id?: number | null
   binding_status?: "none" | "primary" | "ambiguous"
+  content?: string | null
+  section_title?: string | null
+  bridge_links?: BridgeLinkInput[] | null
+  expected_updated_at?: string
+}
+
+export interface BridgeLinkInput {
+  bridge_id: number
+  role: "primary" | "secondary" | "candidate"
+  confidence?: number
+  method?: "hint" | "rule" | "llm" | "manual"
+}
+
+export interface ChunkSplitRequest {
+  position: number
+  expected_updated_at?: string
+}
+
+export interface ChunkSplitResponse {
+  chunks: ChunkDetail[]
+}
+
+export interface ChunkMergeRequest {
+  chunk_ids: number[]
+}
+
+export interface ChunkBatchUpdate {
+  lvl1?: string | null
+  lvl2?: string | null
+  lvl3?: string | null
+  bridge_id?: number | null
+  binding_status?: "none" | "primary" | "ambiguous"
+}
+
+export interface ChunkBatchRequest {
+  chunk_ids: number[]
+  action: "update" | "delete"
+  updates?: ChunkBatchUpdate
+}
+
+export interface ReindexResponse {
+  source_id: number
+  chunks_reindexed: number
+  chunks_failed: number[]
 }
 
 // --- Bridges ---

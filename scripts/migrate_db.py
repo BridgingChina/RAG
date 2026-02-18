@@ -155,7 +155,7 @@ def main(
 ) -> None:
     db_url = database_url or settings.database_url
     target_schema_version = LATEST_SCHEMA_VERSION
-    target_schema_description = "Schema v3 with users and audit_logs"
+    target_schema_description = "Schema v5 with chunk updated_at for optimistic locking"
     click.echo(f"DB migrate/backfill starting...")
     click.echo(f"- database_url: {db_url}")
     click.echo(f"- dry_run: {dry_run}")
@@ -201,6 +201,8 @@ def main(
                 ("chunks", "tsv", "TSVECTOR"),
                 ("chunks", "bridge_binding_status", "VARCHAR(20) DEFAULT 'none'"),
                 ("bridges", "function", "VARCHAR(100)"),
+                ("chunks", "needs_reindex", "BOOLEAN NOT NULL DEFAULT false"),
+                ("chunks", "updated_at", "TIMESTAMPTZ NOT NULL DEFAULT now()"),
             ]
             for table, column, ddl_type in col_specs:
                 exists = _column_info(conn, table=table, column=column) is not None
