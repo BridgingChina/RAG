@@ -19,7 +19,7 @@ cd web && npm run lint   # ESLint
 cd web && npx tsc --noEmit  # Type check only (no build)
 ```
 
-**Pages:** Dashboard, Chunks (list/detail), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest, Ask, Settings, Audit Logs, Login
+**Pages:** Dashboard, Chunks (list/detail/editor), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest, Ask, Settings, Audit Logs, Login
 
 ### Development Setup
 
@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 3 (adds users and audit_logs tables); v4 adds needs_reindex; v5 adds updated_at
+- Current version: 5 — v3 (users + audit_logs), v4 (chunks.needs_reindex), v5 (chunks.updated_at)
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`
@@ -109,6 +109,8 @@ The system uses automatic schema versioning:
 - `app/services/bridge_linker.py` — 将 chunks 关联到 bridges（通过 `chunk_bridge_links` 表）
 - `app/services/ranker.py` — RRF 算法 + `apply_diversity()` 多样性约束（analogy 通道限每桥 1 条）
 - `app/services/generator.py` — 基于证据生成回答，输出引用和置信度
+- `app/services/chunk_editor.py` — Chunk 手动校对服务：content 编辑（重算 search_text/tsv）、bridge_links 替换、split/merge、批量 reindex。编辑后设 `needs_reindex=True`
+- `app/services/reindex_cron.py` — 每日 03:00 后台 cron，自动重建 stale chunks 的 search_text + tsv（不含 embedding）
 
 **索引链路（search_text pipeline）：** chunk 入库时经历 `content → contextual_text（ContextEnricher 生成的上下文描述）→ search_text（拼合后用于检索的文本）→ tsv（jieba 分词后的 tsvector）`。向量索引用 `embedding` 列，全文索引用 `tsv` 列。
 
@@ -135,6 +137,8 @@ The system uses automatic schema versioning:
 - `POST /api/v1/ingest` — 入库端点，接受 Markdown 格式文档
 - `GET /api/v1/system/status` — 系统状态（只读，DB/配置信息）
 - CRUD: `/api/v1/chunks`, `/api/v1/bridges`, `/api/v1/stats`
+- Chunk editing: `POST /chunks/{id}/split`, `POST /chunks/merge`, `PATCH /chunks/batch`
+- Reindex: `POST /sources/{id}/reindex` — 重建 stale chunks 的 search_text/tsv/embedding
 - Read-only: `/api/v1/sources`（仅 GET list + detail）
 - Tree CRUD: `/api/v1/taxonomy`（`GET tree`, `POST/PUT/DELETE nodes`, `POST batch-update`）
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
@@ -187,6 +191,8 @@ title: 资料标题
 - SQLAlchemy `onupdate=func.now()` 仅对 ORM 级别 UPDATE 生效 — raw SQL / `.update()` 需手动 `SET updated_at = now()`
 - `AuditService.log()` 的 detail dict 必须是 JSON 可序列化的 — 不能放 `func.now()` 等 SQLAlchemy 对象
 - Pydantic response schema 加 required field 后，端点构造器必须同步传值，否则 500 ValidationError
+- FastAPI 路由顺序：literal 路由（`/merge`、`/batch`）必须在 parametric 路由（`/{chunk_id}/split`）之前注册，否则 "merge" 被当作 chunk_id 解析导致 422
+- Dockerfile 只 COPY `app/`, `config/`, `data/` — `scripts/` 和 `tests/` 不在镜像中，容器内迁移需用 `docker exec python -c "..."`
 
 ## Worktrees
 
