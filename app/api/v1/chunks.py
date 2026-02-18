@@ -1,4 +1,6 @@
 """Chunks CRUD API endpoints."""
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -18,7 +20,7 @@ from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
-from app.services.chunk_editor import get_tokenizer
+from app.services.chunk_editor import check_optimistic_lock, get_tokenizer
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -194,8 +196,12 @@ def update_chunk(
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
+    # Optimistic lock check
+    check_optimistic_lock(chunk, body.expected_updated_at)
+
     # Get update data, excluding unset fields
     update_data = body.model_dump(exclude_unset=True)
+    update_data.pop("expected_updated_at", None)
 
     # Validate taxonomy path exists if any lvl field is being set
     new_lvl1 = update_data.get("lvl1", chunk.lvl1)
@@ -283,6 +289,7 @@ def update_chunk(
 def delete_chunk(
     chunk_id: int,
     request: Request,
+    expected_updated_at: datetime | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
@@ -291,6 +298,9 @@ def delete_chunk(
     chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
+
+    # Optimistic lock check
+    check_optimistic_lock(chunk, expected_updated_at)
 
     # Audit log before delete so flush happens before the row is removed
     AuditService.log(
@@ -387,6 +397,10 @@ def batch_chunks(
                     status_code=422, detail=f"Bridge {update_data['bridge_id']} not found"
                 )
 
+        # Log audit detail before adding non-serializable func.now()
+        audit_updates = dict(update_data)
+
+        update_data["updated_at"] = func.now()
         count = db.query(Chunk).filter(Chunk.id.in_(body.chunk_ids)).update(
             update_data, synchronize_session="fetch"
         )
@@ -397,7 +411,7 @@ def batch_chunks(
             action="batch_update",
             resource_type="chunk",
             user_id=current_user.id,
-            detail={"chunk_ids": body.chunk_ids, "updates": update_data},
+            detail={"chunk_ids": body.chunk_ids, "updates": audit_updates},
             ip_address=get_client_ip(request),
         )
         db.commit()
@@ -418,6 +432,9 @@ def split_chunk_endpoint(
     chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
     if not chunk:
         raise HTTPException(status_code=404, detail="Chunk not found")
+
+    # Optimistic lock check
+    check_optimistic_lock(chunk, body.expected_updated_at)
 
     try:
         new_chunks = do_split(
