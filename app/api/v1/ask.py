@@ -3,6 +3,7 @@ import asyncio
 import time
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas import (
@@ -16,6 +17,7 @@ from app.api.v1.schemas import (
     EvidenceGroupsResponse,
 )
 from app.core.database import get_db
+from app.models import Bridge
 from app.providers import ZhipuProvider
 from app.services import Generator
 from app.services.facet_extractor import FacetExtractor
@@ -26,6 +28,23 @@ router = APIRouter()
 
 _provider_cache: dict[object, object] = {}
 _tokenizer_cache: dict[str | None, Tokenizer] = {}
+
+
+def _resolve_bridge_from_question(db: Session, question: str) -> int | None:
+    """Try to find a bridge whose name appears in the question text.
+
+    Matches the longest bridge name first to avoid partial matches
+    (e.g. "碧波廊桥" should match before "碧波").
+    """
+    rows = db.execute(
+        select(Bridge.id, Bridge.name).where(Bridge.name.isnot(None))
+    ).all()
+    # Sort by name length descending so longest match wins
+    candidates = sorted(rows, key=lambda r: len(r.name), reverse=True)
+    for row in candidates:
+        if row.name and row.name in question:
+            return row.id
+    return None
 
 
 def _get_provider():
@@ -77,6 +96,8 @@ def ask(
         target_bridge_id = request.target_bridge_id
         if not target_bridge_id and request.context:
             target_bridge_id = request.context.bridge_id
+        if not target_bridge_id:
+            target_bridge_id = _resolve_bridge_from_question(db, request.question)
 
         facet = None
         if want_debug:
