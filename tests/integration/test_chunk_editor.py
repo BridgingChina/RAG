@@ -239,3 +239,60 @@ def test_merge_chunks_single_id(db_session, test_source, tokenizer):
 
     with _pytest.raises(ValueError, match="2"):
         merge_chunks(db=db_session, chunk_ids=[c.id], tokenizer=tokenizer)
+
+
+def test_reindex_stale_chunks(db_session, test_source, tokenizer):
+    """Reindex should update needs_reindex chunks and clear the flag."""
+    from app.models import Chunk
+    from app.services.chunk_editor import reindex_source_chunks
+
+    # Create a stale chunk
+    c = Chunk(
+        source_id=test_source.id,
+        content="测试内容",
+        embedding=[0.0] * EMBEDDING_DIM,
+        search_text="测试内容",
+        needs_reindex=True,
+    )
+    db_session.add(c)
+    db_session.flush()
+
+    # Reindex without provider (skip embedding recomputation)
+    result = reindex_source_chunks(
+        db=db_session,
+        source_id=test_source.id,
+        tokenizer=tokenizer,
+        provider=None,
+        force=False,
+    )
+
+    assert result["chunks_reindexed"] == 1
+    assert result["chunks_failed"] == []
+    db_session.refresh(c)
+    assert c.needs_reindex is False
+
+
+def test_reindex_skips_clean_chunks(db_session, test_source, tokenizer):
+    """Reindex without force should skip chunks that don't need reindexing."""
+    from app.models import Chunk
+    from app.services.chunk_editor import reindex_source_chunks
+
+    # Create a clean chunk (needs_reindex=False by default)
+    c = Chunk(
+        source_id=test_source.id,
+        content="干净的内容",
+        embedding=[0.0] * EMBEDDING_DIM,
+        search_text="干净的内容",
+    )
+    db_session.add(c)
+    db_session.flush()
+
+    result = reindex_source_chunks(
+        db=db_session,
+        source_id=test_source.id,
+        tokenizer=tokenizer,
+        provider=None,
+        force=False,
+    )
+
+    assert result["chunks_reindexed"] == 0

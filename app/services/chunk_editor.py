@@ -1,4 +1,6 @@
-"""Service for chunk editing operations (content update, split, merge)."""
+"""Service for chunk editing operations (content update, split, merge, reindex)."""
+import asyncio
+
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
@@ -198,3 +200,55 @@ def merge_chunks(
 
     db.flush()
     return primary
+
+
+def reindex_source_chunks(
+    *,
+    db: Session,
+    source_id: int,
+    tokenizer: Tokenizer,
+    provider,  # LLMProvider | None — None skips embedding recomputation
+    force: bool = False,
+) -> dict:
+    """Reindex chunks for a source. Returns {source_id, chunks_reindexed, chunks_failed}."""
+    query = db.query(Chunk).filter(Chunk.source_id == source_id)
+    if not force:
+        query = query.filter(Chunk.needs_reindex == True)  # noqa: E712
+
+    chunks = query.all()
+    reindexed = 0
+    failed = []
+
+    for chunk in chunks:
+        try:
+            # Recompute search_text
+            if chunk.contextual_text:
+                chunk.search_text = f"{chunk.contextual_text}\n\n{chunk.content}"
+            else:
+                chunk.search_text = chunk.content
+
+            # Recompute tsv
+            tsv_text = tokenizer.to_tsvector_text(chunk.search_text)
+            db.execute(
+                sql_text(
+                    "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"
+                ),
+                {"tsv_text": tsv_text, "id": chunk.id},
+            )
+
+            # Recompute embedding if provider available
+            if provider is not None:
+                embedding_result = asyncio.run(provider.embed([chunk.search_text]))
+                chunk.embedding = embedding_result[0]
+
+            chunk.needs_reindex = False
+            reindexed += 1
+        except Exception:
+            failed.append(chunk.id)
+
+    db.flush()
+    return {
+        "source_id": source_id,
+        "chunks_reindexed": reindexed,
+        "chunks_failed": failed,
+    }
