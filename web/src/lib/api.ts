@@ -41,6 +41,18 @@ function authHeaders(): Record<string, string> {
   return { "Content-Type": "application/json" }
 }
 
+export class ConflictError extends Error {
+  currentUpdatedAt: string
+  chunkId: number
+
+  constructor(currentUpdatedAt: string, chunkId: number) {
+    super("Chunk has been modified by another user")
+    this.name = "ConflictError"
+    this.currentUpdatedAt = currentUpdatedAt
+    this.chunkId = chunkId
+  }
+}
+
 // --- Core HTTP methods ---
 
 async function get<T>(
@@ -93,6 +105,10 @@ async function post<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -112,6 +128,10 @@ async function put<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -130,6 +150,10 @@ async function del(url: string): Promise<void> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
+    }
     throw new Error(text || `HTTP ${res.status}`)
   }
 }
@@ -146,6 +170,10 @@ async function patch<T>(url: string, body: unknown): Promise<T> {
     if (res.status === 401) {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
+    }
+    if (res.status === 409) {
+      const data = JSON.parse(text)
+      throw new ConflictError(data.current_updated_at, data.chunk_id)
     }
     throw new Error(text || `HTTP ${res.status}`)
   }
@@ -218,8 +246,14 @@ export function updateChunk(
   return put<ChunkDetail>(`/chunks/${id}`, data)
 }
 
-export function deleteChunk(id: number): Promise<void> {
-  return del(`/chunks/${id}`)
+export function deleteChunk(
+  id: number,
+  expectedUpdatedAt?: string,
+): Promise<void> {
+  const params = expectedUpdatedAt
+    ? `?expected_updated_at=${encodeURIComponent(expectedUpdatedAt)}`
+    : ""
+  return del(`/chunks/${id}${params}`)
 }
 
 export function splitChunk(

@@ -124,6 +124,7 @@ export interface ChunkListItem {
   source_title: string | null
   created_at: string
   needs_reindex: boolean
+  updated_at: string
 }
 
 export interface ChunkBridgeLinkDetail {
@@ -153,6 +154,7 @@ export interface ChunkDetail {
   created_at: string
   bridge_links: ChunkBridgeLinkDetail[]
   needs_reindex: boolean
+  updated_at: string
 }
 
 export interface ChunkUpdateRequest {
@@ -164,6 +166,7 @@ export interface ChunkUpdateRequest {
   content?: string | null
   section_title?: string | null
   bridge_links?: BridgeLinkInput[] | null
+  expected_updated_at?: string
 }
 
 export interface BridgeLinkInput {
@@ -175,6 +178,7 @@ export interface BridgeLinkInput {
 
 export interface ChunkSplitRequest {
   position: number
+  expected_updated_at?: string
 }
 
 export interface ChunkSplitResponse {
