@@ -1024,7 +1024,7 @@ export function Component() {
     data: chunksData,
     loading: chunksLoading,
     refetch: refetchChunks,
-  } = useApi(() => fetchChunks({ source_id: sid, page_size: 200 }), [sid])
+  } = useApi(() => fetchChunks({ source_id: sid, page_size: 100 }), [sid])
 
   // Taxonomy tree (for batch toolbar)
   const { data: taxTree } = useApi(fetchTaxonomyTree, [])
