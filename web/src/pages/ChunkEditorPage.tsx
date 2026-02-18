@@ -1047,7 +1047,12 @@ export function Component() {
           <div className="border-b px-3 py-2 text-xs text-slate-400">
             {chunksLoading
               ? "加载中…"
-              : `共 ${chunks.length} 个块${stale > 0 ? `，${stale} 待索引` : ""}`}
+              : `共 ${chunksData?.total ?? chunks.length} 个块${stale > 0 ? `，${stale} 待索引` : ""}`}
+            {!chunksLoading && chunksData && chunksData.total > chunks.length && (
+              <span className="ml-1 text-orange-500">
+                （仅显示前 {chunks.length} 个）
+              </span>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {chunks.map((chunk) => (

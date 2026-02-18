@@ -149,7 +149,6 @@ class ReindexResponse(BaseModel):
 | merge < 2 个 ids | 400 |
 | batch 中 chunk_id 不存在 | 400，列出不存在的 ids |
 | reindex LLM/embedding 失败 | 逐条处理，失败的记入 chunks_failed |
-| 并发编辑冲突 | 409（基于 updated_at 乐观锁） |
 
 ## 前端
 
@@ -244,7 +243,6 @@ PageHeader 右侧，显示待更新数量，调用 `POST /sources/{id}/reindex`�
 - merge 后 content 拼接、元数据继承、被合并 chunks 已删
 - reindex 后所有派生字段更新、needs_reindex 清除
 - batch 操作正确执行
-- 并发 409 冲突
 
 **路由烟雾测试：**
 - 新端点存在于 app.routes

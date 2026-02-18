@@ -98,17 +98,14 @@ def reindex_source(
     current_user: User = Depends(get_current_user),
 ) -> ReindexResponse:
     """Reindex chunks for a source (recompute search_text, tsv, embedding)."""
-    from app.services.chunk_editor import reindex_source_chunks
-    from app.services.tokenizer import Tokenizer, default_user_dict_path
+    from app.providers import ZhipuProvider
+    from app.services.chunk_editor import get_tokenizer, reindex_source_chunks
 
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
-
-    # Import provider for embedding recomputation
-    from app.providers import ZhipuProvider
+    tokenizer = get_tokenizer()
     provider = ZhipuProvider()
 
     result = reindex_source_chunks(

@@ -1,12 +1,20 @@
 """Service for chunk editing operations (content update, split, merge, reindex)."""
 import asyncio
+from functools import lru_cache
 
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from app.core.constants import EMBEDDING_DIM
+from app.core.logging import logger
 from app.models import Chunk, ChunkBridgeLink
-from app.services.tokenizer import Tokenizer
+from app.services.tokenizer import Tokenizer, default_user_dict_path
+
+
+@lru_cache(maxsize=1)
+def get_tokenizer() -> Tokenizer:
+    """Get or create cached tokenizer instance (shared across endpoints)."""
+    return Tokenizer(user_dict_path=default_user_dict_path())
 
 
 def update_chunk_content(
@@ -210,7 +218,12 @@ def reindex_source_chunks(
     provider,  # LLMProvider | None — None skips embedding recomputation
     force: bool = False,
 ) -> dict:
-    """Reindex chunks for a source. Returns {source_id, chunks_reindexed, chunks_failed}."""
+    """Reindex chunks for a source. Returns {source_id, chunks_reindexed, chunks_failed}.
+
+    NOTE: When provider is not None, this function calls asyncio.run() internally.
+    It must only be called from a synchronous context (e.g. sync FastAPI endpoints
+    running in a threadpool). Calling from an async context will raise RuntimeError.
+    """
     query = db.query(Chunk).filter(Chunk.source_id == source_id)
     if not force:
         query = query.filter(Chunk.needs_reindex == True)  # noqa: E712
@@ -244,6 +257,7 @@ def reindex_source_chunks(
             chunk.needs_reindex = False
             reindexed += 1
         except Exception:
+            logger.exception("Failed to reindex chunk %d", chunk.id)
             failed.append(chunk.id)
 
     db.flush()

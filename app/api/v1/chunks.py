@@ -1,6 +1,4 @@
 """Chunks CRUD API endpoints."""
-from functools import lru_cache
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -20,15 +18,9 @@ from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
-from app.services.tokenizer import Tokenizer, default_user_dict_path
+from app.services.chunk_editor import get_tokenizer
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
-
-
-@lru_cache(maxsize=1)
-def _get_tokenizer() -> Tokenizer:
-    """Get or create cached tokenizer instance."""
-    return Tokenizer(user_dict_path=default_user_dict_path())
 
 
 @router.get("", response_model=PaginatedResponse[ChunkListItem])
@@ -242,7 +234,7 @@ def update_chunk(
     # Handle content update (requires search_text + tsv recomputation)
     if "content" in update_data:
         from app.services.chunk_editor import update_chunk_content
-        tokenizer = _get_tokenizer()
+        tokenizer = get_tokenizer()
         update_chunk_content(
             db=db, chunk=chunk, new_content=update_data.pop("content"), tokenizer=tokenizer,
         )
@@ -252,10 +244,15 @@ def update_chunk(
         from app.services.chunk_editor import replace_bridge_links
         bridge_links_data = update_data.pop("bridge_links")
         if bridge_links_data is not None:
-            # Validate all bridge_ids exist
-            for bl in bridge_links_data:
-                if not db.query(Bridge).filter(Bridge.id == bl["bridge_id"]).first():
-                    raise HTTPException(status_code=422, detail=f"Bridge {bl['bridge_id']} not found")
+            # Validate all bridge_ids exist in a single query
+            requested_ids = {bl["bridge_id"] for bl in bridge_links_data}
+            existing_ids = {
+                row.id
+                for row in db.query(Bridge.id).filter(Bridge.id.in_(requested_ids)).all()
+            }
+            missing = requested_ids - existing_ids
+            if missing:
+                raise HTTPException(status_code=422, detail=f"Bridges not found: {sorted(missing)}")
             replace_bridge_links(db=db, chunk=chunk, links=bridge_links_data)
 
     # Apply remaining updates (lvl1/2/3, bridge_id, bridge_binding_status)
@@ -321,7 +318,7 @@ def merge_chunks_endpoint(
     from app.services.chunk_editor import merge_chunks as do_merge
 
     try:
-        merged = do_merge(db=db, chunk_ids=body.chunk_ids, tokenizer=_get_tokenizer())
+        merged = do_merge(db=db, chunk_ids=body.chunk_ids, tokenizer=get_tokenizer())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -421,7 +418,7 @@ def split_chunk_endpoint(
 
     try:
         new_chunks = do_split(
-            db=db, chunk=chunk, position=body.position, tokenizer=_get_tokenizer(),
+            db=db, chunk=chunk, position=body.position, tokenizer=get_tokenizer(),
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
