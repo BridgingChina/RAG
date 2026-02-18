@@ -169,16 +169,16 @@ export function Component() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">分类 (lvl1)</label>
                 <Select
-                  value={formData.lvl1 || ""}
+                  value={formData.lvl1 || "__none__"}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, lvl1: value || null })
+                    setFormData({ ...formData, lvl1: value === "__none__" ? null : value })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择分类" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">无</SelectItem>
+                    <SelectItem value="__none__">无</SelectItem>
                     <SelectItem value="形制与技术">形制与技术</SelectItem>
                     <SelectItem value="地域与环境">地域与环境</SelectItem>
                     <SelectItem value="功能与社会">功能与社会</SelectItem>

@@ -29,16 +29,16 @@ export function ChunkFilters({ filters, onChange }: ChunkFiltersProps) {
       />
 
       <Select
-        value={filters.lvl1 || ""}
+        value={filters.lvl1 || "__all__"}
         onValueChange={(value) =>
-          onChange({ ...filters, lvl1: value || undefined })
+          onChange({ ...filters, lvl1: value === "__all__" ? undefined : value })
         }
       >
         <SelectTrigger>
           <SelectValue placeholder="分类" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">全部</SelectItem>
+          <SelectItem value="__all__">全部</SelectItem>
           <SelectItem value="形制与技术">形制与技术</SelectItem>
           <SelectItem value="地域与环境">地域与环境</SelectItem>
           <SelectItem value="功能与社会">功能与社会</SelectItem>
@@ -47,16 +47,16 @@ export function ChunkFilters({ filters, onChange }: ChunkFiltersProps) {
       </Select>
 
       <Select
-        value={filters.binding_status || ""}
+        value={filters.binding_status || "__all__"}
         onValueChange={(value) =>
-          onChange({ ...filters, binding_status: value || undefined })
+          onChange({ ...filters, binding_status: value === "__all__" ? undefined : value })
         }
       >
         <SelectTrigger>
           <SelectValue placeholder="绑定状态" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">全部</SelectItem>
+          <SelectItem value="__all__">全部</SelectItem>
           <SelectItem value="primary">绑定</SelectItem>
           <SelectItem value="ambiguous">歧义</SelectItem>
           <SelectItem value="none">未绑定</SelectItem>
