@@ -180,6 +180,7 @@ class IngestTaskService:
             chunks = (
                 self.db.query(Chunk)
                 .filter(Chunk.source_id == task.source_id)
+                .order_by(Chunk.id)
                 .all()
             )
 

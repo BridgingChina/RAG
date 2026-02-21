@@ -120,9 +120,14 @@ def presign(
 
     r2_key = f"raw/{task.id}/{safe_name}"
     task.r2_raw_key = r2_key
-    db.commit()
 
-    upload_url = r2.generate_presigned_upload_url(r2_key, body.content_type)
+    try:
+        upload_url = r2.generate_presigned_upload_url(r2_key, body.content_type)
+    except Exception:
+        db.rollback()
+        raise HTTPException(500, "Failed to generate upload URL")
+
+    db.commit()
 
     return PresignResponse(upload_url=upload_url, r2_key=r2_key)
 
