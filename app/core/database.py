@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 
 def get_db():
@@ -141,6 +141,24 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "method",
             "created_at",
         },
+        "ingest_tasks": {
+            "id",
+            "status",
+            "file_name",
+            "file_type",
+            "file_size",
+            "r2_raw_key",
+            "r2_parsed_prefix",
+            "zhipu_task_id",
+            "source_id",
+            "parsed_content",
+            "chunk_count",
+            "image_count",
+            "error_message",
+            "created_by",
+            "created_at",
+            "updated_at",
+        },
     }
 
     required_tables = sorted(required_schema.keys())
@@ -266,6 +284,14 @@ def _migrate_schema(engine: Engine, current_version: int, *, conn: Connection) -
         set_schema_version(engine, 5, "Add chunk updated_at for optimistic locking", conn=conn)
         logger.info("Migration to v5 complete.")
 
+    if current_version < 6:
+        logger.info("Migrating schema v5 → v6: adding ingest_tasks table...")
+        from app.models.ingest_task import IngestTask
+
+        IngestTask.__table__.create(conn, checkfirst=True)
+        set_schema_version(engine, 6, "Add ingest_tasks table", conn=conn)
+        logger.info("Migration to v6 complete.")
+
 
 def _seed_taxonomy_if_empty(conn: Connection) -> None:
     """Seed taxonomy_nodes from config/taxonomy.yaml if table is empty."""
@@ -354,7 +380,7 @@ def init_database() -> None:
 
             # Set initial version
             set_schema_version(
-                engine, LATEST_SCHEMA_VERSION, "Schema v5 with chunk updated_at for optimistic locking", conn=conn
+                engine, LATEST_SCHEMA_VERSION, "Schema v6 with ingest_tasks table", conn=conn
             )
 
             logger.info("Database initialization completed successfully")
