@@ -70,6 +70,50 @@ export interface IngestResponse {
   chunks: IngestedChunkSummary[]
 }
 
+// --- Ingest Tasks ---
+
+export type IngestTaskStatus =
+  | "uploading"
+  | "syncing"
+  | "parsing"
+  | "chunked"
+  | "indexing"
+  | "completed"
+  | "failed"
+
+export interface IngestTaskItem {
+  id: number
+  status: IngestTaskStatus
+  file_name: string
+  file_type: string
+  file_size: number | null
+  source_id: number | null
+  chunk_count: number | null
+  image_count: number
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PresignRequest {
+  file_name: string
+  file_type: string
+  file_size: number
+  content_type: string
+}
+
+export interface PresignResponse {
+  upload_url: string
+  r2_key: string
+}
+
+export interface IngestTaskCreateRequest {
+  file_name: string
+  file_type: string
+  file_size: number
+  r2_key: string
+}
+
 // --- Pagination ---
 
 export interface PaginatedResponse<T> {

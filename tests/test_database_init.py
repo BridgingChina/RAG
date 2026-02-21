@@ -111,6 +111,7 @@ class TestVerifySchemaCompatibility:
             "taxonomy_nodes",
             "chunks",
             "chunk_bridge_links",
+            "ingest_tasks",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -146,6 +147,7 @@ class TestVerifySchemaCompatibility:
                 "search_text",
                 "tsv",
                 "needs_reindex",
+                "updated_at",
                 "created_at",
             },
             "chunk_bridge_links": {
@@ -156,6 +158,24 @@ class TestVerifySchemaCompatibility:
                 "confidence",
                 "method",
                 "created_at",
+            },
+            "ingest_tasks": {
+                "id",
+                "status",
+                "file_name",
+                "file_type",
+                "file_size",
+                "r2_raw_key",
+                "r2_parsed_prefix",
+                "zhipu_task_id",
+                "source_id",
+                "parsed_content",
+                "chunk_count",
+                "image_count",
+                "error_message",
+                "created_by",
+                "created_at",
+                "updated_at",
             },
         }
 
@@ -197,6 +217,7 @@ class TestVerifySchemaCompatibility:
             "taxonomy_nodes",
             "chunks",
             "chunk_bridge_links",
+            "ingest_tasks",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -232,6 +253,7 @@ class TestVerifySchemaCompatibility:
                 "search_text",
                 "tsv",
                 "needs_reindex",
+                "updated_at",
                 "created_at",
             },
             "chunk_bridge_links": {
@@ -242,6 +264,24 @@ class TestVerifySchemaCompatibility:
                 "confidence",
                 "method",
                 "created_at",
+            },
+            "ingest_tasks": {
+                "id",
+                "status",
+                "file_name",
+                "file_type",
+                "file_size",
+                "r2_raw_key",
+                "r2_parsed_prefix",
+                "zhipu_task_id",
+                "source_id",
+                "parsed_content",
+                "chunk_count",
+                "image_count",
+                "error_message",
+                "created_by",
+                "created_at",
+                "updated_at",
             },
         }
         mock_columns_result.all.return_value = [
@@ -320,7 +360,7 @@ class TestInitDatabase:
 
         # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, LATEST_SCHEMA_VERSION, "Schema v4 with chunk needs_reindex flag", conn=mock_conn
+            mock_engine, LATEST_SCHEMA_VERSION, "Schema v6 with ingest_tasks table", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")

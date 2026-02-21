@@ -155,7 +155,7 @@ def main(
 ) -> None:
     db_url = database_url or settings.database_url
     target_schema_version = LATEST_SCHEMA_VERSION
-    target_schema_description = "Schema v5 with chunk updated_at for optimistic locking"
+    target_schema_description = "Schema v6 with ingest_tasks table"
     click.echo(f"DB migrate/backfill starting...")
     click.echo(f"- database_url: {db_url}")
     click.echo(f"- dry_run: {dry_run}")

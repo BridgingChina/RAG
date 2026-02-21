@@ -18,5 +18,15 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     access_token_expire_hours: int = 24
 
+    # R2 storage settings
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "bridge-rag"
+    r2_public_url: str = ""  # optional, for public access
+
+    # Zhipu file parser settings
+    zhipu_parser_tool_type: str = "expert"  # lite / expert / prime
+
 
 settings = Settings()

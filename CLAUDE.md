@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 5 — v3 (users + audit_logs), v4 (chunks.needs_reindex), v5 (chunks.updated_at)
+- Current version: 6 — v3 (users + audit_logs), v4 (chunks.needs_reindex), v5 (chunks.updated_at), v6 (ingest_tasks)
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`
@@ -129,6 +129,7 @@ The system uses automatic schema versioning:
 - `sources` — 来源元信息
 - `users` — 用户账户（username/hashed_password/display_name/is_active）
 - `audit_logs` — 审计日志（user_id/action/resource_type/resource_id/detail/ip_address）
+- `ingest_tasks` — 异步入库任务（status/file_name/file_type/r2_raw_key/zhipu_task_id/source_id/parsed_content）
 
 **API Endpoints:**
 
@@ -140,6 +141,7 @@ The system uses automatic schema versioning:
 - Chunk editing: `POST /chunks/{id}/split`, `POST /chunks/merge`, `PATCH /chunks/batch`
 - Reindex: `POST /sources/{id}/reindex` — 重建 stale chunks 的 search_text/tsv/embedding
 - Read-only: `/api/v1/sources`（仅 GET list + detail）
+- Ingest tasks: `/api/v1/ingest-tasks`（presign, create, list, detail, confirm, delete）— 异步入库流水线
 - Tree CRUD: `/api/v1/taxonomy`（`GET tree`, `POST/PUT/DELETE nodes`, `POST batch-update`）
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 - Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
@@ -194,6 +196,8 @@ title: 资料标题
 - FastAPI 路由顺序：literal 路由（`/merge`、`/batch`）必须在 parametric 路由（`/{chunk_id}/split`）之前注册，否则 "merge" 被当作 chunk_id 解析导致 422
 - 所有分页端点（chunks/bridges/sources/audit）强制 `page_size ≤ 100`（`Query(le=100)`）— 前端请求不可超出，否则 422
 - Dockerfile 只 COPY `app/`, `config/`, `data/` — `scripts/` 和 `tests/` 不在镜像中，容器内迁移需用 `docker exec python -c "..."`
+- `IngestTaskService` 的 BackgroundTask 使用独立 `SessionLocal()` — 不能复用请求级 db session，否则 session 已关闭
+- R2 presigned URL 有效期 1 小时 — 前端需在获取后尽快完成上传
 
 ## Worktrees
 

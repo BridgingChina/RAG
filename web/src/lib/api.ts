@@ -16,9 +16,13 @@ import type {
   ChunkUpdateRequest,
   DashboardStats,
   IngestResponse,
+  IngestTaskCreateRequest,
+  IngestTaskItem,
   LoginRequest,
   LoginResponse,
   PaginatedResponse,
+  PresignRequest,
+  PresignResponse,
   ReindexResponse,
   SourceDetail,
   SourceListItem,
@@ -210,6 +214,72 @@ export function ingestDocument(
     bridge_candidates: options?.bridgeCandidates ?? null,
     min_primary_confidence: options?.minPrimaryConfidence ?? 0.75,
     enable_auto_bridge_detection: options?.enableAutoBridgeDetection ?? true,
+  })
+}
+
+// --- Ingest Tasks ---
+
+export function presignIngestUpload(
+  data: PresignRequest,
+): Promise<PresignResponse> {
+  return post<PresignResponse>("/ingest-tasks/presign", data)
+}
+
+export function createIngestTask(
+  data: IngestTaskCreateRequest,
+): Promise<IngestTaskItem> {
+  return post<IngestTaskItem>("/ingest-tasks", data)
+}
+
+export function fetchIngestTasks(params?: {
+  page?: number
+  page_size?: number
+  status?: string
+}): Promise<PaginatedResponse<IngestTaskItem>> {
+  return get<PaginatedResponse<IngestTaskItem>>("/ingest-tasks", params)
+}
+
+export function fetchIngestTask(id: number): Promise<IngestTaskItem> {
+  return get<IngestTaskItem>(`/ingest-tasks/${id}`)
+}
+
+export function confirmIngestTask(id: number): Promise<IngestTaskItem> {
+  return post<IngestTaskItem>(`/ingest-tasks/${id}/confirm`, {})
+}
+
+export function deleteIngestTask(id: number): Promise<void> {
+  return del(`/ingest-tasks/${id}`)
+}
+
+export async function uploadFileToR2(
+  url: string,
+  file: File,
+  contentType: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open("PUT", url)
+    xhr.setRequestHeader("Content-Type", contentType)
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(Math.round((e.loaded / e.total) * 100))
+        }
+      }
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        reject(new Error(`Upload failed: HTTP ${xhr.status}`))
+      }
+    }
+
+    xhr.onerror = () => reject(new Error("Upload failed: network error"))
+    xhr.send(file)
   })
 }
 
