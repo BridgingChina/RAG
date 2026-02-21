@@ -28,5 +28,9 @@ class Settings(BaseSettings):
     # Zhipu file parser settings
     zhipu_parser_tool_type: str = "expert"  # lite / expert / prime
 
+    # Build info (injected via Docker build args)
+    git_commit: str = "dev"
+    git_date: str = ""
+
 
 settings = Settings()

@@ -390,6 +390,8 @@ export interface DebugInfo {
 
 export interface SystemStatus {
   version: string
+  git_commit: string
+  git_date: string
   python_version: string
   db_connected: boolean
   db_version: string | null

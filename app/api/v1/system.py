@@ -28,6 +28,8 @@ def system_status(db: Session = Depends(get_db)):
 
     return SystemStatus(
         version="1.0.0",
+        git_commit=settings.git_commit,
+        git_date=settings.git_date,
         python_version=f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         db_connected=db_connected,
         db_version=db_version,

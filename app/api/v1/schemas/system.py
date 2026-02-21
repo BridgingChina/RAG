@@ -5,6 +5,8 @@ from pydantic import BaseModel
 class SystemStatus(BaseModel):
     """Read-only system status and configuration."""
     version: str
+    git_commit: str = "dev"
+    git_date: str = ""
     python_version: str
     db_connected: bool
     db_version: str | None = None

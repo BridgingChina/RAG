@@ -1,9 +1,18 @@
 import { PageHeader } from "@/components/layout/PageHeader"
 import { useApi } from "@/hooks/useApi"
 import { fetchSystemStatus } from "@/lib/api"
+import type { SystemStatus } from "@/lib/types"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
+
+function formatVersion(s: SystemStatus): string {
+  const parts = [s.version]
+  if (s.git_commit && s.git_commit !== "dev") {
+    parts.push(s.git_date ? `${s.git_commit} (${s.git_date})` : s.git_commit)
+  }
+  return parts.join(" · ")
+}
 
 export function Component() {
   const { data, loading, error, refetch } = useApi(fetchSystemStatus)
@@ -29,7 +38,7 @@ export function Component() {
                 <StatusRow label="数据库" connected={data.db_connected} detail={data.db_version} />
                 <InfoRow label="Schema 版本" value={data.schema_version != null ? `v${data.schema_version}` : "未知"} />
                 <StatusRow label="API 密钥" connected={data.api_key_configured} detail={data.api_key_configured ? "已配置" : "未配置"} />
-                <InfoRow label="版本" value={`${data.version} · Python ${data.python_version}`} />
+                <InfoRow label="版本" value={formatVersion(data)} />
               </CardContent>
             </Card>
 

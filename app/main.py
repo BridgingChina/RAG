@@ -56,4 +56,8 @@ app.include_router(v1_router, prefix="/api/v1", tags=["v1"])
 @app.get("/health")
 async def health():
     """Health check endpoint for load balancers."""
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "commit": settings.git_commit,
+        "build_date": settings.git_date,
+    }
