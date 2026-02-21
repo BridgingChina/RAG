@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Deployment
+        id: deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ github.token }}
+          environment: production
+
+      # TODO: switch back to stable (version: latest) once `op run --environment` graduates from beta
+      - name: Install 1Password CLI
+        uses: 1password/install-cli-action@v1
+        with:
+          version: "latest-beta"
+
+      - name: Deploy via SSH
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_DEPLOY_ENV_ID: ${{ secrets.OP_DEPLOY_ENV_ID }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          tmpkey=$(mktemp)
+          echo "$DEPLOY_SSH_KEY" > "$tmpkey"
+          chmod 600 "$tmpkey"
+          export DEPLOY_KEY_FILE="$tmpkey"
+          op run --environment "$OP_DEPLOY_ENV_ID" -- bash -c '
+            ssh -o StrictHostKeyChecking=no -i "$DEPLOY_KEY_FILE" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "sudo -u bridge-rag bash -c \"cd $DEPLOY_PATH && git fetch origin main && git reset --hard origin/main && ./deploy.sh\""
+          '
+          rm -f "$tmpkey"
+
+      - name: Update Deployment Status (success)
+        if: success()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: ${{ github.token }}
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          state: success
+
+      - name: Update Deployment Status (failure)
+        if: failure()
+        uses: chrnorm/deployment-status@v2
+        with:
+          token: ${{ github.token }}
+          deployment-id: ${{ steps.deployment.outputs.deployment_id }}
+          state: failure

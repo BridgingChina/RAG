@@ -5,7 +5,11 @@ services:
 
   api:
     restart: always
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    build:
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+        GIT_DATE: ${GIT_DATE:-}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
     # No port exposure - accessed only via nginx
 
   web:
