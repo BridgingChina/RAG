@@ -55,6 +55,15 @@ from .ingest import (
     IngestedChunkSummary,
 )
 
+# IngestTask schemas
+from .ingest_task import (
+    IngestTaskCreate,
+    IngestTaskDetail,
+    IngestTaskListItem,
+    PresignRequest,
+    PresignResponse,
+)
+
 # Source schemas
 from .source import SourceDetail, SourceListItem
 
@@ -125,6 +134,12 @@ __all__ = [
     "IngestRequest",
     "IngestResponse",
     "IngestedChunkSummary",
+    # IngestTask
+    "IngestTaskCreate",
+    "IngestTaskDetail",
+    "IngestTaskListItem",
+    "PresignRequest",
+    "PresignResponse",
     # Source
     "SourceDetail",
     "SourceListItem",
