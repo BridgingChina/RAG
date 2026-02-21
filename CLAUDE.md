@@ -198,6 +198,7 @@ title: 资料标题
 - Dockerfile 只 COPY `app/`, `config/`, `data/` — `scripts/` 和 `tests/` 不在镜像中，容器内迁移需用 `docker exec python -c "..."`
 - `IngestTaskService` 的 BackgroundTask 使用独立 `SessionLocal()` — 不能复用请求级 db session，否则 session 已关闭
 - R2 presigned URL 有效期 1 小时 — 前端需在获取后尽快完成上传
+- FastAPI BackgroundTasks 中的 async 函数必须用 `async def` + `await` — 不能用 `asyncio.run()`（会在已有事件循环中崩溃）
 
 ## Worktrees
 
