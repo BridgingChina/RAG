@@ -1,0 +1,179 @@
+import { useEffect, useRef } from "react"
+import { useNavigate } from "react-router"
+import { Loader2, CheckCircle2, XCircle, PenLine, RotateCw } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import type { IngestTaskItem, IngestTaskStatus } from "@/lib/types"
+import { deleteIngestTask } from "@/lib/api"
+
+interface IngestTaskListProps {
+  tasks: IngestTaskItem[]
+  onRefresh: () => void
+}
+
+const STATUS_LABELS: Record<IngestTaskStatus, string> = {
+  uploading: "上传中",
+  syncing: "同步中",
+  parsing: "解析中",
+  chunked: "待确认",
+  indexing: "标识中",
+  completed: "已完成",
+  failed: "失败",
+}
+
+function isInProgress(status: IngestTaskStatus): boolean {
+  return ["uploading", "syncing", "parsing", "indexing"].includes(status)
+}
+
+function formatSize(bytes: number | null): string {
+  if (bytes === null) return ""
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
+}
+
+function formatTime(isoStr: string): string {
+  const d = new Date(isoStr)
+  const now = new Date()
+  const diff = (now.getTime() - d.getTime()) / 1000
+
+  if (diff < 60) return "刚刚"
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  return d.toLocaleDateString("zh-CN")
+}
+
+function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
+  if (isInProgress(status)) {
+    return (
+      <span className="inline-flex items-center gap-1 text-sm text-orange-600">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {STATUS_LABELS[status]}
+      </span>
+    )
+  }
+  if (status === "chunked") {
+    return (
+      <span className="text-sm font-medium text-blue-600">
+        {STATUS_LABELS[status]}
+      </span>
+    )
+  }
+  if (status === "completed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-sm text-green-600">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        {STATUS_LABELS[status]}
+      </span>
+    )
+  }
+  // failed
+  return (
+    <span className="inline-flex items-center gap-1 text-sm text-red-600">
+      <XCircle className="h-3.5 w-3.5" />
+      {STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+function TaskRow({ task, onRefresh }: { task: IngestTaskItem; onRefresh: () => void }) {
+  const navigate = useNavigate()
+
+  async function handleDelete() {
+    if (!confirm("确定删除此任务？")) return
+    await deleteIngestTask(task.id)
+    onRefresh()
+  }
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-slate-800 truncate">
+            {task.file_name}
+          </span>
+          <TaskStatusBadge status={task.status} />
+        </div>
+        <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+          <span>{formatTime(task.created_at)}</span>
+          {task.file_size && (
+            <>
+              <span>&middot;</span>
+              <span>{formatSize(task.file_size)}</span>
+            </>
+          )}
+          {task.chunk_count !== null && (
+            <>
+              <span>&middot;</span>
+              <span>{task.chunk_count} 个知识块</span>
+            </>
+          )}
+          {task.image_count > 0 && (
+            <>
+              <span>&middot;</span>
+              <span>{task.image_count} 张图</span>
+            </>
+          )}
+        </div>
+        {task.status === "failed" && task.error_message && (
+          <p className="text-xs text-red-500 mt-1 truncate">{task.error_message}</p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 ml-4 shrink-0">
+        {task.status === "chunked" && task.source_id && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            onClick={() => navigate(`/sources/${task.source_id}/chunks/edit`)}
+          >
+            <PenLine className="h-3 w-3" />
+            去校对
+          </Button>
+        )}
+        {task.status === "failed" && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDelete}
+            className="gap-1 text-red-600 hover:text-red-700"
+          >
+            <RotateCw className="h-3 w-3" />
+            删除
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function IngestTaskList({ tasks, onRefresh }: IngestTaskListProps) {
+  // Auto-poll when any task is in progress
+  const hasInProgress = tasks.some((t) => isInProgress(t.status))
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (hasInProgress) {
+      intervalRef.current = setInterval(onRefresh, 3000)
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+  }, [hasInProgress, onRefresh])
+
+  if (tasks.length === 0) {
+    return (
+      <div className="text-center text-sm text-slate-400 py-8">
+        暂无入库任务
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+      {tasks.map((task) => (
+        <TaskRow key={task.id} task={task} onRefresh={onRefresh} />
+      ))}
+    </div>
+  )
+}
