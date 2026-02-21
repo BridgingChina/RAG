@@ -50,9 +50,12 @@ class IngestTaskService:
         return task
 
     def _fail(self, task: IngestTask, error: str) -> None:
-        task.status = "failed"
-        task.error_message = error
-        self.db.commit()
+        try:
+            task.status = "failed"
+            task.error_message = error
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
         logger.error(f"IngestTask {task.id} failed: {error}")
 
     async def sync_and_parse(self, task_id: int) -> None:
@@ -141,7 +144,7 @@ class IngestTaskService:
         if not chunk_results:
             raise ValueError("No chunks generated from parsed content")
 
-        source = Source(type=task.file_type, title=title)
+        source = Source(type="document", title=title)
         self.db.add(source)
         self.db.flush()
         task.source_id = source.id
@@ -155,6 +158,7 @@ class IngestTaskService:
                 content=chunk_result.content,
                 section_title=chunk_result.section_title,
                 embedding=placeholder_embedding,
+                needs_reindex=True,
             )
             self.db.add(chunk)
 

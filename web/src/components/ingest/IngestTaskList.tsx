@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react"
 import { useNavigate } from "react-router"
-import { Loader2, CheckCircle2, XCircle, PenLine, RotateCw } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle, PenLine, RotateCw, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { IngestTaskItem, IngestTaskStatus } from "@/lib/types"
-import { deleteIngestTask } from "@/lib/api"
+import { confirmIngestTask, deleteIngestTask } from "@/lib/api"
 
 interface IngestTaskListProps {
   tasks: IngestTaskItem[]
@@ -80,8 +80,21 @@ function TaskRow({ task, onRefresh }: { task: IngestTaskItem; onRefresh: () => v
 
   async function handleDelete() {
     if (!confirm("确定删除此任务？")) return
-    await deleteIngestTask(task.id)
-    onRefresh()
+    try {
+      await deleteIngestTask(task.id)
+      onRefresh()
+    } catch {
+      // silent — task may already be deleted or in-progress
+    }
+  }
+
+  async function handleConfirm() {
+    try {
+      await confirmIngestTask(task.id)
+      onRefresh()
+    } catch {
+      // silent — status may have changed
+    }
   }
 
   return (
@@ -121,15 +134,25 @@ function TaskRow({ task, onRefresh }: { task: IngestTaskItem; onRefresh: () => v
 
       <div className="flex items-center gap-2 ml-4 shrink-0">
         {task.status === "chunked" && task.source_id && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1"
-            onClick={() => navigate(`/sources/${task.source_id}/chunks/edit`)}
-          >
-            <PenLine className="h-3 w-3" />
-            去校对
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1"
+              onClick={() => navigate(`/sources/${task.source_id}/chunks/edit`)}
+            >
+              <PenLine className="h-3 w-3" />
+              去校对
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1"
+              onClick={handleConfirm}
+            >
+              <Play className="h-3 w-3" />
+              确认入库
+            </Button>
+          </>
         )}
         {task.status === "failed" && (
           <Button

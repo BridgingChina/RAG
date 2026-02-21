@@ -12,9 +12,10 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
 interface FileUploadZoneProps {
   onTaskCreated: (task: IngestTaskItem) => void
+  onError?: (error: string) => void
 }
 
-export function FileUploadZone({ onTaskCreated }: FileUploadZoneProps) {
+export function FileUploadZone({ onTaskCreated, onError }: FileUploadZoneProps) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -69,12 +70,14 @@ export function FileUploadZone({ onTaskCreated }: FileUploadZoneProps) {
 
       onTaskCreated(task)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传失败")
+      const msg = err instanceof Error ? err.message : "上传失败"
+      setError(msg)
+      onError?.(msg)
     } finally {
       setUploading(false)
       setProgress(0)
     }
-  }, [onTaskCreated])
+  }, [onTaskCreated, onError])
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

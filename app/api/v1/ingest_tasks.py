@@ -1,5 +1,5 @@
 """Ingest tasks API endpoints -- async multi-stage ingest pipeline."""
-import asyncio
+import re
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from app.api.v1.schemas.ingest_task import (
     PresignResponse,
 )
 from app.core.database import get_db
-from app.models import User
+from app.models import Chunk, ChunkBridgeLink, Source, User
 from app.models.ingest_task import IngestTask
 from app.providers import ZhipuProvider
 from app.providers.file_parser import FileParserProvider
@@ -36,7 +36,14 @@ def _get_r2() -> R2StorageService:
     return R2StorageService()
 
 
-def _run_sync_and_parse(task_id: int):
+def _sanitize_filename(name: str) -> str:
+    """Strip path components and limit to safe characters."""
+    name = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    name = re.sub(r'[^\w\-.\u4e00-\u9fff]', '_', name)
+    return name[:200] or "unnamed"
+
+
+async def _run_sync_and_parse(task_id: int):
     """BackgroundTask entry: run sync_and_parse in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -46,12 +53,12 @@ def _run_sync_and_parse(task_id: int):
         provider = ZhipuProvider()
         file_parser = FileParserProvider()
         service = IngestTaskService(db=db, r2=r2, provider=provider, file_parser=file_parser)
-        asyncio.run(service.sync_and_parse(task_id))
+        await service.sync_and_parse(task_id)
     finally:
         db.close()
 
 
-def _run_indexing(task_id: int):
+async def _run_indexing(task_id: int):
     """BackgroundTask entry: run start_indexing in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -60,7 +67,7 @@ def _run_indexing(task_id: int):
         r2 = R2StorageService()
         provider = ZhipuProvider()
         service = IngestTaskService(db=db, r2=r2, provider=provider)
-        asyncio.run(service.start_indexing(task_id))
+        await service.start_indexing(task_id)
     finally:
         db.close()
 
@@ -98,10 +105,12 @@ def presign(
             f"Unsupported file_type: {body.file_type}. Allowed: {sorted(ALLOWED_FILE_TYPES)}",
         )
 
+    safe_name = _sanitize_filename(body.file_name)
+
     # Create task record first to get an ID for the R2 key
     task = IngestTask(
         status="uploading",
-        file_name=body.file_name,
+        file_name=safe_name,
         file_type=body.file_type,
         file_size=body.file_size,
         created_by=current_user.id,
@@ -109,7 +118,7 @@ def presign(
     db.add(task)
     db.flush()
 
-    r2_key = f"raw/{task.id}/{body.file_name}"
+    r2_key = f"raw/{task.id}/{safe_name}"
     task.r2_raw_key = r2_key
     db.commit()
 
@@ -272,6 +281,21 @@ def delete_ingest_task(
     r2_raw_key = task.r2_raw_key
     r2_parsed_prefix = task.r2_parsed_prefix
     task_id_for_cleanup = task.id
+    source_id = task.source_id
+
+    # Clean up associated chunks and source
+    if source_id:
+        db.query(ChunkBridgeLink).filter(
+            ChunkBridgeLink.chunk_id.in_(
+                db.query(Chunk.id).filter(Chunk.source_id == source_id)
+            )
+        ).delete(synchronize_session=False)
+        db.query(Chunk).filter(Chunk.source_id == source_id).delete(
+            synchronize_session=False
+        )
+        db.query(Source).filter(Source.id == source_id).delete(
+            synchronize_session=False
+        )
 
     AuditService.log(
         db,
