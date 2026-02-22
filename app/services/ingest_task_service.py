@@ -3,6 +3,11 @@
 Coordinates R2 storage, Zhipu file parsing, chunking, and indexing
 across the async multi-stage ingest pipeline.
 """
+import io
+import mimetypes
+import zipfile
+
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import text as sql_text
 
@@ -106,10 +111,16 @@ class IngestTaskService:
 
         result = await self.file_parser.poll_until_done(zhipu_task_id)
 
-        parsed_md = result.content or ""
-
         if result.download_url:
-            await self._download_and_store_parsed_assets(task, result.download_url)
+            parsed_md = await self._download_and_store_parsed_assets(
+                task, result.download_url
+            )
+        elif result.content:
+            parsed_md = result.content
+        else:
+            raise ValueError(
+                "Zhipu returned neither content nor download_url"
+            )
 
         task.parsed_content = parsed_md
         task.r2_parsed_prefix = f"parsed/{task.id}/"
@@ -121,12 +132,49 @@ class IngestTaskService:
 
     async def _download_and_store_parsed_assets(
         self, task: IngestTask, download_url: str
-    ) -> None:
-        """Download parsed assets (images, markdown) from Zhipu and store in R2.
+    ) -> str:
+        """Download zip from Zhipu, archive to R2, extract markdown and images."""
+        logger.info("IngestTask %d: downloading zip from Zhipu", task.id)
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(download_url, timeout=120.0)
+            resp.raise_for_status()
+            zip_bytes = resp.content
 
-        TODO: Implement archive download, image extraction, and URL rewriting.
-        """
-        pass
+        # Archive raw zip to R2
+        self.r2.upload(
+            f"parsed/{task.id}/archive.zip",
+            zip_bytes,
+            "application/zip",
+        )
+        logger.info("IngestTask %d: zip archived (%d bytes)", task.id, len(zip_bytes))
+
+        # Extract markdown and images
+        parsed_md = ""
+        image_count = 0
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            md_files = [n for n in zf.namelist() if n.endswith(".md")]
+            if not md_files:
+                raise ValueError("No markdown file found in Zhipu zip archive")
+            parsed_md = zf.read(md_files[0]).decode("utf-8")
+
+            for name in zf.namelist():
+                if "/" in name and not name.endswith("/"):
+                    dirname = name.split("/")[0]
+                    if dirname == "images":
+                        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+                        self.r2.upload(
+                            f"parsed/{task.id}/{name}",
+                            zf.read(name),
+                            content_type,
+                        )
+                        image_count += 1
+
+        task.image_count = image_count
+        logger.info(
+            "IngestTask %d: extracted %s, %d images",
+            task.id, md_files[0], image_count,
+        )
+        return parsed_md
 
     async def _chunk(self, task: IngestTask) -> None:
         """Parse markdown and create chunks (without embedding)."""
