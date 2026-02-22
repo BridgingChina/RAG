@@ -298,3 +298,44 @@ async def test_parse_pdf_zip_without_markdown_fails():
 
     assert task.status == "failed"
     assert "No markdown file" in task.error_message
+
+
+@pytest.mark.asyncio
+async def test_parse_pdf_neither_content_nor_download_url_fails():
+    """Zhipu returning neither content nor download_url should fail the task."""
+    from app.services.ingest_task_service import IngestTaskService
+
+    mock_db = MagicMock()
+    mock_r2 = MagicMock()
+    mock_r2.download.return_value = b"fake-pdf-bytes"
+    mock_r2.upload = MagicMock()
+
+    mock_file_parser = AsyncMock()
+    mock_file_parser.create_task.return_value = "zhipu-task-empty"
+    mock_parse_result = MagicMock()
+    mock_parse_result.content = None
+    mock_parse_result.download_url = None
+    mock_file_parser.poll_until_done.return_value = mock_parse_result
+
+    task = IngestTask(
+        id=12,
+        status="syncing",
+        file_name="empty.pdf",
+        file_type="pdf",
+        file_size=5000,
+        r2_raw_key="raw/12/empty.pdf",
+    )
+    mock_db.get.return_value = task
+    mock_db.commit = MagicMock()
+
+    service = IngestTaskService(
+        db=mock_db,
+        r2=mock_r2,
+        provider=AsyncMock(),
+        file_parser=mock_file_parser,
+    )
+
+    await service.sync_and_parse(task_id=12)
+
+    assert task.status == "failed"
+    assert "neither content nor download_url" in task.error_message
