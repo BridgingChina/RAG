@@ -169,6 +169,7 @@ class IngestTaskService:
                         )
                         image_count += 1
 
+        task.image_count = image_count
         logger.info(
             "IngestTask %d: extracted %s, %d images",
             task.id, md_files[0], image_count,

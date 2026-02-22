@@ -232,6 +232,7 @@ async def test_parse_pdf_with_download_url_extracts_markdown():
     # Verify parsed_content came from zip
     assert task.parsed_content == "# Extracted\n\nContent from zip"
     assert task.status == "chunked"
+    assert task.image_count == 1
 
     # Verify R2 uploads: archive.zip + images/fig1.png + result.md
     upload_keys = [c.args[0] for c in mock_r2.upload.call_args_list]
