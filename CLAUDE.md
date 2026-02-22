@@ -119,6 +119,7 @@ The system uses automatic schema versioning:
 - `config/taxonomy.yaml` — 三级知识分类体系，通过 `app/core/constants.py` 加载（`@lru_cache`）
 - `app/core/taxonomy_loader.py` — DB-backed taxonomy loader（API/admin 使用）。`constants.py` 仅供 `tagger.py` 使用，两者独立
 - `config/facets.yaml` — Facet 枚举值（桥型、材料、年代、区域、功能）
+- `app/core/config.py` — `git_commit`/`git_date` 字段从环境变量读取，Docker build args 注入（`deploy.sh` 设置）
 
 **Data Model:**
 
@@ -195,9 +196,10 @@ title: 资料标题
 - Pydantic response schema 加 required field 后，端点构造器必须同步传值，否则 500 ValidationError
 - FastAPI 路由顺序：literal 路由（`/merge`、`/batch`）必须在 parametric 路由（`/{chunk_id}/split`）之前注册，否则 "merge" 被当作 chunk_id 解析导致 422
 - 所有分页端点（chunks/bridges/sources/audit）强制 `page_size ≤ 100`（`Query(le=100)`）— 前端请求不可超出，否则 422
-- Dockerfile 只 COPY `app/`, `config/`, `data/` — `scripts/` 和 `tests/` 不在镜像中，容器内迁移需用 `docker exec python -c "..."`
+- Dockerfile COPY `app/`, `config/`, `data/`, `scripts/` — `tests/` 不在镜像中。`docker-entrypoint.sh` 启动时自动跑 `migrate_db.py`
 - `IngestTaskService` 的 BackgroundTask 使用独立 `SessionLocal()` — 不能复用请求级 db session，否则 session 已关闭
 - R2 presigned URL 有效期 1 小时 — 前端需在获取后尽快完成上传
+- R2 bucket 必须配置 CORS（AllowedOrigins = 前端域名，AllowedMethods = PUT/GET，AllowedHeaders = Content-Type）— 否则浏览器 presigned URL 上传会被 CORS 拦截
 - FastAPI BackgroundTasks 中的 async 函数必须用 `async def` + `await` — 不能用 `asyncio.run()`（会在已有事件循环中崩溃）
 
 ## Worktrees
