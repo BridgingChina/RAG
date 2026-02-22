@@ -216,7 +216,7 @@ async def test_parse_pdf_with_download_url_extracts_markdown():
             mock_doc.frontmatter = {"title": "test.pdf"}
             mock_parse.return_value = mock_doc
 
-            with patch("httpx.AsyncClient") as mock_httpx_cls:
+            with patch("app.services.ingest_task_service.httpx.AsyncClient") as mock_httpx_cls:
                 mock_resp = MagicMock()
                 mock_resp.status_code = 200
                 mock_resp.content = zip_bytes
@@ -283,7 +283,7 @@ async def test_parse_pdf_zip_without_markdown_fails():
         file_parser=mock_file_parser,
     )
 
-    with patch("httpx.AsyncClient") as mock_httpx_cls:
+    with patch("app.services.ingest_task_service.httpx.AsyncClient") as mock_httpx_cls:
         mock_resp = MagicMock()
         mock_resp.content = zip_bytes
         mock_resp.raise_for_status = MagicMock()
