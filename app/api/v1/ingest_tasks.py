@@ -9,6 +9,7 @@ from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas.ingest_task import (
     BatchDeleteRequest,
     BatchDeleteResponse,
+    DownloadUrlResponse,
     IngestTaskCreate,
     IngestTaskDetail,
     IngestTaskListItem,
@@ -330,6 +331,31 @@ def confirm_ingest_task(
     background_tasks.add_task(_run_indexing, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
+
+
+@router.get("/{task_id}/download-url", response_model=DownloadUrlResponse)
+def get_download_url(
+    task_id: int,
+    type: str = Query(..., pattern="^(raw|parsed)$"),
+    r2: R2StorageService = Depends(_get_r2),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a presigned download URL for task files."""
+    task = db.get(IngestTask, task_id)
+    if task is None:
+        raise HTTPException(404, "Task not found")
+
+    if type == "raw":
+        if not task.r2_raw_key:
+            raise HTTPException(404, "No raw file available")
+        url = r2.generate_presigned_download_url(task.r2_raw_key)
+    else:  # parsed
+        if not task.r2_parsed_prefix:
+            raise HTTPException(404, "No parsed file available")
+        url = r2.generate_presigned_download_url(f"{task.r2_parsed_prefix}result.md")
+
+    return DownloadUrlResponse(url=url)
 
 
 @router.post("/{task_id}/retry", response_model=IngestTaskDetail)
