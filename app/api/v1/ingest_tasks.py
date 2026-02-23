@@ -189,6 +189,7 @@ def list_ingest_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
+    file_name: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -197,6 +198,12 @@ def list_ingest_tasks(
 
     if status:
         query = query.filter(IngestTask.status == status)
+    else:
+        # Default: exclude deleted tasks
+        query = query.filter(IngestTask.status != "deleted")
+
+    if file_name:
+        query = query.filter(IngestTask.file_name.ilike(f"%{file_name}%"))
 
     total = query.count()
     tasks = (
