@@ -201,6 +201,8 @@ title: 资料标题
 - R2 presigned URL 有效期 1 小时 — 前端需在获取后尽快完成上传
 - R2 bucket 必须配置 CORS（AllowedOrigins = 前端域名，AllowedMethods = PUT/GET，AllowedHeaders = Content-Type）— 否则浏览器 presigned URL 上传会被 CORS 拦截
 - FastAPI BackgroundTasks 中的 async 函数必须用 `async def` + `await` — 不能用 `asyncio.run()`（会在已有事件循环中崩溃）
+- 智谱文件解析 API `download_link` 模式下 `content=None` — 解析结果在 zip 包（`result.md` + `images/`）里，不在 `content` 字段中。`text` 模式有 1MB 上限
+- `test_health_endpoint` 已知失败 — health 端点加了 `commit`/`build_date` 但测试断言未更新（来自 `66af062`）
 
 ## Worktrees
 
