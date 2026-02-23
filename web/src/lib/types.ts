@@ -80,6 +80,7 @@ export type IngestTaskStatus =
   | "indexing"
   | "completed"
   | "failed"
+  | "deleted"
 
 export interface IngestTaskItem {
   id: number
@@ -112,6 +113,19 @@ export interface IngestTaskCreateRequest {
   file_type: string
   file_size: number
   r2_key: string
+}
+
+export interface BatchDeleteRequest {
+  task_ids: number[]
+}
+
+export interface BatchDeleteResponse {
+  deleted: number[]
+  skipped: number[]
+}
+
+export interface DownloadUrlResponse {
+  url: string
 }
 
 // --- Pagination ---
