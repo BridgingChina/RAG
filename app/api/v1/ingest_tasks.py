@@ -43,7 +43,7 @@ def _sanitize_filename(name: str) -> str:
     return name[:200] or "unnamed"
 
 
-async def _run_sync_and_parse(task_id: int):
+async def _run_sync_and_parse(task_id: int, user_id: int | None = None, ip_address: str | None = None):
     """BackgroundTask entry: run sync_and_parse in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -52,13 +52,16 @@ async def _run_sync_and_parse(task_id: int):
         r2 = R2StorageService()
         provider = ZhipuProvider()
         file_parser = FileParserProvider()
-        service = IngestTaskService(db=db, r2=r2, provider=provider, file_parser=file_parser)
+        service = IngestTaskService(
+            db=db, r2=r2, provider=provider, file_parser=file_parser,
+            user_id=user_id, ip_address=ip_address,
+        )
         await service.sync_and_parse(task_id)
     finally:
         db.close()
 
 
-async def _run_indexing(task_id: int):
+async def _run_indexing(task_id: int, user_id: int | None = None, ip_address: str | None = None):
     """BackgroundTask entry: run start_indexing in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -66,7 +69,10 @@ async def _run_indexing(task_id: int):
     try:
         r2 = R2StorageService()
         provider = ZhipuProvider()
-        service = IngestTaskService(db=db, r2=r2, provider=provider)
+        service = IngestTaskService(
+            db=db, r2=r2, provider=provider,
+            user_id=user_id, ip_address=ip_address,
+        )
         await service.start_indexing(task_id)
     finally:
         db.close()
@@ -176,7 +182,7 @@ def create_ingest_task(
     )
     db.commit()
 
-    background_tasks.add_task(_run_sync_and_parse, task.id)
+    background_tasks.add_task(_run_sync_and_parse, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -259,7 +265,7 @@ def confirm_ingest_task(
     )
     db.commit()
 
-    background_tasks.add_task(_run_indexing, task.id)
+    background_tasks.add_task(_run_indexing, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
 
