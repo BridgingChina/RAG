@@ -59,13 +59,6 @@ function isInProgress(status: IngestTaskStatus): boolean {
   return ["uploading", "syncing", "parsing", "indexing"].includes(status)
 }
 
-function formatSize(bytes: number | null): string {
-  if (bytes === null) return ""
-  if (bytes < 1024) return `${bytes}B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
-}
-
 function formatTime(isoStr: string): string {
   const d = new Date(isoStr)
   const now = new Date()
@@ -154,12 +147,10 @@ export function Component() {
     [page, statusFilter, debouncedSearch],
   )
 
-  // R2 fallback detection
-  useEffect(() => {
-    if (error?.includes("R2 storage is not configured")) {
-      setR2Available(false)
-    }
-  }, [error])
+  // R2 fallback detection — render-phase state adjustment (avoids setState-in-effect lint)
+  if (r2Available && error?.includes("R2 storage is not configured")) {
+    setR2Available(false)
+  }
 
   // Auto-polling when tasks are in progress
   useEffect(() => {
