@@ -153,10 +153,7 @@ def create_ingest_task(
     # Find existing task by r2_key
     task = (
         db.query(IngestTask)
-        .filter(
-            IngestTask.r2_raw_key == body.r2_key,
-            IngestTask.created_by == current_user.id,
-        )
+        .filter(IngestTask.r2_raw_key == body.r2_key)
         .first()
     )
 
@@ -195,8 +192,8 @@ def list_ingest_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List ingest tasks for the current user."""
-    query = db.query(IngestTask).filter(IngestTask.created_by == current_user.id)
+    """List ingest tasks with optional filters."""
+    query = db.query(IngestTask)
 
     if status:
         query = query.filter(IngestTask.status == status)
@@ -229,7 +226,7 @@ def get_ingest_task(
 ):
     """Get ingest task detail (used for polling status)."""
     task = db.get(IngestTask, task_id)
-    if task is None or task.created_by != current_user.id:
+    if task is None:
         raise HTTPException(404, "Task not found")
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -244,7 +241,7 @@ def confirm_ingest_task(
 ):
     """User confirms chunks are ready -- start indexing (embedding + tagging)."""
     task = db.get(IngestTask, task_id)
-    if task is None or task.created_by != current_user.id:
+    if task is None:
         raise HTTPException(404, "Task not found")
 
     if task.status != "chunked":
@@ -279,7 +276,7 @@ def delete_ingest_task(
 ):
     """Cancel/delete an ingest task."""
     task = db.get(IngestTask, task_id)
-    if task is None or task.created_by != current_user.id:
+    if task is None:
         raise HTTPException(404, "Task not found")
 
     if task.status in ("syncing", "parsing", "indexing"):
