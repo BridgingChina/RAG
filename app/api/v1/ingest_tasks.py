@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas.ingest_task import (
+    BatchDeleteRequest,
+    BatchDeleteResponse,
     IngestTaskCreate,
     IngestTaskDetail,
     IngestTaskListItem,
@@ -25,6 +27,7 @@ from app.services.r2_storage import R2StorageService
 router = APIRouter(prefix="/ingest-tasks")
 
 ALLOWED_FILE_TYPES = {"pdf", "md"}
+RUNNING_STATUSES = {"syncing", "parsing", "indexing"}
 
 
 def _get_r2() -> R2StorageService:
@@ -237,6 +240,44 @@ def list_ingest_tasks(
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size,
     )
+
+
+@router.post("/batch-delete", response_model=BatchDeleteResponse)
+def batch_delete_ingest_tasks(
+    body: BatchDeleteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete multiple ingest tasks."""
+    deleted: list[int] = []
+    skipped: list[int] = []
+
+    for tid in body.task_ids:
+        task = db.get(IngestTask, tid)
+        if task is None:
+            skipped.append(tid)
+            continue
+        if task.status in RUNNING_STATUSES:
+            skipped.append(tid)
+            continue
+
+        _cleanup_task_data(db, task)
+        task.status = "deleted"
+
+        AuditService.log(
+            db,
+            action=AuditService.DELETE,
+            resource_type="ingest_task",
+            user_id=current_user.id,
+            resource_id=str(task.id),
+            detail={"file_name": task.file_name},
+            ip_address=get_client_ip(request),
+        )
+        deleted.append(tid)
+
+    db.commit()
+    return BatchDeleteResponse(deleted=deleted, skipped=skipped)
 
 
 # Parametric routes below literal routes
