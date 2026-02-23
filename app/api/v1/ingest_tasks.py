@@ -94,6 +94,23 @@ def _task_to_detail(task: IngestTask) -> dict:
     }
 
 
+def _cleanup_task_data(db: Session, task: IngestTask) -> None:
+    """Clean up chunks, bridge links, and source associated with a task."""
+    if task.source_id:
+        db.query(ChunkBridgeLink).filter(
+            ChunkBridgeLink.chunk_id.in_(
+                db.query(Chunk.id).filter(Chunk.source_id == task.source_id)
+            )
+        ).delete(synchronize_session=False)
+        db.query(Chunk).filter(Chunk.source_id == task.source_id).delete(
+            synchronize_session=False
+        )
+        db.query(Source).filter(Source.id == task.source_id).delete(
+            synchronize_session=False
+        )
+        task.source_id = None
+
+
 # IMPORTANT: literal routes MUST come before parametric routes
 
 
@@ -281,7 +298,7 @@ def delete_ingest_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Cancel/delete an ingest task."""
+    """Soft-delete an ingest task (keeps task record and R2 files)."""
     task = db.get(IngestTask, task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
@@ -292,25 +309,9 @@ def delete_ingest_task(
             f"Cannot delete task in '{task.status}' state -- wait for completion or failure",
         )
 
-    # Capture R2 keys before deleting the task
-    r2_raw_key = task.r2_raw_key
-    r2_parsed_prefix = task.r2_parsed_prefix
-    task_id_for_cleanup = task.id
-    source_id = task.source_id
+    _cleanup_task_data(db, task)
 
-    # Clean up associated chunks and source
-    if source_id:
-        db.query(ChunkBridgeLink).filter(
-            ChunkBridgeLink.chunk_id.in_(
-                db.query(Chunk.id).filter(Chunk.source_id == source_id)
-            )
-        ).delete(synchronize_session=False)
-        db.query(Chunk).filter(Chunk.source_id == source_id).delete(
-            synchronize_session=False
-        )
-        db.query(Source).filter(Source.id == source_id).delete(
-            synchronize_session=False
-        )
+    task.status = "deleted"
 
     AuditService.log(
         db,
@@ -321,18 +322,6 @@ def delete_ingest_task(
         detail={"file_name": task.file_name},
         ip_address=get_client_ip(request),
     )
-    db.delete(task)
     db.commit()
-
-    # Clean up R2 files (best-effort, after commit)
-    try:
-        if R2StorageService.is_configured():
-            r2 = R2StorageService()
-            if r2_raw_key:
-                r2.delete_prefix(f"raw/{task_id_for_cleanup}/")
-            if r2_parsed_prefix:
-                r2.delete_prefix(r2_parsed_prefix)
-    except Exception:
-        pass  # R2 cleanup is best-effort
 
     return {"ok": True}
