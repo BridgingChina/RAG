@@ -548,9 +548,8 @@ function TaskRow({
             </Button>
           )}
 
-          {/* failed / completed / deleted: retry */}
+          {/* failed / deleted: retry */}
           {(task.status === "failed" ||
-            task.status === "completed" ||
             task.status === "deleted") && (
             <Button
               variant="ghost"
