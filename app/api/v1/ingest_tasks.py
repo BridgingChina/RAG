@@ -291,6 +291,50 @@ def confirm_ingest_task(
     return IngestTaskDetail(**_task_to_detail(task))
 
 
+@router.post("/{task_id}/retry", response_model=IngestTaskDetail)
+def retry_ingest_task(
+    task_id: int,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reset a failed/deleted task and re-run the pipeline."""
+    task = db.get(IngestTask, task_id)
+    if task is None:
+        raise HTTPException(404, "Task not found")
+
+    if task.status not in ("failed", "deleted"):
+        raise HTTPException(
+            400,
+            f"Cannot retry task in '{task.status}' state -- only failed or deleted tasks can be retried",
+        )
+
+    _cleanup_task_data(db, task)
+
+    task.status = "syncing"
+    task.error_message = None
+    task.chunk_count = None
+    task.parsed_content = None
+    task.image_count = 0
+    db.commit()
+
+    AuditService.log(
+        db,
+        action=AuditService.RETRY,
+        resource_type="ingest_task",
+        user_id=current_user.id,
+        resource_id=str(task.id),
+        detail={"file_name": task.file_name},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    background_tasks.add_task(_run_sync_and_parse, task.id, current_user.id, get_client_ip(request))
+
+    return IngestTaskDetail(**_task_to_detail(task))
+
+
 @router.delete("/{task_id}")
 def delete_ingest_task(
     task_id: int,
