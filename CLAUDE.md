@@ -205,6 +205,7 @@ title: 资料标题
 - `test_health_endpoint` 已知失败 — health 端点加了 `commit`/`build_date` 但测试断言未更新（来自 `66af062`）
 - Ingest task 软删除：`status="deleted"` 保留任务记录和 R2 文件，`_cleanup_task_data` 清理 chunks/bridge_links/source 但不删 R2 — retry/delete/batch-delete 共用
 - `useApi` hook 的 `loading` 每次 `refetch()` 都重置为 `true` — 轮询场景用 `loading && !data` 显示骨架屏，避免每 3 秒闪烁
+- Worktree 开发修改共享类型（如 `IngestTaskStatus` 加枚举值）后，main 上未修改的旧组件可能引用该类型而报错 — worktree 中 `tsc` 不会检查 main 独有的文件，squash merge 后 Docker build 才暴露
 
 ## Worktrees
 
