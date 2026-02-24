@@ -51,3 +51,16 @@ class IngestTaskListItem(BaseModel):
     updated_at: str
 
     model_config = {"from_attributes": True}
+
+
+class BatchDeleteRequest(BaseModel):
+    task_ids: list[int]
+
+
+class BatchDeleteResponse(BaseModel):
+    deleted: list[int]
+    skipped: list[int]
+
+
+class DownloadUrlResponse(BaseModel):
+    url: str

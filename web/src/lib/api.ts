@@ -1,6 +1,7 @@
 import type {
   AskResponse,
   AuditLogItem,
+  BatchDeleteResponse,
   BridgeCreateRequest,
   BridgeDetail,
   BridgeListItem,
@@ -15,6 +16,7 @@ import type {
   ChunkSplitResponse,
   ChunkUpdateRequest,
   DashboardStats,
+  DownloadUrlResponse,
   IngestResponse,
   IngestTaskCreateRequest,
   IngestTaskItem,
@@ -235,6 +237,7 @@ export function fetchIngestTasks(params?: {
   page?: number
   page_size?: number
   status?: string
+  file_name?: string
 }): Promise<PaginatedResponse<IngestTaskItem>> {
   return get<PaginatedResponse<IngestTaskItem>>("/ingest-tasks", params)
 }
@@ -249,6 +252,25 @@ export function confirmIngestTask(id: number): Promise<IngestTaskItem> {
 
 export function deleteIngestTask(id: number): Promise<void> {
   return del(`/ingest-tasks/${id}`)
+}
+
+export function retryIngestTask(id: number): Promise<IngestTaskItem> {
+  return post<IngestTaskItem>(`/ingest-tasks/${id}/retry`, {})
+}
+
+export function batchDeleteIngestTasks(
+  taskIds: number[],
+): Promise<BatchDeleteResponse> {
+  return post<BatchDeleteResponse>("/ingest-tasks/batch-delete", {
+    task_ids: taskIds,
+  })
+}
+
+export function getIngestTaskDownloadUrl(
+  id: number,
+  type: "raw" | "parsed",
+): Promise<DownloadUrlResponse> {
+  return get<DownloadUrlResponse>(`/ingest-tasks/${id}/download-url`, { type })
 }
 
 export async function uploadFileToR2(

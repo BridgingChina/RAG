@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.schemas.ingest_task import (
+    BatchDeleteRequest,
+    BatchDeleteResponse,
+    DownloadUrlResponse,
     IngestTaskCreate,
     IngestTaskDetail,
     IngestTaskListItem,
@@ -25,6 +28,7 @@ from app.services.r2_storage import R2StorageService
 router = APIRouter(prefix="/ingest-tasks")
 
 ALLOWED_FILE_TYPES = {"pdf", "md"}
+RUNNING_STATUSES = {"syncing", "parsing", "indexing"}
 
 
 def _get_r2() -> R2StorageService:
@@ -43,7 +47,7 @@ def _sanitize_filename(name: str) -> str:
     return name[:200] or "unnamed"
 
 
-async def _run_sync_and_parse(task_id: int):
+async def _run_sync_and_parse(task_id: int, user_id: int | None = None, ip_address: str | None = None):
     """BackgroundTask entry: run sync_and_parse in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -52,13 +56,16 @@ async def _run_sync_and_parse(task_id: int):
         r2 = R2StorageService()
         provider = ZhipuProvider()
         file_parser = FileParserProvider()
-        service = IngestTaskService(db=db, r2=r2, provider=provider, file_parser=file_parser)
+        service = IngestTaskService(
+            db=db, r2=r2, provider=provider, file_parser=file_parser,
+            user_id=user_id, ip_address=ip_address,
+        )
         await service.sync_and_parse(task_id)
     finally:
         db.close()
 
 
-async def _run_indexing(task_id: int):
+async def _run_indexing(task_id: int, user_id: int | None = None, ip_address: str | None = None):
     """BackgroundTask entry: run start_indexing in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -66,7 +73,10 @@ async def _run_indexing(task_id: int):
     try:
         r2 = R2StorageService()
         provider = ZhipuProvider()
-        service = IngestTaskService(db=db, r2=r2, provider=provider)
+        service = IngestTaskService(
+            db=db, r2=r2, provider=provider,
+            user_id=user_id, ip_address=ip_address,
+        )
         await service.start_indexing(task_id)
     finally:
         db.close()
@@ -86,6 +96,23 @@ def _task_to_detail(task: IngestTask) -> dict:
         "created_at": task.created_at.isoformat() if task.created_at else "",
         "updated_at": task.updated_at.isoformat() if task.updated_at else "",
     }
+
+
+def _cleanup_task_data(db: Session, task: IngestTask) -> None:
+    """Clean up chunks, bridge links, and source associated with a task."""
+    if task.source_id:
+        db.query(ChunkBridgeLink).filter(
+            ChunkBridgeLink.chunk_id.in_(
+                db.query(Chunk.id).filter(Chunk.source_id == task.source_id)
+            )
+        ).delete(synchronize_session=False)
+        db.query(Chunk).filter(Chunk.source_id == task.source_id).delete(
+            synchronize_session=False
+        )
+        db.query(Source).filter(Source.id == task.source_id).delete(
+            synchronize_session=False
+        )
+        task.source_id = None
 
 
 # IMPORTANT: literal routes MUST come before parametric routes
@@ -147,10 +174,7 @@ def create_ingest_task(
     # Find existing task by r2_key
     task = (
         db.query(IngestTask)
-        .filter(
-            IngestTask.r2_raw_key == body.r2_key,
-            IngestTask.created_by == current_user.id,
-        )
+        .filter(IngestTask.r2_raw_key == body.r2_key)
         .first()
     )
 
@@ -176,7 +200,7 @@ def create_ingest_task(
     )
     db.commit()
 
-    background_tasks.add_task(_run_sync_and_parse, task.id)
+    background_tasks.add_task(_run_sync_and_parse, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -186,14 +210,21 @@ def list_ingest_tasks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status: str | None = Query(default=None),
+    file_name: str | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List ingest tasks for the current user."""
-    query = db.query(IngestTask).filter(IngestTask.created_by == current_user.id)
+    """List ingest tasks with optional filters."""
+    query = db.query(IngestTask)
 
     if status:
         query = query.filter(IngestTask.status == status)
+    else:
+        # Default: exclude deleted tasks
+        query = query.filter(IngestTask.status != "deleted")
+
+    if file_name:
+        query = query.filter(IngestTask.file_name.ilike(f"%{file_name}%"))
 
     total = query.count()
     tasks = (
@@ -212,6 +243,44 @@ def list_ingest_tasks(
     )
 
 
+@router.post("/batch-delete", response_model=BatchDeleteResponse)
+def batch_delete_ingest_tasks(
+    body: BatchDeleteRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft-delete multiple ingest tasks."""
+    deleted: list[int] = []
+    skipped: list[int] = []
+
+    for tid in body.task_ids:
+        task = db.get(IngestTask, tid)
+        if task is None:
+            skipped.append(tid)
+            continue
+        if task.status in RUNNING_STATUSES:
+            skipped.append(tid)
+            continue
+
+        _cleanup_task_data(db, task)
+        task.status = "deleted"
+
+        AuditService.log(
+            db,
+            action=AuditService.DELETE,
+            resource_type="ingest_task",
+            user_id=current_user.id,
+            resource_id=str(task.id),
+            detail={"file_name": task.file_name},
+            ip_address=get_client_ip(request),
+        )
+        deleted.append(tid)
+
+    db.commit()
+    return BatchDeleteResponse(deleted=deleted, skipped=skipped)
+
+
 # Parametric routes below literal routes
 
 
@@ -223,7 +292,7 @@ def get_ingest_task(
 ):
     """Get ingest task detail (used for polling status)."""
     task = db.get(IngestTask, task_id)
-    if task is None or task.created_by != current_user.id:
+    if task is None:
         raise HTTPException(404, "Task not found")
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -238,7 +307,7 @@ def confirm_ingest_task(
 ):
     """User confirms chunks are ready -- start indexing (embedding + tagging)."""
     task = db.get(IngestTask, task_id)
-    if task is None or task.created_by != current_user.id:
+    if task is None:
         raise HTTPException(404, "Task not found")
 
     if task.status != "chunked":
@@ -259,7 +328,76 @@ def confirm_ingest_task(
     )
     db.commit()
 
-    background_tasks.add_task(_run_indexing, task.id)
+    background_tasks.add_task(_run_indexing, task.id, current_user.id, get_client_ip(request))
+
+    return IngestTaskDetail(**_task_to_detail(task))
+
+
+@router.get("/{task_id}/download-url", response_model=DownloadUrlResponse)
+def get_download_url(
+    task_id: int,
+    type: str = Query(..., pattern="^(raw|parsed)$"),
+    r2: R2StorageService = Depends(_get_r2),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a presigned download URL for task files."""
+    task = db.get(IngestTask, task_id)
+    if task is None:
+        raise HTTPException(404, "Task not found")
+
+    if type == "raw":
+        if not task.r2_raw_key:
+            raise HTTPException(404, "No raw file available")
+        url = r2.generate_presigned_download_url(task.r2_raw_key)
+    else:  # parsed
+        if not task.r2_parsed_prefix:
+            raise HTTPException(404, "No parsed file available")
+        url = r2.generate_presigned_download_url(f"{task.r2_parsed_prefix}result.md")
+
+    return DownloadUrlResponse(url=url)
+
+
+@router.post("/{task_id}/retry", response_model=IngestTaskDetail)
+def retry_ingest_task(
+    task_id: int,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Reset a failed/deleted task and re-run the pipeline."""
+    task = db.get(IngestTask, task_id)
+    if task is None:
+        raise HTTPException(404, "Task not found")
+
+    if task.status not in ("failed", "deleted"):
+        raise HTTPException(
+            400,
+            f"Cannot retry task in '{task.status}' state -- only failed or deleted tasks can be retried",
+        )
+
+    _cleanup_task_data(db, task)
+
+    task.status = "syncing"
+    task.error_message = None
+    task.chunk_count = None
+    task.parsed_content = None
+    task.image_count = 0
+    db.commit()
+
+    AuditService.log(
+        db,
+        action=AuditService.RETRY,
+        resource_type="ingest_task",
+        user_id=current_user.id,
+        resource_id=str(task.id),
+        detail={"file_name": task.file_name},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    background_tasks.add_task(_run_sync_and_parse, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -271,9 +409,9 @@ def delete_ingest_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Cancel/delete an ingest task."""
+    """Soft-delete an ingest task (keeps task record and R2 files)."""
     task = db.get(IngestTask, task_id)
-    if task is None or task.created_by != current_user.id:
+    if task is None:
         raise HTTPException(404, "Task not found")
 
     if task.status in ("syncing", "parsing", "indexing"):
@@ -282,25 +420,9 @@ def delete_ingest_task(
             f"Cannot delete task in '{task.status}' state -- wait for completion or failure",
         )
 
-    # Capture R2 keys before deleting the task
-    r2_raw_key = task.r2_raw_key
-    r2_parsed_prefix = task.r2_parsed_prefix
-    task_id_for_cleanup = task.id
-    source_id = task.source_id
+    _cleanup_task_data(db, task)
 
-    # Clean up associated chunks and source
-    if source_id:
-        db.query(ChunkBridgeLink).filter(
-            ChunkBridgeLink.chunk_id.in_(
-                db.query(Chunk.id).filter(Chunk.source_id == source_id)
-            )
-        ).delete(synchronize_session=False)
-        db.query(Chunk).filter(Chunk.source_id == source_id).delete(
-            synchronize_session=False
-        )
-        db.query(Source).filter(Source.id == source_id).delete(
-            synchronize_session=False
-        )
+    task.status = "deleted"
 
     AuditService.log(
         db,
@@ -311,18 +433,6 @@ def delete_ingest_task(
         detail={"file_name": task.file_name},
         ip_address=get_client_ip(request),
     )
-    db.delete(task)
     db.commit()
-
-    # Clean up R2 files (best-effort, after commit)
-    try:
-        if R2StorageService.is_configured():
-            r2 = R2StorageService()
-            if r2_raw_key:
-                r2.delete_prefix(f"raw/{task_id_for_cleanup}/")
-            if r2_parsed_prefix:
-                r2.delete_prefix(r2_parsed_prefix)
-    except Exception:
-        pass  # R2 cleanup is best-effort
 
     return {"ok": True}

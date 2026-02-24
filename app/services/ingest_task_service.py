@@ -17,6 +17,7 @@ from app.models import Chunk, ChunkBridgeLink, Source
 from app.models.ingest_task import IngestTask
 from app.providers.base import LLMProvider
 from app.providers.file_parser import FileParserProvider
+from app.services.audit_service import AuditService
 from app.services.bridge_linker import BridgeLinker
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
@@ -42,11 +43,15 @@ class IngestTaskService:
         r2: R2StorageService,
         provider: LLMProvider,
         file_parser: FileParserProvider | None = None,
+        user_id: int | None = None,
+        ip_address: str | None = None,
     ):
         self.db = db
         self.r2 = r2
         self.provider = provider
         self.file_parser = file_parser or FileParserProvider()
+        self.user_id = user_id
+        self.ip_address = ip_address
 
     def _get_task(self, task_id: int) -> IngestTask:
         task = self.db.get(IngestTask, task_id)
@@ -59,9 +64,24 @@ class IngestTaskService:
             task.status = "failed"
             task.error_message = error
             self.db.commit()
+
+            self._audit(task, AuditService.INGEST_FAILED, {"error": error[:500]})
+            self.db.commit()
         except Exception:
             self.db.rollback()
         logger.error(f"IngestTask {task.id} failed: {error}")
+
+    def _audit(self, task: IngestTask, action: str, detail: dict | None = None) -> None:
+        """Log an audit event for this task."""
+        AuditService.log(
+            self.db,
+            action=action,
+            resource_type="ingest_task",
+            user_id=self.user_id or task.created_by,
+            resource_id=str(task.id),
+            detail=detail,
+            ip_address=self.ip_address,
+        )
 
     async def sync_and_parse(self, task_id: int) -> None:
         """Stage: syncing -> parsing -> chunked.
@@ -93,12 +113,18 @@ class IngestTaskService:
             task.status = "chunked"
             self.db.commit()
 
+            self._audit(task, AuditService.INGEST_PARSE_DONE, {"chunk_count": task.chunk_count})
+            self.db.commit()
+
         except Exception as e:
             self._fail(task, str(e))
 
     async def _parse_pdf(self, task: IngestTask, file_bytes: bytes) -> None:
         """Submit PDF to Zhipu and poll for result."""
         task.status = "parsing"
+        self.db.commit()
+
+        self._audit(task, AuditService.INGEST_PARSE_START)
         self.db.commit()
 
         zhipu_task_id = await self.file_parser.create_task(
@@ -328,6 +354,9 @@ class IngestTaskService:
             )
 
             task.status = "completed"
+            self.db.commit()
+
+            self._audit(task, AuditService.INGEST_INDEX_DONE, {"chunk_count": task.chunk_count})
             self.db.commit()
 
         except Exception as e:

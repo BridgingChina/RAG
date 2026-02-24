@@ -21,6 +21,7 @@ export const router = createBrowserRouter([
           { path: "sources/:sourceId/chunks/edit", lazy: () => import("@/pages/ChunkEditorPage") },
           { path: "taxonomy", lazy: () => import("@/pages/TaxonomyPage") },
           { path: "ingest", lazy: () => import("@/pages/IngestPage") },
+          { path: "ingest-tasks/:id", lazy: () => import("@/pages/IngestTaskDetailPage") },
           { path: "ask", lazy: () => import("@/pages/AskPage") },
           { path: "settings", lazy: () => import("@/pages/SettingsPage") },
           { path: "audit-logs", lazy: () => import("@/pages/AuditLogPage") },

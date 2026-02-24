@@ -16,6 +16,11 @@ class AuditService:
     MERGE = "merge"
     INGEST = "ingest"
     BATCH_UPDATE = "batch_update"
+    RETRY = "retry_ingest"
+    INGEST_PARSE_START = "ingest_parse_start"
+    INGEST_PARSE_DONE = "ingest_parse_done"
+    INGEST_INDEX_DONE = "ingest_index_done"
+    INGEST_FAILED = "ingest_failed"
 
     @staticmethod
     def log(
