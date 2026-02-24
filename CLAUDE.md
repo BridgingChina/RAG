@@ -19,7 +19,7 @@ cd web && npm run lint   # ESLint
 cd web && npx tsc --noEmit  # Type check only (no build)
 ```
 
-**Pages:** Dashboard, Chunks (list/detail/editor), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest, Ask, Settings, Audit Logs, Login
+**Pages:** Dashboard, Chunks (list/detail/editor), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest (list/detail), Ask, Settings, Audit Logs, Login
 
 ### Development Setup
 
@@ -142,7 +142,7 @@ The system uses automatic schema versioning:
 - Chunk editing: `POST /chunks/{id}/split`, `POST /chunks/merge`, `PATCH /chunks/batch`
 - Reindex: `POST /sources/{id}/reindex` — 重建 stale chunks 的 search_text/tsv/embedding
 - Read-only: `/api/v1/sources`（仅 GET list + detail）
-- Ingest tasks: `/api/v1/ingest-tasks`（presign, create, list, detail, confirm, delete）— 异步入库流水线
+- Ingest tasks: `/api/v1/ingest-tasks`（presign, create, list, detail, confirm, delete, retry, batch-delete, download-url）— 异步入库流水线，软删除（status="deleted"）
 - Tree CRUD: `/api/v1/taxonomy`（`GET tree`, `POST/PUT/DELETE nodes`, `POST batch-update`）
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 - Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
@@ -203,6 +203,8 @@ title: 资料标题
 - FastAPI BackgroundTasks 中的 async 函数必须用 `async def` + `await` — 不能用 `asyncio.run()`（会在已有事件循环中崩溃）
 - 智谱文件解析 API `download_link` 模式下 `content=None` — 解析结果在 zip 包（`result.md` + `images/`）里，不在 `content` 字段中。`text` 模式有 1MB 上限
 - `test_health_endpoint` 已知失败 — health 端点加了 `commit`/`build_date` 但测试断言未更新（来自 `66af062`）
+- Ingest task 软删除：`status="deleted"` 保留任务记录和 R2 文件，`_cleanup_task_data` 清理 chunks/bridge_links/source 但不删 R2 — retry/delete/batch-delete 共用
+- `useApi` hook 的 `loading` 每次 `refetch()` 都重置为 `true` — 轮询场景用 `loading && !data` 显示骨架屏，避免每 3 秒闪烁
 
 ## Worktrees
 
