@@ -18,6 +18,7 @@ const STATUS_LABELS: Record<IngestTaskStatus, string> = {
   indexing: "标识中",
   completed: "已完成",
   failed: "失败",
+  deleted: "已删除",
 }
 
 function isInProgress(status: IngestTaskStatus): boolean {

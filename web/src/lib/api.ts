@@ -495,6 +495,7 @@ export function fetchAuditLogs(params?: {
   user_id?: number
   action?: string
   resource_type?: string
+  resource_id?: string
   start?: string
   end?: string
 }): Promise<PaginatedResponse<AuditLogItem>> {
