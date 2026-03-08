@@ -542,6 +542,8 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     }
   }, [chunk, onMutated])
 
+  const paragraphModeAvailable = chunk ? /\n/.test(chunk.content) : false
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -559,233 +561,314 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 overflow-y-auto p-4">
-      {/* Reindex warning */}
-      {chunk.needs_reindex && (
-        <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          内容已修改，embedding 待更新
-        </div>
-      )}
+    <div className="flex h-full flex-col">
+      {splitPhase !== null ? (
+        // --- Split mode ---
+        <>
+          {/* Split mode header */}
+          <div className="flex items-center gap-3 border-b bg-white px-4 py-2">
+            <Scissors className="h-4 w-4 text-slate-500" />
+            <span className="text-sm font-medium text-slate-700">
+              {splitPhase === "selecting" ? "选择拆分位置" : "拆分预览"}
+            </span>
 
-      {/* Content textarea */}
-      <div className="space-y-1">
-        <Label className="text-xs font-medium text-slate-600">内容</Label>
-        <Textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="min-h-[200px] resize-y font-mono text-sm"
-        />
-      </div>
-
-      {/* Section title */}
-      <div className="space-y-1">
-        <Label className="text-xs font-medium text-slate-600">章节标题</Label>
-        <Input
-          value={sectionTitle}
-          onChange={(e) => setSectionTitle(e.target.value)}
-          placeholder="章节标题（可选）"
-          className="text-sm"
-        />
-      </div>
-
-      {/* Taxonomy cascading selects */}
-      <div className="space-y-2">
-        <Label className="text-xs font-medium text-slate-600">分类标签</Label>
-        <div className="grid grid-cols-3 gap-2">
-          {/* lvl1 */}
-          <Select
-            value={lvl1 ?? "__none__"}
-            onValueChange={(v) => {
-              const next = v === "__none__" ? null : v
-              setLvl1(next)
-              setLvl2(null)
-              setLvl3(null)
-            }}
-          >
-            <SelectTrigger className="text-xs">
-              <SelectValue placeholder="lvl1" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— 无 —</SelectItem>
-              {lvl1Options.map((o) => (
-                <SelectItem key={o.node_id} value={o.label}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* lvl2 */}
-          <Select
-            value={lvl2 ?? "__none__"}
-            onValueChange={(v) => {
-              const next = v === "__none__" ? null : v
-              setLvl2(next)
-              setLvl3(null)
-            }}
-            disabled={!lvl1}
-          >
-            <SelectTrigger className="text-xs">
-              <SelectValue placeholder="lvl2" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— 无 —</SelectItem>
-              {lvl2Options.map((o) => (
-                <SelectItem key={o.node_id} value={o.label}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* lvl3 */}
-          <Select
-            value={lvl3 ?? "__none__"}
-            onValueChange={(v) => {
-              setLvl3(v === "__none__" ? null : v)
-            }}
-            disabled={!lvl2}
-          >
-            <SelectTrigger className="text-xs">
-              <SelectValue placeholder="lvl3" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— 无 —</SelectItem>
-              {lvl3Options.map((o) => (
-                <SelectItem key={o.node_id} value={o.label}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Bridge links */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium text-slate-600">桥梁关联</Label>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={() =>
-              setBridgeLinks([
-                ...bridgeLinks,
-                { bridge_id: "", role: "secondary", confidence: "1.0" },
-              ])
-            }
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            添加
-          </Button>
-        </div>
-        {bridgeLinks.length === 0 ? (
-          <p className="text-xs text-slate-400">暂无桥梁关联</p>
-        ) : (
-          <div className="space-y-1">
-            {bridgeLinks.map((row, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <Input
-                  value={row.bridge_id}
-                  onChange={(e) => {
-                    const next = [...bridgeLinks]
-                    next[i] = { ...next[i], bridge_id: e.target.value }
-                    setBridgeLinks(next)
-                  }}
-                  placeholder="Bridge ID"
-                  className="h-7 w-20 text-xs font-mono"
-                />
-                <Select
-                  value={row.role}
-                  onValueChange={(v) => {
-                    const next = [...bridgeLinks]
-                    next[i] = {
-                      ...next[i],
-                      role: v as "primary" | "secondary" | "candidate",
-                    }
-                    setBridgeLinks(next)
-                  }}
+            {splitPhase === "selecting" && (
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant={splitSubMode === "paragraph" ? "default" : "outline"}
+                  disabled={!paragraphModeAvailable}
+                  onClick={() => setSplitSubMode("paragraph")}
+                  className="h-7 px-2 text-xs"
                 >
-                  <SelectTrigger className="h-7 w-24 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="primary">主桥</SelectItem>
-                    <SelectItem value="secondary">次桥</SelectItem>
-                    <SelectItem value="candidate">候选</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={row.confidence}
-                  onChange={(e) => {
-                    const next = [...bridgeLinks]
-                    next[i] = { ...next[i], confidence: e.target.value }
-                    setBridgeLinks(next)
-                  }}
-                  placeholder="置信度"
-                  className="h-7 w-16 text-xs"
-                />
+                  段落模式
+                </Button>
+                <Button
+                  size="sm"
+                  variant={splitSubMode === "precise" ? "default" : "outline"}
+                  onClick={() => setSplitSubMode("precise")}
+                  className="h-7 px-2 text-xs"
+                >
+                  精确模式
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0 text-slate-400 hover:text-destructive"
-                  onClick={() =>
-                    setBridgeLinks(bridgeLinks.filter((_, idx) => idx !== i))
-                  }
+                  onClick={() => setSplitPhase(null)}
+                  className="ml-2 h-7 px-2 text-xs"
                 >
-                  <Trash2 className="h-3 w-3" />
+                  取消
                 </Button>
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Action error */}
-      {actionError && (
-        <p className="text-xs text-destructive">{actionError}</p>
-      )}
-
-      {/* Action buttons */}
-      <div className="flex gap-2 border-t pt-3">
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving}
-          className="gap-1"
-        >
-          {saving ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Save className="h-3 w-3" />
+          {/* Error display */}
+          {actionError && (
+            <p className="px-4 pt-2 text-xs text-destructive">{actionError}</p>
           )}
-          保存
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => {
-            setSplitPhase("selecting")
-            setSplitSubMode("paragraph")
-            setSplitPosition(null)
-          }}
-          className="gap-1"
-        >
-          <Scissors className="h-3 w-3" />
-          拆分
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => setDeleteDialogOpen(true)}
-          className="gap-1 ml-auto"
-        >
-          <Trash2 className="h-3 w-3" />
-          删除
-        </Button>
-      </div>
+
+          {/* Split content area */}
+          {splitPhase === "selecting" && splitSubMode === "paragraph" && (
+            <SplitParagraphView
+              content={chunk.content}
+              onSelectPosition={(pos) => {
+                setSplitPosition(pos)
+                setSplitPhase("previewing")
+              }}
+            />
+          )}
+          {splitPhase === "selecting" && splitSubMode === "precise" && (
+            <SplitPreciseView
+              content={chunk.content}
+              onSelectPosition={(pos) => {
+                setSplitPosition(pos)
+                setSplitPhase("previewing")
+              }}
+            />
+          )}
+          {splitPhase === "previewing" && splitPosition !== null && (
+            <SplitPreview
+              content={chunk.content}
+              position={splitPosition}
+              splitting={splitting}
+              onConfirm={() => handleSplit(splitPosition)}
+              onReselect={() => setSplitPhase("selecting")}
+              onCancel={() => setSplitPhase(null)}
+            />
+          )}
+        </>
+      ) : (
+        // --- Normal edit mode ---
+        <div className="flex flex-col gap-4 overflow-y-auto p-4">
+          {/* Reindex warning */}
+          {chunk.needs_reindex && (
+            <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              内容已修改，embedding 待更新
+            </div>
+          )}
+
+          {/* Content textarea */}
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-slate-600">内容</Label>
+            <Textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="min-h-[200px] resize-y font-mono text-sm"
+            />
+          </div>
+
+          {/* Section title */}
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-slate-600">章节标题</Label>
+            <Input
+              value={sectionTitle}
+              onChange={(e) => setSectionTitle(e.target.value)}
+              placeholder="章节标题（可选）"
+              className="text-sm"
+            />
+          </div>
+
+          {/* Taxonomy cascading selects */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-600">分类标签</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {/* lvl1 */}
+              <Select
+                value={lvl1 ?? "__none__"}
+                onValueChange={(v) => {
+                  const next = v === "__none__" ? null : v
+                  setLvl1(next)
+                  setLvl2(null)
+                  setLvl3(null)
+                }}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="lvl1" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 无 —</SelectItem>
+                  {lvl1Options.map((o) => (
+                    <SelectItem key={o.node_id} value={o.label}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* lvl2 */}
+              <Select
+                value={lvl2 ?? "__none__"}
+                onValueChange={(v) => {
+                  const next = v === "__none__" ? null : v
+                  setLvl2(next)
+                  setLvl3(null)
+                }}
+                disabled={!lvl1}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="lvl2" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 无 —</SelectItem>
+                  {lvl2Options.map((o) => (
+                    <SelectItem key={o.node_id} value={o.label}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* lvl3 */}
+              <Select
+                value={lvl3 ?? "__none__"}
+                onValueChange={(v) => {
+                  setLvl3(v === "__none__" ? null : v)
+                }}
+                disabled={!lvl2}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="lvl3" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 无 —</SelectItem>
+                  {lvl3Options.map((o) => (
+                    <SelectItem key={o.node_id} value={o.label}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Bridge links */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium text-slate-600">桥梁关联</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                onClick={() =>
+                  setBridgeLinks([
+                    ...bridgeLinks,
+                    { bridge_id: "", role: "secondary", confidence: "1.0" },
+                  ])
+                }
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                添加
+              </Button>
+            </div>
+            {bridgeLinks.length === 0 ? (
+              <p className="text-xs text-slate-400">暂无桥梁关联</p>
+            ) : (
+              <div className="space-y-1">
+                {bridgeLinks.map((row, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <Input
+                      value={row.bridge_id}
+                      onChange={(e) => {
+                        const next = [...bridgeLinks]
+                        next[i] = { ...next[i], bridge_id: e.target.value }
+                        setBridgeLinks(next)
+                      }}
+                      placeholder="Bridge ID"
+                      className="h-7 w-20 text-xs font-mono"
+                    />
+                    <Select
+                      value={row.role}
+                      onValueChange={(v) => {
+                        const next = [...bridgeLinks]
+                        next[i] = {
+                          ...next[i],
+                          role: v as "primary" | "secondary" | "candidate",
+                        }
+                        setBridgeLinks(next)
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-24 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="primary">主桥</SelectItem>
+                        <SelectItem value="secondary">次桥</SelectItem>
+                        <SelectItem value="candidate">候选</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={row.confidence}
+                      onChange={(e) => {
+                        const next = [...bridgeLinks]
+                        next[i] = { ...next[i], confidence: e.target.value }
+                        setBridgeLinks(next)
+                      }}
+                      placeholder="置信度"
+                      className="h-7 w-16 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-slate-400 hover:text-destructive"
+                      onClick={() =>
+                        setBridgeLinks(bridgeLinks.filter((_, idx) => idx !== i))
+                      }
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action error */}
+          {actionError && (
+            <p className="text-xs text-destructive">{actionError}</p>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-2 border-t pt-3">
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={saving}
+              className="gap-1"
+            >
+              {saving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Save className="h-3 w-3" />
+              )}
+              保存
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSplitPhase("selecting")
+                setSplitSubMode(paragraphModeAvailable ? "paragraph" : "precise")
+                setSplitPosition(null)
+              }}
+              className="gap-1"
+            >
+              <Scissors className="h-3 w-3" />
+              拆分
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+              className="gap-1 ml-auto"
+            >
+              <Trash2 className="h-3 w-3" />
+              删除
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Delete dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
