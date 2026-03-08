@@ -68,13 +68,8 @@ interface ParagraphSegment {
 }
 
 function parseContentSegments(content: string): ParagraphSegment[] {
-  let parts = content.split("\n\n")
-  let separator = "\n\n"
-
-  if (parts.length <= 1) {
-    parts = content.split("\n")
-    separator = "\n"
-  }
+  const separator = content.includes("\n\n") ? "\n\n" : "\n"
+  const parts = content.split(separator)
 
   const segments: ParagraphSegment[] = []
   let offset = 0
@@ -95,6 +90,11 @@ function parseContentSegments(content: string): ParagraphSegment[] {
   return segments
 }
 
+function segmentBgClass(i: number, hoveredIdx: number | null): string {
+  if (hoveredIdx === null) return ""
+  return i < hoveredIdx ? "bg-blue-50" : "bg-emerald-50"
+}
+
 // --- Split paragraph view (Mode A) ---
 
 interface SplitParagraphViewProps {
@@ -107,19 +107,17 @@ function SplitParagraphView({ content, onSelectPosition }: SplitParagraphViewPro
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
   const totalLen = content.length
 
+  if (segments.length === 0) {
+    return <p className="px-4 py-8 text-sm text-slate-400">内容为空，无法拆分</p>
+  }
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2 space-y-0">
+    <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2">
       {segments.map((seg, i) => (
         <div key={seg.startOffset}>
           {/* Paragraph text */}
           <div
-            className={`rounded px-3 py-2 font-mono text-sm whitespace-pre-wrap transition-colors ${
-              hoveredIdx !== null && i < hoveredIdx
-                ? "bg-blue-50"
-                : hoveredIdx !== null && i >= hoveredIdx
-                  ? "bg-emerald-50"
-                  : ""
-            }`}
+            className={`rounded px-3 py-2 font-mono text-sm whitespace-pre-wrap transition-colors ${segmentBgClass(i, hoveredIdx)}`}
           >
             {seg.text}
           </div>
@@ -195,6 +193,26 @@ function SplitPreciseView({ content, onSelectPosition }: SplitPreciseViewProps) 
 
 // --- Split preview ---
 
+const CHUNK_CARD_STYLES = {
+  blue: { border: "border-blue-200", bg: "bg-blue-50", label: "text-blue-700", count: "text-blue-500" },
+  emerald: { border: "border-emerald-200", bg: "bg-emerald-50", label: "text-emerald-700", count: "text-emerald-500" },
+} as const
+
+function ChunkPreviewCard({ label, content, color }: { label: string; content: string; color: "blue" | "emerald" }) {
+  const s = CHUNK_CARD_STYLES[color]
+  return (
+    <div className={`flex flex-1 min-h-0 flex-col rounded-md border ${s.border} ${s.bg}`}>
+      <div className={`flex items-center justify-between border-b ${s.border} px-3 py-1.5`}>
+        <span className={`text-xs font-medium ${s.label}`}>{label}</span>
+        <span className={`text-xs ${s.count}`}>{content.length} 字</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 font-mono text-sm whitespace-pre-wrap">
+        {content}
+      </div>
+    </div>
+  )
+}
+
 interface SplitPreviewProps {
   content: string
   position: number
@@ -210,7 +228,6 @@ function SplitPreview({ content, position, splitting, onConfirm, onReselect, onC
 
   return (
     <div className="flex flex-1 min-h-0 flex-col p-4 gap-3">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-slate-700">拆分预览</h3>
         <Button size="sm" variant="ghost" onClick={onReselect} className="gap-1 text-xs">
@@ -219,29 +236,9 @@ function SplitPreview({ content, position, splitting, onConfirm, onReselect, onC
         </Button>
       </div>
 
-      {/* Chunk A */}
-      <div className="flex flex-1 min-h-0 flex-col rounded-md border border-blue-200 bg-blue-50">
-        <div className="flex items-center justify-between border-b border-blue-200 px-3 py-1.5">
-          <span className="text-xs font-medium text-blue-700">Chunk A</span>
-          <span className="text-xs text-blue-500">{chunkA.length} 字</span>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 font-mono text-sm whitespace-pre-wrap">
-          {chunkA}
-        </div>
-      </div>
+      <ChunkPreviewCard label="Chunk A" content={chunkA} color="blue" />
+      <ChunkPreviewCard label="Chunk B" content={chunkB} color="emerald" />
 
-      {/* Chunk B */}
-      <div className="flex flex-1 min-h-0 flex-col rounded-md border border-emerald-200 bg-emerald-50">
-        <div className="flex items-center justify-between border-b border-emerald-200 px-3 py-1.5">
-          <span className="text-xs font-medium text-emerald-700">Chunk B</span>
-          <span className="text-xs text-emerald-500">{chunkB.length} 字</span>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 font-mono text-sm whitespace-pre-wrap">
-          {chunkB}
-        </div>
-      </div>
-
-      {/* Action bar */}
       <div className="flex items-center justify-end gap-2 border-t pt-3">
         <Button size="sm" variant="outline" onClick={onCancel}>
           取消
@@ -594,7 +591,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setSplitPhase(null)}
+                  onClick={() => { setSplitPhase(null); setActionError(null) }}
                   className="ml-2 h-7 px-2 text-xs"
                 >
                   取消
@@ -609,33 +606,39 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
           )}
 
           {/* Split content area */}
-          {splitPhase === "selecting" && splitSubMode === "paragraph" && (
-            <SplitParagraphView
-              content={chunk.content}
-              onSelectPosition={(pos) => {
-                setSplitPosition(pos)
-                setSplitPhase("previewing")
-              }}
-            />
-          )}
-          {splitPhase === "selecting" && splitSubMode === "precise" && (
-            <SplitPreciseView
-              content={chunk.content}
-              onSelectPosition={(pos) => {
-                setSplitPosition(pos)
-                setSplitPhase("previewing")
-              }}
-            />
-          )}
-          {splitPhase === "previewing" && splitPosition !== null && (
+          {splitPhase === "selecting" ? (
+            splitSubMode === "paragraph" ? (
+              <SplitParagraphView
+                content={chunk.content}
+                onSelectPosition={(pos) => {
+                  setSplitPosition(pos)
+                  setSplitPhase("previewing")
+                }}
+              />
+            ) : (
+              <SplitPreciseView
+                content={chunk.content}
+                onSelectPosition={(pos) => {
+                  setSplitPosition(pos)
+                  setSplitPhase("previewing")
+                }}
+              />
+            )
+          ) : splitPosition !== null ? (
             <SplitPreview
               content={chunk.content}
               position={splitPosition}
               splitting={splitting}
               onConfirm={() => handleSplit(splitPosition)}
               onReselect={() => setSplitPhase("selecting")}
-              onCancel={() => setSplitPhase(null)}
+              onCancel={() => { setSplitPhase(null); setActionError(null) }}
             />
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <Button size="sm" variant="outline" onClick={() => setSplitPhase("selecting")}>
+                返回选择拆分位置
+              </Button>
+            </div>
           )}
         </>
       ) : (
@@ -851,6 +854,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                 setSplitPhase("selecting")
                 setSplitSubMode(paragraphModeAvailable ? "paragraph" : "precise")
                 setSplitPosition(null)
+                setActionError(null)
               }}
               className="gap-1"
             >
@@ -903,7 +907,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
           <DialogHeader>
             <DialogTitle>编辑冲突</DialogTitle>
             <DialogDescription>
-              该 Chunk 已被其他用户修改。您可以强制覆盖或放弃本次更改。
+              该 Chunk 已被其他用户修改。您可以强制执行或取消操作。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -914,7 +918,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                 refetch()
               }}
             >
-              放弃修改
+              取消操作
             </Button>
             <Button
               variant="destructive"
@@ -923,7 +927,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                 conflictRetryFn?.()
               }}
             >
-              强制覆盖
+              强制执行
             </Button>
           </DialogFooter>
         </DialogContent>
