@@ -59,6 +59,199 @@ function staleCount(chunks: ChunkListItem[]): number {
   return chunks.filter((c) => c.needs_reindex).length
 }
 
+// --- Split helpers ---
+
+interface ParagraphSegment {
+  text: string
+  startOffset: number
+  endOffset: number
+}
+
+function parseContentSegments(content: string): ParagraphSegment[] {
+  const separator = content.includes("\n\n") ? "\n\n" : "\n"
+  const parts = content.split(separator)
+
+  const segments: ParagraphSegment[] = []
+  let offset = 0
+  for (let i = 0; i < parts.length; i++) {
+    const text = parts[i]
+    if (text.length > 0) {
+      segments.push({
+        text,
+        startOffset: offset,
+        endOffset: offset + text.length,
+      })
+    }
+    offset += text.length
+    if (i < parts.length - 1) {
+      offset += separator.length
+    }
+  }
+  return segments
+}
+
+function segmentBgClass(i: number, hoveredIdx: number | null): string {
+  if (hoveredIdx === null) return ""
+  return i < hoveredIdx ? "bg-blue-50" : "bg-emerald-50"
+}
+
+// --- Split paragraph view (Mode A) ---
+
+interface SplitParagraphViewProps {
+  content: string
+  onSelectPosition: (position: number) => void
+}
+
+function SplitParagraphView({ content, onSelectPosition }: SplitParagraphViewProps) {
+  const segments = parseContentSegments(content)
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+  const totalLen = content.length
+
+  if (segments.length === 0) {
+    return <p className="px-4 py-8 text-sm text-slate-400">内容为空，无法拆分</p>
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto px-4 py-2">
+      {segments.map((seg, i) => (
+        <div key={seg.startOffset}>
+          {/* Paragraph text */}
+          <div
+            className={`rounded px-3 py-2 font-mono text-sm whitespace-pre-wrap transition-colors ${segmentBgClass(i, hoveredIdx)}`}
+          >
+            {seg.text}
+          </div>
+
+          {/* Divider between paragraphs (not after last) */}
+          {i < segments.length - 1 && (
+            <div
+              className="group flex cursor-pointer items-center gap-2 py-1 px-3 my-1 select-none"
+              onMouseEnter={() => setHoveredIdx(i + 1)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              onClick={() => onSelectPosition(segments[i + 1].startOffset)}
+            >
+              <div className="flex-1 border-t border-dashed border-slate-300 group-hover:border-blue-400 transition-colors" />
+              <span className="shrink-0 text-xs text-slate-400 group-hover:text-blue-600 transition-colors">
+                ✂ {segments[i + 1].startOffset} 字 | {totalLen - segments[i + 1].startOffset} 字
+              </span>
+              <div className="flex-1 border-t border-dashed border-slate-300 group-hover:border-blue-400 transition-colors" />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// --- Split precise view (Mode C) ---
+
+interface SplitPreciseViewProps {
+  content: string
+  onSelectPosition: (position: number) => void
+}
+
+function SplitPreciseView({ content, onSelectPosition }: SplitPreciseViewProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [cursorPos, setCursorPos] = useState<number>(0)
+
+  function handleSelect() {
+    const pos = textareaRef.current?.selectionStart ?? 0
+    setCursorPos(pos)
+  }
+
+  const canSplit = cursorPos > 0 && cursorPos < content.length
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col px-4 py-2 gap-2">
+      <Textarea
+        ref={textareaRef}
+        value={content}
+        readOnly
+        onSelect={handleSelect}
+        onClick={handleSelect}
+        className="flex-1 min-h-0 resize-none font-mono text-sm"
+      />
+      <div className="flex items-center justify-between rounded-md border bg-white px-3 py-2">
+        <span className="text-xs text-slate-500">
+          {canSplit
+            ? `光标: 第 ${cursorPos} 字符 · 上半 ${cursorPos} 字 | 下半 ${content.length - cursorPos} 字`
+            : "点击文本中的位置来设定拆分点"}
+        </span>
+        <Button
+          size="sm"
+          disabled={!canSplit}
+          onClick={() => onSelectPosition(cursorPos)}
+          className="gap-1"
+        >
+          <Scissors className="h-3 w-3" />
+          在此拆分
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// --- Split preview ---
+
+const CHUNK_CARD_STYLES = {
+  blue: { border: "border-blue-200", bg: "bg-blue-50", label: "text-blue-700", count: "text-blue-500" },
+  emerald: { border: "border-emerald-200", bg: "bg-emerald-50", label: "text-emerald-700", count: "text-emerald-500" },
+} as const
+
+function ChunkPreviewCard({ label, content, color }: { label: string; content: string; color: "blue" | "emerald" }) {
+  const s = CHUNK_CARD_STYLES[color]
+  return (
+    <div className={`flex flex-1 min-h-0 flex-col rounded-md border ${s.border} ${s.bg}`}>
+      <div className={`flex items-center justify-between border-b ${s.border} px-3 py-1.5`}>
+        <span className={`text-xs font-medium ${s.label}`}>{label}</span>
+        <span className={`text-xs ${s.count}`}>{content.length} 字</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 font-mono text-sm whitespace-pre-wrap">
+        {content}
+      </div>
+    </div>
+  )
+}
+
+interface SplitPreviewProps {
+  content: string
+  position: number
+  splitting: boolean
+  onConfirm: () => void
+  onReselect: () => void
+  onCancel: () => void
+}
+
+function SplitPreview({ content, position, splitting, onConfirm, onReselect, onCancel }: SplitPreviewProps) {
+  const chunkA = content.slice(0, position)
+  const chunkB = content.slice(position)
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col p-4 gap-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-slate-700">拆分预览</h3>
+        <Button size="sm" variant="ghost" onClick={onReselect} className="gap-1 text-xs">
+          <ArrowLeft className="h-3 w-3" />
+          重选位置
+        </Button>
+      </div>
+
+      <ChunkPreviewCard label="Chunk A" content={chunkA} color="blue" />
+      <ChunkPreviewCard label="Chunk B" content={chunkB} color="emerald" />
+
+      <div className="flex items-center justify-end gap-2 border-t pt-3">
+        <Button size="sm" variant="outline" onClick={onCancel}>
+          取消
+        </Button>
+        <Button size="sm" onClick={onConfirm} disabled={splitting} className="gap-1">
+          {splitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Scissors className="h-3 w-3" />}
+          确认拆分
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 // --- Taxonomy cascade helpers ---
 
 function getLvl1Options(items: TaxonomyTreeItem[]): TaxonomyTreeItem[] {
@@ -197,9 +390,12 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   const [lvl3, setLvl3] = useState<string | null>(null)
   const [bridgeLinks, setBridgeLinks] = useState<BridgeLinkRow[]>([])
 
+  // Split mode state
+  const [splitPhase, setSplitPhase] = useState<null | "selecting" | "previewing">(null)
+  const [splitSubMode, setSplitSubMode] = useState<"paragraph" | "precise">("paragraph")
+  const [splitPosition, setSplitPosition] = useState<number | null>(null)
+
   // Dialog state
-  const [splitDialogOpen, setSplitDialogOpen] = useState(false)
-  const [splitPos, setSplitPos] = useState("")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // Conflict dialog state
@@ -211,9 +407,6 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   const [splitting, setSplitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-
-  // Textarea ref for cursor position
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Sync form with loaded chunk
   useEffect(() => {
@@ -300,23 +493,19 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     }
   }, [chunk, content, sectionTitle, lvl1, lvl2, lvl3, bridgeLinks, refetch, onMutated])
 
-  const handleSplit = useCallback(async () => {
+  const handleSplit = useCallback(async (position: number) => {
     if (!chunk) return
     setSplitting(true)
     setActionError(null)
     try {
-      const pos = Number(splitPos)
-      await splitChunk(chunk.id, { position: pos, expected_updated_at: chunk.updated_at })
-      setSplitDialogOpen(false)
+      await splitChunk(chunk.id, { position, expected_updated_at: chunk.updated_at })
+      setSplitPhase(null)
       onMutated()
     } catch (e) {
       if (handleConflictError(e, () => {
-        // Retry without lock — force overwrite
-        const pos = Number(splitPos)
         setSplitting(true)
-        setSplitDialogOpen(false)
-        splitChunk(chunk.id, { position: pos })
-          .then(() => onMutated())
+        splitChunk(chunk.id, { position })
+          .then(() => { setSplitPhase(null); onMutated() })
           .catch((err2) => setActionError(err2 instanceof Error ? err2.message : String(err2)))
           .finally(() => setSplitting(false))
       })) return
@@ -324,7 +513,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     } finally {
       setSplitting(false)
     }
-  }, [chunk, splitPos, onMutated])
+  }, [chunk, onMutated])
 
   const handleDelete = useCallback(async () => {
     if (!chunk) return
@@ -350,18 +539,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     }
   }, [chunk, onMutated])
 
-  function openSplitDialog() {
-    if (!chunk) return
-    const cursorPos = textareaRef.current?.selectionStart
-    setSplitPos(
-      String(
-        cursorPos !== undefined && cursorPos > 0
-          ? cursorPos
-          : Math.floor(chunk.content.length / 2),
-      ),
-    )
-    setSplitDialogOpen(true)
-  }
+  const paragraphModeAvailable = chunk ? /\n/.test(chunk.content) : false
 
   if (loading) {
     return (
@@ -380,263 +558,321 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 overflow-y-auto p-4">
-      {/* Reindex warning */}
-      {chunk.needs_reindex && (
-        <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          内容已修改，embedding 待更新
-        </div>
-      )}
+    <div className="flex h-full flex-col">
+      {splitPhase !== null ? (
+        // --- Split mode ---
+        <>
+          {/* Split mode header */}
+          <div className="flex items-center gap-3 border-b bg-white px-4 py-2">
+            <Scissors className="h-4 w-4 text-slate-500" />
+            <span className="text-sm font-medium text-slate-700">
+              {splitPhase === "selecting" ? "选择拆分位置" : "拆分预览"}
+            </span>
 
-      {/* Content textarea */}
-      <div className="space-y-1">
-        <Label className="text-xs font-medium text-slate-600">内容</Label>
-        <Textarea
-          ref={textareaRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          className="min-h-[200px] resize-y font-mono text-sm"
-        />
-      </div>
-
-      {/* Section title */}
-      <div className="space-y-1">
-        <Label className="text-xs font-medium text-slate-600">章节标题</Label>
-        <Input
-          value={sectionTitle}
-          onChange={(e) => setSectionTitle(e.target.value)}
-          placeholder="章节标题（可选）"
-          className="text-sm"
-        />
-      </div>
-
-      {/* Taxonomy cascading selects */}
-      <div className="space-y-2">
-        <Label className="text-xs font-medium text-slate-600">分类标签</Label>
-        <div className="grid grid-cols-3 gap-2">
-          {/* lvl1 */}
-          <Select
-            value={lvl1 ?? "__none__"}
-            onValueChange={(v) => {
-              const next = v === "__none__" ? null : v
-              setLvl1(next)
-              setLvl2(null)
-              setLvl3(null)
-            }}
-          >
-            <SelectTrigger className="text-xs">
-              <SelectValue placeholder="lvl1" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— 无 —</SelectItem>
-              {lvl1Options.map((o) => (
-                <SelectItem key={o.node_id} value={o.label}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* lvl2 */}
-          <Select
-            value={lvl2 ?? "__none__"}
-            onValueChange={(v) => {
-              const next = v === "__none__" ? null : v
-              setLvl2(next)
-              setLvl3(null)
-            }}
-            disabled={!lvl1}
-          >
-            <SelectTrigger className="text-xs">
-              <SelectValue placeholder="lvl2" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— 无 —</SelectItem>
-              {lvl2Options.map((o) => (
-                <SelectItem key={o.node_id} value={o.label}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* lvl3 */}
-          <Select
-            value={lvl3 ?? "__none__"}
-            onValueChange={(v) => {
-              setLvl3(v === "__none__" ? null : v)
-            }}
-            disabled={!lvl2}
-          >
-            <SelectTrigger className="text-xs">
-              <SelectValue placeholder="lvl3" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">— 无 —</SelectItem>
-              {lvl3Options.map((o) => (
-                <SelectItem key={o.node_id} value={o.label}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Bridge links */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium text-slate-600">桥梁关联</Label>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={() =>
-              setBridgeLinks([
-                ...bridgeLinks,
-                { bridge_id: "", role: "secondary", confidence: "1.0" },
-              ])
-            }
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            添加
-          </Button>
-        </div>
-        {bridgeLinks.length === 0 ? (
-          <p className="text-xs text-slate-400">暂无桥梁关联</p>
-        ) : (
-          <div className="space-y-1">
-            {bridgeLinks.map((row, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <Input
-                  value={row.bridge_id}
-                  onChange={(e) => {
-                    const next = [...bridgeLinks]
-                    next[i] = { ...next[i], bridge_id: e.target.value }
-                    setBridgeLinks(next)
-                  }}
-                  placeholder="Bridge ID"
-                  className="h-7 w-20 text-xs font-mono"
-                />
-                <Select
-                  value={row.role}
-                  onValueChange={(v) => {
-                    const next = [...bridgeLinks]
-                    next[i] = {
-                      ...next[i],
-                      role: v as "primary" | "secondary" | "candidate",
-                    }
-                    setBridgeLinks(next)
-                  }}
+            {splitPhase === "selecting" && (
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant={splitSubMode === "paragraph" ? "default" : "outline"}
+                  disabled={!paragraphModeAvailable}
+                  onClick={() => setSplitSubMode("paragraph")}
+                  className="h-7 px-2 text-xs"
                 >
-                  <SelectTrigger className="h-7 w-24 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="primary">主桥</SelectItem>
-                    <SelectItem value="secondary">次桥</SelectItem>
-                    <SelectItem value="candidate">候选</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  value={row.confidence}
-                  onChange={(e) => {
-                    const next = [...bridgeLinks]
-                    next[i] = { ...next[i], confidence: e.target.value }
-                    setBridgeLinks(next)
-                  }}
-                  placeholder="置信度"
-                  className="h-7 w-16 text-xs"
-                />
+                  段落模式
+                </Button>
+                <Button
+                  size="sm"
+                  variant={splitSubMode === "precise" ? "default" : "outline"}
+                  onClick={() => setSplitSubMode("precise")}
+                  className="h-7 px-2 text-xs"
+                >
+                  精确模式
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-7 w-7 p-0 text-slate-400 hover:text-destructive"
-                  onClick={() =>
-                    setBridgeLinks(bridgeLinks.filter((_, idx) => idx !== i))
-                  }
+                  onClick={() => { setSplitPhase(null); setActionError(null) }}
+                  className="ml-2 h-7 px-2 text-xs"
                 >
-                  <Trash2 className="h-3 w-3" />
+                  取消
                 </Button>
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
 
-      {/* Action error */}
-      {actionError && (
-        <p className="text-xs text-destructive">{actionError}</p>
-      )}
-
-      {/* Action buttons */}
-      <div className="flex gap-2 border-t pt-3">
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={saving}
-          className="gap-1"
-        >
-          {saving ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Save className="h-3 w-3" />
+          {/* Error display */}
+          {actionError && (
+            <p className="px-4 pt-2 text-xs text-destructive">{actionError}</p>
           )}
-          保存
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={openSplitDialog}
-          className="gap-1"
-        >
-          <Scissors className="h-3 w-3" />
-          拆分
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={() => setDeleteDialogOpen(true)}
-          className="gap-1 ml-auto"
-        >
-          <Trash2 className="h-3 w-3" />
-          删除
-        </Button>
-      </div>
 
-      {/* Split dialog */}
-      <Dialog open={splitDialogOpen} onOpenChange={setSplitDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>拆分知识块</DialogTitle>
-            <DialogDescription>
-              在指定字符位置将此知识块分为两部分。当前内容长度：{chunk.content.length} 字符。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>拆分位置（字符索引）</Label>
-            <Input
-              type="number"
-              value={splitPos}
-              onChange={(e) => setSplitPos(e.target.value)}
-              min={1}
-              max={chunk.content.length - 1}
+          {/* Split content area */}
+          {splitPhase === "selecting" ? (
+            splitSubMode === "paragraph" ? (
+              <SplitParagraphView
+                content={chunk.content}
+                onSelectPosition={(pos) => {
+                  setSplitPosition(pos)
+                  setSplitPhase("previewing")
+                }}
+              />
+            ) : (
+              <SplitPreciseView
+                content={chunk.content}
+                onSelectPosition={(pos) => {
+                  setSplitPosition(pos)
+                  setSplitPhase("previewing")
+                }}
+              />
+            )
+          ) : splitPosition !== null ? (
+            <SplitPreview
+              content={chunk.content}
+              position={splitPosition}
+              splitting={splitting}
+              onConfirm={() => handleSplit(splitPosition)}
+              onReselect={() => setSplitPhase("selecting")}
+              onCancel={() => { setSplitPhase(null); setActionError(null) }}
+            />
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <Button size="sm" variant="outline" onClick={() => setSplitPhase("selecting")}>
+                返回选择拆分位置
+              </Button>
+            </div>
+          )}
+        </>
+      ) : (
+        // --- Normal edit mode ---
+        <div className="flex flex-col gap-4 overflow-y-auto p-4">
+          {/* Reindex warning */}
+          {chunk.needs_reindex && (
+            <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              内容已修改，embedding 待更新
+            </div>
+          )}
+
+          {/* Content textarea */}
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-slate-600">内容</Label>
+            <Textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="min-h-[200px] resize-y font-mono text-sm"
             />
           </div>
-          <DialogFooter>
+
+          {/* Section title */}
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-slate-600">章节标题</Label>
+            <Input
+              value={sectionTitle}
+              onChange={(e) => setSectionTitle(e.target.value)}
+              placeholder="章节标题（可选）"
+              className="text-sm"
+            />
+          </div>
+
+          {/* Taxonomy cascading selects */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-slate-600">分类标签</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {/* lvl1 */}
+              <Select
+                value={lvl1 ?? "__none__"}
+                onValueChange={(v) => {
+                  const next = v === "__none__" ? null : v
+                  setLvl1(next)
+                  setLvl2(null)
+                  setLvl3(null)
+                }}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="lvl1" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 无 —</SelectItem>
+                  {lvl1Options.map((o) => (
+                    <SelectItem key={o.node_id} value={o.label}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* lvl2 */}
+              <Select
+                value={lvl2 ?? "__none__"}
+                onValueChange={(v) => {
+                  const next = v === "__none__" ? null : v
+                  setLvl2(next)
+                  setLvl3(null)
+                }}
+                disabled={!lvl1}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="lvl2" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 无 —</SelectItem>
+                  {lvl2Options.map((o) => (
+                    <SelectItem key={o.node_id} value={o.label}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* lvl3 */}
+              <Select
+                value={lvl3 ?? "__none__"}
+                onValueChange={(v) => {
+                  setLvl3(v === "__none__" ? null : v)
+                }}
+                disabled={!lvl2}
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="lvl3" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— 无 —</SelectItem>
+                  {lvl3Options.map((o) => (
+                    <SelectItem key={o.node_id} value={o.label}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Bridge links */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium text-slate-600">桥梁关联</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                onClick={() =>
+                  setBridgeLinks([
+                    ...bridgeLinks,
+                    { bridge_id: "", role: "secondary", confidence: "1.0" },
+                  ])
+                }
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                添加
+              </Button>
+            </div>
+            {bridgeLinks.length === 0 ? (
+              <p className="text-xs text-slate-400">暂无桥梁关联</p>
+            ) : (
+              <div className="space-y-1">
+                {bridgeLinks.map((row, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <Input
+                      value={row.bridge_id}
+                      onChange={(e) => {
+                        const next = [...bridgeLinks]
+                        next[i] = { ...next[i], bridge_id: e.target.value }
+                        setBridgeLinks(next)
+                      }}
+                      placeholder="Bridge ID"
+                      className="h-7 w-20 text-xs font-mono"
+                    />
+                    <Select
+                      value={row.role}
+                      onValueChange={(v) => {
+                        const next = [...bridgeLinks]
+                        next[i] = {
+                          ...next[i],
+                          role: v as "primary" | "secondary" | "candidate",
+                        }
+                        setBridgeLinks(next)
+                      }}
+                    >
+                      <SelectTrigger className="h-7 w-24 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="primary">主桥</SelectItem>
+                        <SelectItem value="secondary">次桥</SelectItem>
+                        <SelectItem value="candidate">候选</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={row.confidence}
+                      onChange={(e) => {
+                        const next = [...bridgeLinks]
+                        next[i] = { ...next[i], confidence: e.target.value }
+                        setBridgeLinks(next)
+                      }}
+                      placeholder="置信度"
+                      className="h-7 w-16 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-slate-400 hover:text-destructive"
+                      onClick={() =>
+                        setBridgeLinks(bridgeLinks.filter((_, idx) => idx !== i))
+                      }
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action error */}
+          {actionError && (
+            <p className="text-xs text-destructive">{actionError}</p>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-2 border-t pt-3">
             <Button
-              variant="outline"
-              onClick={() => setSplitDialogOpen(false)}
+              size="sm"
+              onClick={handleSave}
+              disabled={saving}
+              className="gap-1"
             >
-              取消
+              {saving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Save className="h-3 w-3" />
+              )}
+              保存
             </Button>
-            <Button onClick={handleSplit} disabled={splitting}>
-              {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "确认拆分"}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSplitPhase("selecting")
+                setSplitSubMode(paragraphModeAvailable ? "paragraph" : "precise")
+                setSplitPosition(null)
+                setActionError(null)
+              }}
+              className="gap-1"
+            >
+              <Scissors className="h-3 w-3" />
+              拆分
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setDeleteDialogOpen(true)}
+              className="gap-1 ml-auto"
+            >
+              <Trash2 className="h-3 w-3" />
+              删除
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Delete dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -671,7 +907,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
           <DialogHeader>
             <DialogTitle>编辑冲突</DialogTitle>
             <DialogDescription>
-              该 Chunk 已被其他用户修改。您可以强制覆盖或放弃本次更改。
+              该 Chunk 已被其他用户修改。您可以强制执行或取消操作。
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -682,7 +918,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                 refetch()
               }}
             >
-              放弃修改
+              取消操作
             </Button>
             <Button
               variant="destructive"
@@ -691,7 +927,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                 conflictRetryFn?.()
               }}
             >
-              强制覆盖
+              强制执行
             </Button>
           </DialogFooter>
         </DialogContent>
