@@ -59,6 +59,42 @@ function staleCount(chunks: ChunkListItem[]): number {
   return chunks.filter((c) => c.needs_reindex).length
 }
 
+// --- Split helpers ---
+
+interface ParagraphSegment {
+  text: string
+  startOffset: number
+  endOffset: number
+}
+
+function parseContentSegments(content: string): ParagraphSegment[] {
+  let parts = content.split("\n\n")
+  let separator = "\n\n"
+
+  if (parts.length <= 1) {
+    parts = content.split("\n")
+    separator = "\n"
+  }
+
+  const segments: ParagraphSegment[] = []
+  let offset = 0
+  for (let i = 0; i < parts.length; i++) {
+    const text = parts[i]
+    if (text.length > 0) {
+      segments.push({
+        text,
+        startOffset: offset,
+        endOffset: offset + text.length,
+      })
+    }
+    offset += text.length
+    if (i < parts.length - 1) {
+      offset += separator.length
+    }
+  }
+  return segments
+}
+
 // --- Taxonomy cascade helpers ---
 
 function getLvl1Options(items: TaxonomyTreeItem[]): TaxonomyTreeItem[] {
@@ -197,9 +233,12 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   const [lvl3, setLvl3] = useState<string | null>(null)
   const [bridgeLinks, setBridgeLinks] = useState<BridgeLinkRow[]>([])
 
+  // Split mode state
+  const [splitPhase, setSplitPhase] = useState<null | "selecting" | "previewing">(null)
+  const [splitSubMode, setSplitSubMode] = useState<"paragraph" | "precise">("paragraph")
+  const [splitPosition, setSplitPosition] = useState<number | null>(null)
+
   // Dialog state
-  const [splitDialogOpen, setSplitDialogOpen] = useState(false)
-  const [splitPos, setSplitPos] = useState("")
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // Conflict dialog state
@@ -211,9 +250,6 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   const [splitting, setSplitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-
-  // Textarea ref for cursor position
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Sync form with loaded chunk
   useEffect(() => {
@@ -300,23 +336,19 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     }
   }, [chunk, content, sectionTitle, lvl1, lvl2, lvl3, bridgeLinks, refetch, onMutated])
 
-  const handleSplit = useCallback(async () => {
+  const handleSplit = useCallback(async (position: number) => {
     if (!chunk) return
     setSplitting(true)
     setActionError(null)
     try {
-      const pos = Number(splitPos)
-      await splitChunk(chunk.id, { position: pos, expected_updated_at: chunk.updated_at })
-      setSplitDialogOpen(false)
+      await splitChunk(chunk.id, { position, expected_updated_at: chunk.updated_at })
+      setSplitPhase(null)
       onMutated()
     } catch (e) {
       if (handleConflictError(e, () => {
-        // Retry without lock — force overwrite
-        const pos = Number(splitPos)
         setSplitting(true)
-        setSplitDialogOpen(false)
-        splitChunk(chunk.id, { position: pos })
-          .then(() => onMutated())
+        splitChunk(chunk.id, { position })
+          .then(() => { setSplitPhase(null); onMutated() })
           .catch((err2) => setActionError(err2 instanceof Error ? err2.message : String(err2)))
           .finally(() => setSplitting(false))
       })) return
@@ -324,7 +356,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
     } finally {
       setSplitting(false)
     }
-  }, [chunk, splitPos, onMutated])
+  }, [chunk, onMutated])
 
   const handleDelete = useCallback(async () => {
     if (!chunk) return
@@ -349,19 +381,6 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
       setDeleting(false)
     }
   }, [chunk, onMutated])
-
-  function openSplitDialog() {
-    if (!chunk) return
-    const cursorPos = textareaRef.current?.selectionStart
-    setSplitPos(
-      String(
-        cursorPos !== undefined && cursorPos > 0
-          ? cursorPos
-          : Math.floor(chunk.content.length / 2),
-      ),
-    )
-    setSplitDialogOpen(true)
-  }
 
   if (loading) {
     return (
@@ -393,7 +412,6 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
       <div className="space-y-1">
         <Label className="text-xs font-medium text-slate-600">内容</Label>
         <Textarea
-          ref={textareaRef}
           value={content}
           onChange={(e) => setContent(e.target.value)}
           className="min-h-[200px] resize-y font-mono text-sm"
@@ -588,7 +606,11 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
         <Button
           size="sm"
           variant="outline"
-          onClick={openSplitDialog}
+          onClick={() => {
+            setSplitPhase("selecting")
+            setSplitSubMode("paragraph")
+            setSplitPosition(null)
+          }}
           className="gap-1"
         >
           <Scissors className="h-3 w-3" />
@@ -604,39 +626,6 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
           删除
         </Button>
       </div>
-
-      {/* Split dialog */}
-      <Dialog open={splitDialogOpen} onOpenChange={setSplitDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>拆分知识块</DialogTitle>
-            <DialogDescription>
-              在指定字符位置将此知识块分为两部分。当前内容长度：{chunk.content.length} 字符。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>拆分位置（字符索引）</Label>
-            <Input
-              type="number"
-              value={splitPos}
-              onChange={(e) => setSplitPos(e.target.value)}
-              min={1}
-              max={chunk.content.length - 1}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSplitDialogOpen(false)}
-            >
-              取消
-            </Button>
-            <Button onClick={handleSplit} disabled={splitting}>
-              {splitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "确认拆分"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
