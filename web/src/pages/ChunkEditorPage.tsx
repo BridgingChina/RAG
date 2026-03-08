@@ -134,7 +134,7 @@ function SplitParagraphView({ content, onSelectPosition }: SplitParagraphViewPro
             >
               <div className="flex-1 border-t border-dashed border-slate-300 group-hover:border-blue-400 transition-colors" />
               <span className="shrink-0 text-xs text-slate-400 group-hover:text-blue-600 transition-colors">
-                ✂ {seg.endOffset} 字 | {totalLen - segments[i + 1].startOffset} 字
+                ✂ {segments[i + 1].startOffset} 字 | {totalLen - segments[i + 1].startOffset} 字
               </span>
               <div className="flex-1 border-t border-dashed border-slate-300 group-hover:border-blue-400 transition-colors" />
             </div>
