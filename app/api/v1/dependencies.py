@@ -1,4 +1,5 @@
 """Shared API dependencies."""
+import uuid
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -26,7 +27,7 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    user_id = int(payload["sub"])
+    user_id = uuid.UUID(payload["sub"])
     user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
     if user is None:
         raise HTTPException(

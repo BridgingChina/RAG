@@ -1,4 +1,6 @@
 """Bridges CRUD API endpoints."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -37,7 +39,9 @@ def list_bridges(
             Bridge.bridge_type,
             Bridge.material,
             Bridge.era,
-            Bridge.location,
+            Bridge.region,
+            Bridge.latitude,
+            Bridge.longitude,
             Bridge.created_at,
             func.count(Chunk.id).label("chunk_count"),
         )
@@ -65,7 +69,9 @@ def list_bridges(
             bridge_type=row.bridge_type,
             material=row.material,
             era=row.era,
-            location=row.location,
+            region=row.region,
+            latitude=row.latitude,
+            longitude=row.longitude,
             chunk_count=row.chunk_count,
             created_at=row.created_at,
         )
@@ -85,7 +91,7 @@ def list_bridges(
 
 
 @router.get("/{bridge_id}", response_model=BridgeDetail)
-def get_bridge(bridge_id: int, db: Session = Depends(get_db)) -> BridgeDetail:
+def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> BridgeDetail:
     """Get detailed information about a specific bridge."""
     # Fetch the bridge
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
@@ -102,7 +108,9 @@ def get_bridge(bridge_id: int, db: Session = Depends(get_db)) -> BridgeDetail:
         bridge_type=bridge.bridge_type,
         material=bridge.material,
         era=bridge.era,
-        location=bridge.location,
+        region=bridge.region,
+        latitude=bridge.latitude,
+        longitude=bridge.longitude,
         function=bridge.function,
         summary=bridge.summary,
         chunk_count=chunk_count,
@@ -142,7 +150,9 @@ def create_bridge(
         bridge_type=bridge.bridge_type,
         material=bridge.material,
         era=bridge.era,
-        location=bridge.location,
+        region=bridge.region,
+        latitude=bridge.latitude,
+        longitude=bridge.longitude,
         function=bridge.function,
         summary=bridge.summary,
         chunk_count=0,
@@ -152,7 +162,7 @@ def create_bridge(
 
 @router.put("/{bridge_id}", response_model=BridgeDetail)
 def update_bridge(
-    bridge_id: int,
+    bridge_id: UUID,
     body: BridgeUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -190,7 +200,7 @@ def update_bridge(
 
 @router.delete("/{bridge_id}", status_code=204)
 def delete_bridge(
-    bridge_id: int,
+    bridge_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -231,7 +241,7 @@ def delete_bridge(
 
 @router.get("/{bridge_id}/chunks", response_model=PaginatedResponse[ChunkListItem])
 def get_bridge_chunks(
-    bridge_id: int,
+    bridge_id: UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -255,6 +265,8 @@ def get_bridge_chunks(
             Chunk.source_id,
             Source.title.label("source_title"),
             Chunk.created_at,
+            Chunk.needs_reindex,
+            Chunk.updated_at,
         )
         .outerjoin(Bridge, Chunk.bridge_id == Bridge.id)
         .outerjoin(Source, Chunk.source_id == Source.id)
@@ -281,6 +293,8 @@ def get_bridge_chunks(
                 source_id=row.source_id,
                 source_title=row.source_title,
                 created_at=row.created_at,
+                needs_reindex=row.needs_reindex,
+                updated_at=row.updated_at,
             )
         )
 
@@ -297,7 +311,7 @@ def get_bridge_chunks(
 
 @router.post("/{target_id}/merge", response_model=BridgeDetail)
 def merge_bridges(
-    target_id: int,
+    target_id: UUID,
     body: BridgeMergeRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -358,7 +372,7 @@ def merge_bridges(
         resource_type="bridge",
         user_id=current_user.id,
         resource_id=str(target_id),
-        detail={"source_bridge_id": body.source_bridge_id},
+        detail={"source_bridge_id": str(body.source_bridge_id)},
         ip_address=get_client_ip(request),
     )
     db.commit()

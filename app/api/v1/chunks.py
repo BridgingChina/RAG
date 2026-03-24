@@ -1,5 +1,6 @@
 """Chunks CRUD API endpoints."""
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
@@ -29,12 +30,12 @@ router = APIRouter(prefix="/chunks", tags=["chunks"])
 def list_chunks(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    bridge_id: int | None = None,
+    bridge_id: UUID | None = None,
     lvl1: str | None = None,
     lvl2: str | None = None,
     lvl3: str | None = None,
     binding_status: str | None = None,
-    source_id: int | None = None,
+    source_id: UUID | None = None,
     q: str | None = None,
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[ChunkListItem]:
@@ -119,7 +120,7 @@ def list_chunks(
 
 
 @router.get("/{chunk_id}", response_model=ChunkDetail)
-def get_chunk(chunk_id: int, db: Session = Depends(get_db)) -> ChunkDetail:
+def get_chunk(chunk_id: UUID, db: Session = Depends(get_db)) -> ChunkDetail:
     """Get detailed information about a specific chunk."""
     # Fetch the chunk
     chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
@@ -184,7 +185,7 @@ def get_chunk(chunk_id: int, db: Session = Depends(get_db)) -> ChunkDetail:
 
 @router.put("/{chunk_id}", response_model=ChunkDetail)
 def update_chunk(
-    chunk_id: int,
+    chunk_id: UUID,
     body: ChunkUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -287,7 +288,7 @@ def update_chunk(
 
 @router.delete("/{chunk_id}", status_code=204)
 def delete_chunk(
-    chunk_id: int,
+    chunk_id: UUID,
     request: Request,
     expected_updated_at: datetime | None = None,
     db: Session = Depends(get_db),
@@ -341,7 +342,7 @@ def merge_chunks_endpoint(
         resource_type="chunk",
         user_id=current_user.id,
         resource_id=str(merged.id),
-        detail={"merged_chunk_ids": body.chunk_ids},
+        detail={"merged_chunk_ids": [str(cid) for cid in body.chunk_ids]},
         ip_address=get_client_ip(request),
     )
     db.commit()
@@ -376,7 +377,7 @@ def batch_chunks(
             action="batch_delete",
             resource_type="chunk",
             user_id=current_user.id,
-            detail={"chunk_ids": body.chunk_ids},
+            detail={"chunk_ids": [str(cid) for cid in body.chunk_ids]},
             ip_address=get_client_ip(request),
         )
         db.commit()
@@ -411,7 +412,7 @@ def batch_chunks(
             action="batch_update",
             resource_type="chunk",
             user_id=current_user.id,
-            detail={"chunk_ids": body.chunk_ids, "updates": audit_updates},
+            detail={"chunk_ids": [str(cid) for cid in body.chunk_ids], "updates": audit_updates},
             ip_address=get_client_ip(request),
         )
         db.commit()
@@ -420,7 +421,7 @@ def batch_chunks(
 
 @router.post("/{chunk_id}/split", response_model=ChunkSplitResponse)
 def split_chunk_endpoint(
-    chunk_id: int,
+    chunk_id: UUID,
     body: ChunkSplitRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -449,7 +450,7 @@ def split_chunk_endpoint(
         resource_type="chunk",
         user_id=current_user.id,
         resource_id=str(chunk_id),
-        detail={"new_chunk_ids": [c.id for c in new_chunks]},
+        detail={"new_chunk_ids": [str(c.id) for c in new_chunks]},
         ip_address=get_client_ip(request),
     )
     db.commit()

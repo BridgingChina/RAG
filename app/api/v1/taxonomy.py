@@ -1,4 +1,6 @@
 """Taxonomy API endpoints."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -57,7 +59,7 @@ def get_taxonomy_tree(db: Session = Depends(get_db)) -> TaxonomyTree:
 
     # Build tree from nodes, tracking node IDs
     # Structure: {lvl1: (node_id, {lvl2: (node_id, {lvl3: node_id})})}
-    lvl1_map: dict[str, tuple[int, dict[str, tuple[int, dict[str, int]]]]] = {}
+    lvl1_map: dict[str, tuple[UUID, dict[str, tuple[UUID, dict[str, UUID]]]]] = {}
     for node in nodes:
         if node.lvl1 not in lvl1_map:
             # lvl1-only node
@@ -174,7 +176,7 @@ def create_taxonomy_node(
 
 @router.put("/nodes/{node_id}", response_model=TaxonomyNodeDetail)
 def update_taxonomy_node(
-    node_id: int,
+    node_id: UUID,
     body: TaxonomyNodeUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -217,7 +219,7 @@ def update_taxonomy_node(
 
 @router.delete("/nodes/{node_id}", status_code=204)
 def delete_taxonomy_node(
-    node_id: int,
+    node_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -299,7 +301,7 @@ def batch_update_chunks(
         action=AuditService.BATCH_UPDATE,
         resource_type="taxonomy",
         user_id=current_user.id,
-        detail={"chunk_ids": body.chunk_ids, "lvl1": body.lvl1, "lvl2": body.lvl2, "lvl3": body.lvl3},
+        detail={"chunk_ids": [str(cid) for cid in body.chunk_ids], "lvl1": body.lvl1, "lvl2": body.lvl2, "lvl3": body.lvl3},
         ip_address=get_client_ip(request),
     )
     db.commit()
