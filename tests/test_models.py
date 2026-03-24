@@ -20,7 +20,7 @@ def test_create_schema_version():
 
 
 def test_create_bridge(db_session):
-    bridge = Bridge(name="赵州桥", location="河北赵县")
+    bridge = Bridge(name="赵州桥", region="河北赵县")
     db_session.add(bridge)
     db_session.flush()
 

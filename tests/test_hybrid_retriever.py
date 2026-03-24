@@ -229,20 +229,24 @@ def test_retrieve_channel_debug_filter_desc_variants():
     retriever._fetch_chunk_details = MagicMock(return_value={})
 
     import asyncio
+    import uuid
 
-    # bridge_filter=int
+    single_uuid = uuid.uuid4()
+    list_uuids = [uuid.uuid4(), uuid.uuid4(), uuid.uuid4()]
+
+    # bridge_filter=UUID
     _, debug = asyncio.run(retriever._retrieve_channel(
         db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
-        bridge_filter=42, limit=3, debug=True, channel_name="anchor",
+        bridge_filter=single_uuid, limit=3, debug=True, channel_name="anchor",
     ))
-    assert debug.filter_desc == "bridge_id = 42"
+    assert debug.filter_desc == f"bridge_id = {single_uuid}"
 
     # bridge_filter=list
     _, debug = asyncio.run(retriever._retrieve_channel(
         db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
-        bridge_filter=[5, 12, 28], limit=3, debug=True, channel_name="analogy",
+        bridge_filter=list_uuids, limit=3, debug=True, channel_name="analogy",
     ))
-    assert debug.filter_desc == "bridge_id IN [5, 12, 28]"
+    assert debug.filter_desc == f"bridge_id IN {list_uuids}"
 
     # require_no_bridge_id=True
     _, debug = asyncio.run(retriever._retrieve_channel(
