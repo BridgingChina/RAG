@@ -1,6 +1,7 @@
 """Authentication schemas."""
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -17,7 +18,7 @@ class LoginResponse(BaseModel):
 
 
 class UserInfo(BaseModel):
-    id: int
+    id: UUID
     username: str
     display_name: str | None
     is_active: bool

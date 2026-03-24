@@ -1,4 +1,5 @@
 """Schemas for ingest task endpoints."""
+from uuid import UUID
 from pydantic import BaseModel
 
 
@@ -22,12 +23,12 @@ class IngestTaskCreate(BaseModel):
 
 
 class IngestTaskDetail(BaseModel):
-    id: int
+    id: UUID
     status: str
     file_name: str
     file_type: str
     file_size: int | None
-    source_id: int | None
+    source_id: UUID | None
     chunk_count: int | None
     image_count: int
     error_message: str | None
@@ -38,12 +39,12 @@ class IngestTaskDetail(BaseModel):
 
 
 class IngestTaskListItem(BaseModel):
-    id: int
+    id: UUID
     status: str
     file_name: str
     file_type: str
     file_size: int | None
-    source_id: int | None
+    source_id: UUID | None
     chunk_count: int | None
     image_count: int
     error_message: str | None
@@ -54,12 +55,12 @@ class IngestTaskListItem(BaseModel):
 
 
 class BatchDeleteRequest(BaseModel):
-    task_ids: list[int]
+    task_ids: list[UUID]
 
 
 class BatchDeleteResponse(BaseModel):
-    deleted: list[int]
-    skipped: list[int]
+    deleted: list[UUID]
+    skipped: list[UUID]
 
 
 class DownloadUrlResponse(BaseModel):
