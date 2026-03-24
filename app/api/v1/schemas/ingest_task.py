@@ -1,4 +1,5 @@
 """Schemas for ingest task endpoints."""
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -33,26 +34,14 @@ class IngestTaskDetail(BaseModel):
     chunk_count: int | None
     image_count: int
     error_message: str | None
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
 
-class IngestTaskListItem(BaseModel):
-    id: UUID
-    status: str
-    file_name: str
-    file_type: str
-    file_size: int | None
-    source_id: UUID | None
-    chunk_count: int | None
-    image_count: int
-    error_message: str | None
-    created_at: str
-    updated_at: str
-
-    model_config = {"from_attributes": True}
+class IngestTaskListItem(IngestTaskDetail):
+    pass
 
 
 class BatchDeleteRequest(BaseModel):

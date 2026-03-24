@@ -1,5 +1,7 @@
 """Dashboard stats schemas."""
 from datetime import datetime
+from uuid import UUID
+
 from pydantic import BaseModel
 
 
@@ -15,7 +17,7 @@ class Lvl1Distribution(BaseModel):
 
 
 class RecentIngest(BaseModel):
-    source_id: int
+    source_id: UUID
     title: str | None
     chunk_count: int
     created_at: datetime

@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useState, useEffect } from "react"
 import { useParams, useNavigate, Link } from "react-router"
 import {
   ArrowLeft,
@@ -202,45 +202,52 @@ export function Component() {
     }
   }, [task, refetch])
 
+  // --- Action state ---
+  const [actionError, setActionError] = useState<string | null>(null)
+
   // --- Action handlers ---
 
   async function handleConfirm() {
     if (!task) return
+    setActionError(null)
     try {
       await confirmIngestTask(task.id)
       refetch()
-    } catch {
-      // silent — backend error surfaces on next poll
+    } catch (e) {
+      setActionError(`确认失败：${e instanceof Error ? e.message : "未知错误"}`)
     }
   }
 
   async function handleRetry() {
     if (!task) return
+    setActionError(null)
     try {
       await retryIngestTask(task.id)
       refetch()
-    } catch {
-      // silent
+    } catch (e) {
+      setActionError(`重试失败：${e instanceof Error ? e.message : "未知错误"}`)
     }
   }
 
   async function handleDelete() {
     if (!task) return
     if (!confirm("确定删除此任务？")) return
+    setActionError(null)
     try {
       await deleteIngestTask(task.id)
       navigate("/ingest")
-    } catch {
-      // silent
+    } catch (e) {
+      setActionError(`删除失败：${e instanceof Error ? e.message : "未知错误"}`)
     }
   }
 
   async function handleDownload(type: "raw" | "parsed") {
+    setActionError(null)
     try {
       const res = await getIngestTaskDownloadUrl(taskId!, type)
       window.open(res.url, "_blank")
-    } catch {
-      // silent — R2 may not have the file
+    } catch (e) {
+      setActionError(`下载失败：${e instanceof Error ? e.message : "未知错误"}`)
     }
   }
 
@@ -264,6 +271,13 @@ export function Component() {
       </PageHeader>
 
       <main className="space-y-6 p-6">
+        {/* Action error banner */}
+        {actionError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {actionError}
+          </div>
+        )}
+
         {/* Loading skeleton */}
         {loading && !task && (
           <div className="space-y-6">

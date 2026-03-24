@@ -520,7 +520,7 @@ class HybridRetriever:
         """Fetch chunk content + bridge info for multiple chunks in one query.
 
         Returns:
-            Dict mapping chunk_id -> {"content": str, "bridge_id": int|None, "bridge_name": str}
+            Dict mapping chunk_id (UUID) -> _ChunkDetails
         """
         if not chunk_ids:
             return {}

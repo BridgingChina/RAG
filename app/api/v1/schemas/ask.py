@@ -58,7 +58,7 @@ class ChannelDebugResponse(BaseModel):
     filter_desc: str
     vec_ids: list[UUID]
     fts_ids: list[UUID]
-    rrf_scores: list[list]  # [[chunk_id, score], ...] — mixed UUID + float
+    rrf_scores: list[list[UUID | float]]  # [[chunk_id, score], ...]
     final_ids: list[UUID]
 
 

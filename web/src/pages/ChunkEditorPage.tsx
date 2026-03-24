@@ -370,7 +370,7 @@ function ChunkItem({ chunk, selected, checked, onSelect, onCheck }: ChunkItemPro
 // --- Right pane: single chunk editor ---
 
 interface ChunkEditorProps {
-  chunkId: number
+  chunkId: string
   onMutated: () => void
 }
 
@@ -1266,7 +1266,7 @@ export function Component() {
   const { data: taxTree } = useApi(fetchTaxonomyTree, [])
 
   // Selection state
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
 
   // Reindex state
@@ -1275,7 +1275,7 @@ export function Component() {
 
   // Sort ascending by id (API returns descending)
   const chunks: ChunkListItem[] = [...(chunksData?.items ?? [])].sort(
-    (a, b) => a.id - b.id,
+    (a, b) => a.id.localeCompare(b.id),
   )
 
   const stale = staleCount(chunks)
@@ -1302,7 +1302,7 @@ export function Component() {
     }
   }, [chunks, selectedId])
 
-  function toggleCheck(id: number, checked: boolean) {
+  function toggleCheck(id: string, checked: boolean) {
     setCheckedIds((prev) => {
       const next = new Set(prev)
       if (checked) next.add(id)

@@ -84,7 +84,7 @@ The system uses automatic schema versioning:
 - Current version: 1 — Clean rebuild with UUID v4 primary keys (all tables created fresh, no incremental migrations)
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
-- Schema migration: `python scripts/migrate_db.py`
+- Schema migration: `python scripts/migrate_db.py`（当前为版本检查占位符，clean rebuild 无增量迁移）
 
 ## Architecture
 
@@ -121,7 +121,7 @@ The system uses automatic schema versioning:
 - `config/facets.yaml` — Facet 枚举值（桥型、材料、年代、区域、功能）
 - `app/core/config.py` — `git_commit`/`git_date` 字段从环境变量读取，Docker build args 注入（`deploy.sh` 设置）
 
-**Data Model:**
+**Data Model:**（所有表使用 UUID v4 主键，通过 `UUIDMixin` 统一管理）
 
 - `chunks` — 核心检索单元，1024 维向量（IVFFLAT 索引，IVFFLAT 和 HNSW 均有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
 - `bridges` — 桥梁档案（bridge_type/material/era/region/function/latitude/longitude）
