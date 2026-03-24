@@ -42,7 +42,7 @@ export function Component() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data, loading, error, refetch } = useApi(
-    () => fetchChunk(Number(id)),
+    () => fetchChunk(id!),
     [id],
   )
 
@@ -70,7 +70,7 @@ export function Component() {
     setIsSaving(true)
     setActionError(null)
     try {
-      await updateChunk(Number(id), formData)
+      await updateChunk(id!, formData)
       refetch()
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e))
@@ -84,7 +84,7 @@ export function Component() {
     setIsDeleting(true)
     setActionError(null)
     try {
-      await deleteChunk(Number(id))
+      await deleteChunk(id!)
       navigate("/chunks")
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e))
