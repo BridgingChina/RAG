@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 6 — v3 (users + audit_logs), v4 (chunks.needs_reindex), v5 (chunks.updated_at), v6 (ingest_tasks)
+- Current version: 1 — Clean rebuild with UUID v4 primary keys (all tables created fresh, no incremental migrations)
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`
@@ -124,7 +124,7 @@ The system uses automatic schema versioning:
 **Data Model:**
 
 - `chunks` — 核心检索单元，1024 维向量（IVFFLAT 索引，IVFFLAT 和 HNSW 均有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
-- `bridges` — 桥梁档案（bridge_type/material/era/location/function）
+- `bridges` — 桥梁档案（bridge_type/material/era/region/function/latitude/longitude）
 - `chunk_bridge_links` — chunks ↔ bridges 多对多关联表
 - `taxonomy_nodes` — 三级目录结构
 - `sources` — 来源元信息
