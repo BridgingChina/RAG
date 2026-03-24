@@ -14,4 +14,4 @@ class Source(Base, UUIDMixin, CreatedAtMixin):
     title: Mapped[str] = mapped_column(String(500))
     url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    accessed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    accessed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
