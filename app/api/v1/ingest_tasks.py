@@ -1,5 +1,6 @@
 """Ingest tasks API endpoints -- async multi-stage ingest pipeline."""
 import re
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
@@ -47,7 +48,7 @@ def _sanitize_filename(name: str) -> str:
     return name[:200] or "unnamed"
 
 
-async def _run_sync_and_parse(task_id: int, user_id: int | None = None, ip_address: str | None = None):
+async def _run_sync_and_parse(task_id: UUID, user_id: UUID | None = None, ip_address: str | None = None):
     """BackgroundTask entry: run sync_and_parse in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -65,7 +66,7 @@ async def _run_sync_and_parse(task_id: int, user_id: int | None = None, ip_addre
         db.close()
 
 
-async def _run_indexing(task_id: int, user_id: int | None = None, ip_address: str | None = None):
+async def _run_indexing(task_id: UUID, user_id: UUID | None = None, ip_address: str | None = None):
     """BackgroundTask entry: run start_indexing in a new DB session."""
     from app.core.database import SessionLocal
 
@@ -251,8 +252,8 @@ def batch_delete_ingest_tasks(
     current_user: User = Depends(get_current_user),
 ):
     """Soft-delete multiple ingest tasks."""
-    deleted: list[int] = []
-    skipped: list[int] = []
+    deleted: list[UUID] = []
+    skipped: list[UUID] = []
 
     for tid in body.task_ids:
         task = db.get(IngestTask, tid)
@@ -286,7 +287,7 @@ def batch_delete_ingest_tasks(
 
 @router.get("/{task_id}", response_model=IngestTaskDetail)
 def get_ingest_task(
-    task_id: int,
+    task_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -299,7 +300,7 @@ def get_ingest_task(
 
 @router.post("/{task_id}/confirm", response_model=IngestTaskDetail)
 def confirm_ingest_task(
-    task_id: int,
+    task_id: UUID,
     background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
@@ -335,7 +336,7 @@ def confirm_ingest_task(
 
 @router.get("/{task_id}/download-url", response_model=DownloadUrlResponse)
 def get_download_url(
-    task_id: int,
+    task_id: UUID,
     type: str = Query(..., pattern="^(raw|parsed)$"),
     r2: R2StorageService = Depends(_get_r2),
     db: Session = Depends(get_db),
@@ -360,7 +361,7 @@ def get_download_url(
 
 @router.post("/{task_id}/retry", response_model=IngestTaskDetail)
 def retry_ingest_task(
-    task_id: int,
+    task_id: UUID,
     background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
@@ -404,7 +405,7 @@ def retry_ingest_task(
 
 @router.delete("/{task_id}")
 def delete_ingest_task(
-    task_id: int,
+    task_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

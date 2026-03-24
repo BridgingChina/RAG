@@ -1,4 +1,6 @@
 """Bridges CRUD API endpoints."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -37,7 +39,7 @@ def list_bridges(
             Bridge.bridge_type,
             Bridge.material,
             Bridge.era,
-            Bridge.location,
+            Bridge.region,
             Bridge.created_at,
             func.count(Chunk.id).label("chunk_count"),
         )
@@ -65,7 +67,7 @@ def list_bridges(
             bridge_type=row.bridge_type,
             material=row.material,
             era=row.era,
-            location=row.location,
+            region=row.region,
             chunk_count=row.chunk_count,
             created_at=row.created_at,
         )
@@ -85,7 +87,7 @@ def list_bridges(
 
 
 @router.get("/{bridge_id}", response_model=BridgeDetail)
-def get_bridge(bridge_id: int, db: Session = Depends(get_db)) -> BridgeDetail:
+def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> BridgeDetail:
     """Get detailed information about a specific bridge."""
     # Fetch the bridge
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
@@ -102,7 +104,7 @@ def get_bridge(bridge_id: int, db: Session = Depends(get_db)) -> BridgeDetail:
         bridge_type=bridge.bridge_type,
         material=bridge.material,
         era=bridge.era,
-        location=bridge.location,
+        region=bridge.region,
         function=bridge.function,
         summary=bridge.summary,
         chunk_count=chunk_count,
@@ -142,7 +144,7 @@ def create_bridge(
         bridge_type=bridge.bridge_type,
         material=bridge.material,
         era=bridge.era,
-        location=bridge.location,
+        region=bridge.region,
         function=bridge.function,
         summary=bridge.summary,
         chunk_count=0,
@@ -152,7 +154,7 @@ def create_bridge(
 
 @router.put("/{bridge_id}", response_model=BridgeDetail)
 def update_bridge(
-    bridge_id: int,
+    bridge_id: UUID,
     body: BridgeUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -190,7 +192,7 @@ def update_bridge(
 
 @router.delete("/{bridge_id}", status_code=204)
 def delete_bridge(
-    bridge_id: int,
+    bridge_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -231,7 +233,7 @@ def delete_bridge(
 
 @router.get("/{bridge_id}/chunks", response_model=PaginatedResponse[ChunkListItem])
 def get_bridge_chunks(
-    bridge_id: int,
+    bridge_id: UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -297,7 +299,7 @@ def get_bridge_chunks(
 
 @router.post("/{target_id}/merge", response_model=BridgeDetail)
 def merge_bridges(
-    target_id: int,
+    target_id: UUID,
     body: BridgeMergeRequest,
     request: Request,
     db: Session = Depends(get_db),

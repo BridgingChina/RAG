@@ -1,4 +1,6 @@
 """Taxonomy API endpoints."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -174,7 +176,7 @@ def create_taxonomy_node(
 
 @router.put("/nodes/{node_id}", response_model=TaxonomyNodeDetail)
 def update_taxonomy_node(
-    node_id: int,
+    node_id: UUID,
     body: TaxonomyNodeUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -217,7 +219,7 @@ def update_taxonomy_node(
 
 @router.delete("/nodes/{node_id}", status_code=204)
 def delete_taxonomy_node(
-    node_id: int,
+    node_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
