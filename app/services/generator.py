@@ -1,4 +1,5 @@
 import json
+import uuid
 from dataclasses import dataclass
 from typing import Literal, Optional, TypeAlias
 
@@ -8,7 +9,7 @@ from app.services.hybrid_retriever import HybridRetrievalResult
 
 @dataclass
 class Citation:
-    chunk_id: int
+    chunk_id: uuid.UUID
     source_title: str
     page_range: str | None
 

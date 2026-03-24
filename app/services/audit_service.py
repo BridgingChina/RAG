@@ -1,5 +1,7 @@
 """Audit logging service for tracking write operations."""
 
+import uuid
+
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
@@ -28,7 +30,7 @@ class AuditService:
         *,
         action: str,
         resource_type: str,
-        user_id: int | None = None,
+        user_id: uuid.UUID | None = None,
         resource_id: str | None = None,
         detail: dict | None = None,
         ip_address: str | None = None,

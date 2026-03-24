@@ -5,6 +5,7 @@ Analogy (similar bridges) retrieval channels.
 """
 
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from typing import Optional, TypedDict
 
@@ -29,16 +30,16 @@ FETCH_MULTIPLIER = 3
 
 class _ChunkDetails(TypedDict):
     content: str
-    bridge_id: Optional[int]
+    bridge_id: Optional[uuid.UUID]
     bridge_name: str
 
 
 @dataclass
 class RetrievedChunk:
     """A retrieved chunk with metadata for LLM consumption."""
-    chunk_id: int
+    chunk_id: uuid.UUID
     content: str
-    bridge_id: Optional[int]
+    bridge_id: Optional[uuid.UUID]
     bridge_name: str
     score: float
 
@@ -46,12 +47,12 @@ class RetrievedChunk:
 @dataclass
 class ChannelDebug:
     """Debug info for a single retrieval channel."""
-    channel: str                         # "anchor" | "concept" | "analogy"
-    filter_desc: str                     # e.g. "bridge_id=42"
-    vec_ids: list[int]                   # vector search raw results
-    fts_ids: list[int]                   # FTS raw results
-    rrf_scores: list[tuple[int, float]]  # after RRF merge
-    final_ids: list[int]                 # after diversity + limit
+    channel: str                                    # "anchor" | "concept" | "analogy"
+    filter_desc: str                                # e.g. "bridge_id=42"
+    vec_ids: list[uuid.UUID]                        # vector search raw results
+    fts_ids: list[uuid.UUID]                        # FTS raw results
+    rrf_scores: list[tuple[uuid.UUID, float]]       # after RRF merge
+    final_ids: list[uuid.UUID]                      # after diversity + limit
 
 
 @dataclass
@@ -151,7 +152,7 @@ class HybridRetriever:
         self,
         db: Session,
         query: str,
-        target_bridge_id: Optional[int] = None,
+        target_bridge_id: Optional[uuid.UUID] = None,
         quota: tuple[int, int, int] = DEFAULT_QUOTA,
         facet: Optional[Facet] = None,
         debug: bool = False,
@@ -263,7 +264,7 @@ class HybridRetriever:
         db: Session,
         query: str,
         query_embedding: list[float],
-        bridge_filter: Optional[int | list[int]] = None,
+        bridge_filter: Optional[uuid.UUID | list[uuid.UUID]] = None,
         require_no_bridge_id: bool = False,
         limit: int = 10,
         debug: bool = False,
@@ -351,11 +352,11 @@ class HybridRetriever:
 
     @staticmethod
     def _build_filter_desc(
-        bridge_filter: Optional[int | list[int]],
+        bridge_filter: Optional[uuid.UUID | list[uuid.UUID]],
         require_no_bridge_id: bool = False,
     ) -> str:
         """Build a human-readable filter description for debug output."""
-        if isinstance(bridge_filter, int):
+        if isinstance(bridge_filter, uuid.UUID):
             return f"bridge_id = {bridge_filter}"
         if isinstance(bridge_filter, list):
             return f"bridge_id IN {bridge_filter}"
@@ -367,10 +368,10 @@ class HybridRetriever:
         self,
         db: Session,
         query_embedding: list[float],
-        bridge_filter: Optional[int | list[int]],
+        bridge_filter: Optional[uuid.UUID | list[uuid.UUID]],
         require_no_bridge_id: bool,
         limit: int,
-    ) -> list[int]:
+    ) -> list[uuid.UUID]:
         """Perform vector similarity search using pgvector.
 
         Returns:
@@ -387,7 +388,7 @@ class HybridRetriever:
                     sql += " AND bridge_id IN :bridge_ids"
                     params["bridge_ids"] = bridge_filter
                     bind_params.append(bindparam("bridge_ids", expanding=True))
-            elif isinstance(bridge_filter, int):
+            elif isinstance(bridge_filter, uuid.UUID):
                 sql += " AND bridge_id = :bridge_id"
                 params["bridge_id"] = bridge_filter
 
@@ -407,10 +408,10 @@ class HybridRetriever:
         self,
         db: Session,
         query: str,
-        bridge_filter: Optional[int | list[int]],
+        bridge_filter: Optional[uuid.UUID | list[uuid.UUID]],
         require_no_bridge_id: bool,
         limit: int,
-    ) -> list[int]:
+    ) -> list[uuid.UUID]:
         """Perform full-text search using PostgreSQL GIN index.
 
         Returns:
@@ -434,7 +435,7 @@ class HybridRetriever:
                     sql += " AND bridge_id IN :bridge_ids"
                     params["bridge_ids"] = bridge_filter
                     bind_params.append(bindparam("bridge_ids", expanding=True))
-            elif isinstance(bridge_filter, int):
+            elif isinstance(bridge_filter, uuid.UUID):
                 sql += " AND bridge_id = :bridge_id"
                 params["bridge_id"] = bridge_filter
 
@@ -456,9 +457,9 @@ class HybridRetriever:
     def _select_candidate_bridges(
         self,
         db: Session,
-        target_bridge_id: Optional[int],
+        target_bridge_id: Optional[uuid.UUID],
         facet: Optional[Facet],
-    ) -> list[int]:
+    ) -> list[uuid.UUID]:
         """Select candidate bridges for analogy channel based on facet matching.
 
         Returns:
@@ -486,7 +487,7 @@ class HybridRetriever:
             conditions.append(
                 or_(
                     *[
-                        Bridge.location.like(f"%{region}%")
+                        Bridge.region.like(f"%{region}%")
                         for region in facet_lists["region"]
                     ]
                 )
@@ -514,8 +515,8 @@ class HybridRetriever:
         return ids
 
     def _fetch_chunk_details(
-        self, db: Session, chunk_ids: list[int]
-    ) -> dict[int, _ChunkDetails]:
+        self, db: Session, chunk_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, _ChunkDetails]:
         """Fetch chunk content + bridge info for multiple chunks in one query.
 
         Returns:
@@ -546,9 +547,9 @@ class HybridRetriever:
 
     def _build_retrieved_chunks(
         self,
-        chunk_ids: list[int],
-        scored_results: list[tuple[int, float]],
-        details_by_id: dict[int, _ChunkDetails],
+        chunk_ids: list[uuid.UUID],
+        scored_results: list[tuple[uuid.UUID, float]],
+        details_by_id: dict[uuid.UUID, _ChunkDetails],
     ) -> list[RetrievedChunk]:
         if not chunk_ids:
             return []

@@ -1,5 +1,6 @@
 """Service for chunk editing operations (content update, split, merge, reindex)."""
 import asyncio
+import uuid
 from datetime import datetime
 from functools import lru_cache
 
@@ -178,7 +179,7 @@ def split_chunk(
 def merge_chunks(
     *,
     db: Session,
-    chunk_ids: list[int],
+    chunk_ids: list[uuid.UUID],
     tokenizer: Tokenizer,
 ) -> Chunk:
     """Merge multiple chunks into the first one. Deletes the rest."""
@@ -230,7 +231,7 @@ def merge_chunks(
 def reindex_source_chunks(
     *,
     db: Session,
-    source_id: int,
+    source_id: uuid.UUID,
     tokenizer: Tokenizer,
     provider,  # LLMProvider | None — None skips embedding recomputation
     force: bool = False,

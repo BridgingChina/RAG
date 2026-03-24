@@ -5,6 +5,7 @@ across the async multi-stage ingest pipeline.
 """
 import io
 import mimetypes
+import uuid
 import zipfile
 
 import httpx
@@ -43,7 +44,7 @@ class IngestTaskService:
         r2: R2StorageService,
         provider: LLMProvider,
         file_parser: FileParserProvider | None = None,
-        user_id: int | None = None,
+        user_id: uuid.UUID | None = None,
         ip_address: str | None = None,
     ):
         self.db = db
@@ -53,7 +54,7 @@ class IngestTaskService:
         self.user_id = user_id
         self.ip_address = ip_address
 
-    def _get_task(self, task_id: int) -> IngestTask:
+    def _get_task(self, task_id: uuid.UUID) -> IngestTask:
         task = self.db.get(IngestTask, task_id)
         if task is None:
             raise ValueError(f"IngestTask {task_id} not found")
@@ -83,7 +84,7 @@ class IngestTaskService:
             ip_address=self.ip_address,
         )
 
-    async def sync_and_parse(self, task_id: int) -> None:
+    async def sync_and_parse(self, task_id: uuid.UUID) -> None:
         """Stage: syncing -> parsing -> chunked.
 
         For PDF: download from R2 -> submit to Zhipu -> poll -> chunk.
@@ -239,7 +240,7 @@ class IngestTaskService:
         self.db.flush()
         task.chunk_count = len(chunk_results)
 
-    async def start_indexing(self, task_id: int) -> None:
+    async def start_indexing(self, task_id: uuid.UUID) -> None:
         """Stage: indexing -> completed.
 
         After user confirms chunks via ChunkEditor, run embedding + tagging

@@ -1,21 +1,22 @@
 """Ranker module for fusing and re-ranking retrieval results."""
 
+import uuid
 from dataclasses import dataclass
 
 
 @dataclass
 class ChunkScore:
     """Chunk with its retrieval score."""
-    chunk_id: int
-    bridge_id: int | None
+    chunk_id: uuid.UUID
+    bridge_id: uuid.UUID | None
     score: float
 
 
 def rrf_merge(
-    vec_results: list[int],
-    fts_results: list[int],
+    vec_results: list[uuid.UUID],
+    fts_results: list[uuid.UUID],
     k: int = 60,
-) -> list[tuple[int, float]]:
+) -> list[tuple[uuid.UUID, float]]:
     """Reciprocal Rank Fusion to merge two ranked lists.
 
     Args:
@@ -26,7 +27,7 @@ def rrf_merge(
     Returns:
         List of (chunk_id, score) tuples sorted by score descending
     """
-    scores: dict[int, float] = {}
+    scores: dict[uuid.UUID, float] = {}
     for rank, chunk_id in enumerate(vec_results, start=1):
         scores[chunk_id] = scores.get(chunk_id, 0) + 1 / (k + rank)
     for rank, chunk_id in enumerate(fts_results, start=1):
@@ -50,7 +51,7 @@ def apply_diversity(
     Returns:
         Filtered list of ChunkScore objects
     """
-    seen_bridges: dict[int | None, int] = {}
+    seen_bridges: dict[uuid.UUID | None, int] = {}
     result: list[ChunkScore] = []
     for chunk in chunks:
         bid = chunk.bridge_id

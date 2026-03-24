@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Callable, Literal
 
@@ -15,7 +16,7 @@ LinkMethod = Literal["hint", "rule", "llm"]
 
 @dataclass
 class BridgeLink:
-    bridge_id: int
+    bridge_id: uuid.UUID
     bridge_name: str
     role: LinkRole
     confidence: float
@@ -66,9 +67,9 @@ class BridgeLinker:
         self.provider = provider
         self.min_primary_confidence = min_primary_confidence
         self.enable_auto_bridge_detection = enable_auto_bridge_detection
-        self._bridge_by_id: dict[int, Bridge] | None = None
+        self._bridge_by_id: dict[uuid.UUID, Bridge] | None = None
         self._bridge_alias_map: dict[str, Bridge] | None = None
-        self._alias_entries: list[tuple[str, int]] | None = None
+        self._alias_entries: list[tuple[str, uuid.UUID]] | None = None
 
     async def link_chunk(
         self,
@@ -295,7 +296,7 @@ class BridgeLinker:
         assert self._alias_entries is not None
         assert self._bridge_by_id is not None
 
-        score_by_bridge: dict[int, int] = {}
+        score_by_bridge: dict[uuid.UUID, int] = {}
         for alias, bridge_id in self._alias_entries:
             count = self._count_alias_occurrences(content, alias)
             if count <= 0:
@@ -339,7 +340,7 @@ class BridgeLinker:
 
         result: list[Bridge] = []
         created: list[str] = []
-        seen_ids: set[int] = set()
+        seen_ids: set[uuid.UUID] = set()
 
         for name in normalized:
             bridge = self._bridge_alias_map.get(name)
@@ -370,7 +371,7 @@ class BridgeLinker:
         threshold: float,
     ) -> BridgeLinkingResult:
         deduped_links: list[BridgeLink] = []
-        seen: set[tuple[int, str]] = set()
+        seen: set[tuple[uuid.UUID, str]] = set()
         for link in links:
             key = (link.bridge_id, link.role)
             if key in seen:
