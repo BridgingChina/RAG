@@ -1,13 +1,13 @@
 """Audit log schemas."""
-
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
 
 class AuditLogItem(BaseModel):
-    id: int
-    user_id: int | None
+    id: UUID
+    user_id: UUID | None
     username: str | None
     action: str
     resource_type: str

@@ -1,11 +1,12 @@
 """Source management schemas."""
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
 
 class SourceListItem(BaseModel):
-    id: int
+    id: UUID
     type: str
     title: str
     url: str | None
@@ -14,7 +15,7 @@ class SourceListItem(BaseModel):
 
 
 class SourceDetail(BaseModel):
-    id: int
+    id: UUID
     type: str
     title: str
     url: str | None

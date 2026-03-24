@@ -1,18 +1,20 @@
 """Chunk management schemas."""
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel, field_validator
 
 
 class ChunkListItem(BaseModel):
-    id: int
+    id: UUID
     content_preview: str
-    bridge_id: int | None
+    bridge_id: UUID | None
     bridge_name: str | None
     lvl1: str | None
     lvl2: str | None
     binding_status: str
-    source_id: int
+    source_id: UUID
     source_title: str | None
     created_at: datetime
     needs_reindex: bool
@@ -20,8 +22,8 @@ class ChunkListItem(BaseModel):
 
 
 class ChunkBridgeLinkDetail(BaseModel):
-    id: int
-    bridge_id: int
+    id: UUID
+    bridge_id: UUID
     bridge_name: str | None
     role: str
     confidence: float
@@ -29,7 +31,7 @@ class ChunkBridgeLinkDetail(BaseModel):
 
 
 class ChunkDetail(BaseModel):
-    id: int
+    id: UUID
     content: str
     contextual_text: str | None
     search_text: str | None
@@ -38,10 +40,10 @@ class ChunkDetail(BaseModel):
     lvl1: str | None
     lvl2: str | None
     lvl3: str | None
-    bridge_id: int | None
+    bridge_id: UUID | None
     bridge_name: str | None
     binding_status: str
-    source_id: int
+    source_id: UUID
     source_title: str | None
     created_at: datetime
     bridge_links: list[ChunkBridgeLinkDetail]
@@ -50,7 +52,7 @@ class ChunkDetail(BaseModel):
 
 
 class BridgeLinkInput(BaseModel):
-    bridge_id: int
+    bridge_id: UUID
     role: Literal["primary", "secondary", "candidate"]
     confidence: float = 1.0
     method: Literal["hint", "rule", "llm", "manual"] = "manual"
@@ -60,7 +62,7 @@ class ChunkUpdate(BaseModel):
     lvl1: str | None = None
     lvl2: str | None = None
     lvl3: str | None = None
-    bridge_id: int | None = None
+    bridge_id: UUID | None = None
     binding_status: Literal["none", "primary", "ambiguous"] | None = None
     content: str | None = None
     section_title: str | None = None
@@ -87,14 +89,14 @@ class ChunkSplitResponse(BaseModel):
 
 
 class ChunkMergeRequest(BaseModel):
-    chunk_ids: list[int]
+    chunk_ids: list[UUID]
 
 
 class ChunkBatchUpdate(BaseModel):
     lvl1: str | None = None
     lvl2: str | None = None
     lvl3: str | None = None
-    bridge_id: int | None = None
+    bridge_id: UUID | None = None
     binding_status: Literal["none", "primary", "ambiguous"] | None = None
 
     @field_validator("lvl1", "lvl2", "lvl3", mode="before")
@@ -108,12 +110,12 @@ class ChunkBatchUpdate(BaseModel):
 
 
 class ChunkBatchRequest(BaseModel):
-    chunk_ids: list[int]
+    chunk_ids: list[UUID]
     action: Literal["update", "delete"]
     updates: ChunkBatchUpdate | None = None
 
 
 class ReindexResponse(BaseModel):
-    source_id: int
+    source_id: UUID
     chunks_reindexed: int
-    chunks_failed: list[int]
+    chunks_failed: list[UUID]
