@@ -34,11 +34,14 @@ def reset_db(seed: bool = False, force: bool = False) -> None:
     print("Dropping all tables...")
     with engine.connect() as conn:
         # Drop tables in correct order (respecting foreign keys)
+        conn.execute(text("DROP TABLE IF EXISTS audit_logs CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS ingest_tasks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunk_bridge_links CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS chunks CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS sources CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS bridges CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS taxonomy_nodes CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS schema_version CASCADE"))
         conn.commit()
     print("Tables dropped.")
@@ -51,6 +54,13 @@ def reset_db(seed: bool = False, force: bool = False) -> None:
     print("Creating tables...")
     Base.metadata.create_all(engine)
     print("Tables created.")
+
+    print("Stamping schema version...")
+    from app.core.database import LATEST_SCHEMA_VERSION, set_schema_version
+    with engine.connect() as conn:
+        set_schema_version(engine, LATEST_SCHEMA_VERSION, "Clean rebuild via reset_db.py", conn=conn)
+        conn.commit()
+    print(f"Schema version set to {LATEST_SCHEMA_VERSION}.")
 
     if seed:
         print("\nSeeding test data...")
