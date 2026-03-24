@@ -49,9 +49,9 @@ function authHeaders(): Record<string, string> {
 
 export class ConflictError extends Error {
   currentUpdatedAt: string
-  chunkId: number
+  chunkId: string
 
-  constructor(currentUpdatedAt: string, chunkId: number) {
+  constructor(currentUpdatedAt: string, chunkId: string) {
     super("Chunk has been modified by another user")
     this.name = "ConflictError"
     this.currentUpdatedAt = currentUpdatedAt
@@ -191,7 +191,7 @@ async function patch<T>(url: string, body: unknown): Promise<T> {
 
 export function askQuestion(
   question: string,
-  targetBridgeId?: number | null,
+  targetBridgeId?: string | null,
   debug?: boolean,
 ): Promise<AskResponse> {
   return post<AskResponse>("/ask", {
@@ -242,24 +242,24 @@ export function fetchIngestTasks(params?: {
   return get<PaginatedResponse<IngestTaskItem>>("/ingest-tasks", params)
 }
 
-export function fetchIngestTask(id: number): Promise<IngestTaskItem> {
+export function fetchIngestTask(id: string): Promise<IngestTaskItem> {
   return get<IngestTaskItem>(`/ingest-tasks/${id}`)
 }
 
-export function confirmIngestTask(id: number): Promise<IngestTaskItem> {
+export function confirmIngestTask(id: string): Promise<IngestTaskItem> {
   return post<IngestTaskItem>(`/ingest-tasks/${id}/confirm`, {})
 }
 
-export function deleteIngestTask(id: number): Promise<void> {
+export function deleteIngestTask(id: string): Promise<void> {
   return del(`/ingest-tasks/${id}`)
 }
 
-export function retryIngestTask(id: number): Promise<IngestTaskItem> {
+export function retryIngestTask(id: string): Promise<IngestTaskItem> {
   return post<IngestTaskItem>(`/ingest-tasks/${id}/retry`, {})
 }
 
 export function batchDeleteIngestTasks(
-  taskIds: number[],
+  taskIds: string[],
 ): Promise<BatchDeleteResponse> {
   return post<BatchDeleteResponse>("/ingest-tasks/batch-delete", {
     task_ids: taskIds,
@@ -267,7 +267,7 @@ export function batchDeleteIngestTasks(
 }
 
 export function getIngestTaskDownloadUrl(
-  id: number,
+  id: string,
   type: "raw" | "parsed",
 ): Promise<DownloadUrlResponse> {
   return get<DownloadUrlResponse>(`/ingest-tasks/${id}/download-url`, { type })
@@ -316,8 +316,8 @@ export function fetchDashboardStats(): Promise<DashboardStats> {
 export function fetchChunks(params?: {
   page?: number
   page_size?: number
-  bridge_id?: number
-  source_id?: number
+  bridge_id?: string
+  source_id?: string
   lvl1?: string
   lvl2?: string
   lvl3?: string
@@ -327,19 +327,19 @@ export function fetchChunks(params?: {
   return get<PaginatedResponse<ChunkListItem>>("/chunks", params)
 }
 
-export function fetchChunk(id: number): Promise<ChunkDetail> {
+export function fetchChunk(id: string): Promise<ChunkDetail> {
   return get<ChunkDetail>(`/chunks/${id}`)
 }
 
 export function updateChunk(
-  id: number,
+  id: string,
   data: ChunkUpdateRequest,
 ): Promise<ChunkDetail> {
   return put<ChunkDetail>(`/chunks/${id}`, data)
 }
 
 export function deleteChunk(
-  id: number,
+  id: string,
   expectedUpdatedAt?: string,
 ): Promise<void> {
   const params = expectedUpdatedAt
@@ -349,7 +349,7 @@ export function deleteChunk(
 }
 
 export function splitChunk(
-  id: number,
+  id: string,
   data: ChunkSplitRequest,
 ): Promise<ChunkSplitResponse> {
   return post<ChunkSplitResponse>(`/chunks/${id}/split`, data)
@@ -366,7 +366,7 @@ export function batchChunks(
 }
 
 export function reindexSource(
-  sourceId: number,
+  sourceId: string,
   force = false,
 ): Promise<ReindexResponse> {
   return post<ReindexResponse>(`/sources/${sourceId}/reindex?force=${force}`, {})
@@ -382,7 +382,7 @@ export function fetchBridges(params?: {
   return get<PaginatedResponse<BridgeListItem>>("/bridges", params)
 }
 
-export function fetchBridge(id: number): Promise<BridgeDetail> {
+export function fetchBridge(id: string): Promise<BridgeDetail> {
   return get<BridgeDetail>(`/bridges/${id}`)
 }
 
@@ -391,25 +391,25 @@ export function createBridge(data: BridgeCreateRequest): Promise<BridgeDetail> {
 }
 
 export function updateBridge(
-  id: number,
+  id: string,
   data: BridgeUpdateRequest,
 ): Promise<BridgeDetail> {
   return put<BridgeDetail>(`/bridges/${id}`, data)
 }
 
-export function deleteBridge(id: number): Promise<void> {
+export function deleteBridge(id: string): Promise<void> {
   return del(`/bridges/${id}`)
 }
 
 export function fetchBridgeChunks(
-  id: number,
+  id: string,
   params?: { page?: number; page_size?: number },
 ): Promise<PaginatedResponse<ChunkListItem>> {
   return get<PaginatedResponse<ChunkListItem>>(`/bridges/${id}/chunks`, params)
 }
 
 export function mergeBridge(
-  targetId: number,
+  targetId: string,
   data: BridgeMergeRequest,
 ): Promise<BridgeDetail> {
   return post<BridgeDetail>(`/bridges/${targetId}/merge`, data)
@@ -426,7 +426,7 @@ export function fetchSources(params?: {
   return get<PaginatedResponse<SourceListItem>>("/sources", params)
 }
 
-export function fetchSource(id: number): Promise<SourceDetail> {
+export function fetchSource(id: string): Promise<SourceDetail> {
   return get<SourceDetail>(`/sources/${id}`)
 }
 
@@ -441,13 +441,13 @@ export function createTaxonomyNode(data: TaxonomyNodeCreate): Promise<TaxonomyNo
 }
 
 export function updateTaxonomyNode(
-  id: number,
+  id: string,
   data: { description?: string | null },
 ): Promise<TaxonomyNodeDetail> {
   return put<TaxonomyNodeDetail>(`/taxonomy/nodes/${id}`, data)
 }
 
-export function deleteTaxonomyNode(id: number): Promise<void> {
+export function deleteTaxonomyNode(id: string): Promise<void> {
   return del(`/taxonomy/nodes/${id}`)
 }
 
@@ -492,7 +492,7 @@ export function changePassword(data: ChangePasswordRequest): Promise<void> {
 export function fetchAuditLogs(params?: {
   page?: number
   page_size?: number
-  user_id?: number
+  user_id?: string
   action?: string
   resource_type?: string
   resource_id?: string
