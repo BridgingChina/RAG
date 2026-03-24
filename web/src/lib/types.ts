@@ -2,11 +2,11 @@
 
 export interface AskRequest {
   question: string
-  target_bridge_id?: number | null
+  target_bridge_id?: string | null
 }
 
 export interface CitationResponse {
-  chunk_id: number
+  chunk_id: string
   source_title: string
   page_range: string | null
 }
@@ -17,8 +17,8 @@ export interface ConfidenceResponse {
 }
 
 export interface ChunkSummary {
-  chunk_id: number
-  bridge_id: number | null
+  chunk_id: string
+  bridge_id: string | null
   bridge_name: string | null
   preview: string
 }
@@ -61,7 +61,7 @@ export interface IngestedChunkSummary {
 }
 
 export interface IngestResponse {
-  source_id: number
+  source_id: string
   title: string | null
   primary_bridge_names: string[]
   ambiguous_chunk_count: number
@@ -83,12 +83,12 @@ export type IngestTaskStatus =
   | "deleted"
 
 export interface IngestTaskItem {
-  id: number
+  id: string
   status: IngestTaskStatus
   file_name: string
   file_type: string
   file_size: number | null
-  source_id: number | null
+  source_id: string | null
   chunk_count: number | null
   image_count: number
   error_message: string | null
@@ -116,12 +116,12 @@ export interface IngestTaskCreateRequest {
 }
 
 export interface BatchDeleteRequest {
-  task_ids: number[]
+  task_ids: string[]
 }
 
 export interface BatchDeleteResponse {
-  deleted: number[]
-  skipped: number[]
+  deleted: string[]
+  skipped: string[]
 }
 
 export interface DownloadUrlResponse {
@@ -152,7 +152,7 @@ export interface Lvl1Distribution {
 }
 
 export interface RecentIngest {
-  source_id: number
+  source_id: string
   title: string | null
   chunk_count: number
   created_at: string
@@ -171,14 +171,14 @@ export interface DashboardStats {
 // --- Chunks ---
 
 export interface ChunkListItem {
-  id: number
+  id: string
   content_preview: string
-  bridge_id: number | null
+  bridge_id: string | null
   bridge_name: string | null
   lvl1: string | null
   lvl2: string | null
   binding_status: string
-  source_id: number
+  source_id: string
   source_title: string | null
   created_at: string
   needs_reindex: boolean
@@ -186,8 +186,8 @@ export interface ChunkListItem {
 }
 
 export interface ChunkBridgeLinkDetail {
-  id: number
-  bridge_id: number
+  id: string
+  bridge_id: string
   bridge_name: string | null
   role: string
   confidence: number
@@ -195,7 +195,7 @@ export interface ChunkBridgeLinkDetail {
 }
 
 export interface ChunkDetail {
-  id: number
+  id: string
   content: string
   contextual_text: string | null
   search_text: string | null
@@ -204,10 +204,10 @@ export interface ChunkDetail {
   lvl1: string | null
   lvl2: string | null
   lvl3: string | null
-  bridge_id: number | null
+  bridge_id: string | null
   bridge_name: string | null
   binding_status: string
-  source_id: number
+  source_id: string
   source_title: string | null
   created_at: string
   bridge_links: ChunkBridgeLinkDetail[]
@@ -219,7 +219,7 @@ export interface ChunkUpdateRequest {
   lvl1?: string | null
   lvl2?: string | null
   lvl3?: string | null
-  bridge_id?: number | null
+  bridge_id?: string | null
   binding_status?: "none" | "primary" | "ambiguous"
   content?: string | null
   section_title?: string | null
@@ -228,7 +228,7 @@ export interface ChunkUpdateRequest {
 }
 
 export interface BridgeLinkInput {
-  bridge_id: number
+  bridge_id: string
   role: "primary" | "secondary" | "candidate"
   confidence?: number
   method?: "hint" | "rule" | "llm" | "manual"
@@ -244,51 +244,55 @@ export interface ChunkSplitResponse {
 }
 
 export interface ChunkMergeRequest {
-  chunk_ids: number[]
+  chunk_ids: string[]
 }
 
 export interface ChunkBatchUpdate {
   lvl1?: string | null
   lvl2?: string | null
   lvl3?: string | null
-  bridge_id?: number | null
+  bridge_id?: string | null
   binding_status?: "none" | "primary" | "ambiguous"
 }
 
 export interface ChunkBatchRequest {
-  chunk_ids: number[]
+  chunk_ids: string[]
   action: "update" | "delete"
   updates?: ChunkBatchUpdate
 }
 
 export interface ReindexResponse {
-  source_id: number
+  source_id: string
   chunks_reindexed: number
-  chunks_failed: number[]
+  chunks_failed: string[]
 }
 
 // --- Bridges ---
 
 export interface BridgeListItem {
-  id: number
+  id: string
   name: string
   aliases: string | null
   bridge_type: string | null
   material: string | null
   era: string | null
-  location: string | null
+  region: string | null
+  latitude: number | null
+  longitude: number | null
   chunk_count: number
   created_at: string
 }
 
 export interface BridgeDetail {
-  id: number
+  id: string
   name: string
   aliases: string | null
   bridge_type: string | null
   material: string | null
   era: string | null
-  location: string | null
+  region: string | null
+  latitude: number | null
+  longitude: number | null
   function: string | null
   summary: string | null
   chunk_count: number
@@ -301,7 +305,9 @@ export interface BridgeCreateRequest {
   bridge_type?: string | null
   material?: string | null
   era?: string | null
-  location?: string | null
+  region?: string | null
+  latitude?: number | null
+  longitude?: number | null
   function?: string | null
   summary?: string | null
 }
@@ -312,19 +318,21 @@ export interface BridgeUpdateRequest {
   bridge_type?: string | null
   material?: string | null
   era?: string | null
-  location?: string | null
+  region?: string | null
+  latitude?: number | null
+  longitude?: number | null
   function?: string | null
   summary?: string | null
 }
 
 export interface BridgeMergeRequest {
-  source_bridge_id: number
+  source_bridge_id: string
 }
 
 // --- Sources ---
 
 export interface SourceListItem {
-  id: number
+  id: string
   type: string
   title: string
   url: string | null
@@ -333,7 +341,7 @@ export interface SourceListItem {
 }
 
 export interface SourceDetail {
-  id: number
+  id: string
   type: string
   title: string
   url: string | null
@@ -346,7 +354,7 @@ export interface SourceDetail {
 // --- Taxonomy ---
 
 export interface TaxonomyTreeItem {
-  node_id: number
+  node_id: string
   label: string
   chunk_count: number
   children: TaxonomyTreeItem[]
@@ -357,7 +365,7 @@ export interface TaxonomyTree {
 }
 
 export interface TaxonomyNodeDetail {
-  id: number
+  id: string
   lvl1: string
   lvl2: string | null
   lvl3: string | null
@@ -373,7 +381,7 @@ export interface TaxonomyNodeCreate {
 }
 
 export interface TaxonomyBatchUpdate {
-  chunk_ids: number[]
+  chunk_ids: string[]
   lvl1: string
   lvl2?: string | null
   lvl3?: string | null
@@ -388,10 +396,10 @@ export interface TaxonomyBatchUpdateResult {
 export interface ChannelDebug {
   channel: string
   filter_desc: string
-  vec_ids: number[]
-  fts_ids: number[]
-  rrf_scores: [number, number][]
-  final_ids: number[]
+  vec_ids: string[]
+  fts_ids: string[]
+  rrf_scores: [string, number][]
+  final_ids: string[]
 }
 
 export interface DebugInfo {
@@ -433,7 +441,7 @@ export interface LoginResponse {
 }
 
 export interface UserInfo {
-  id: number
+  id: string
   username: string
   display_name: string | null
   is_active: boolean
@@ -447,8 +455,8 @@ export interface ChangePasswordRequest {
 
 // Audit
 export interface AuditLogItem {
-  id: number
-  user_id: number | null
+  id: string
+  user_id: string | null
   username: string | null
   action: string
   resource_type: string
