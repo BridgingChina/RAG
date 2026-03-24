@@ -1,27 +1,27 @@
+import uuid
 from datetime import datetime
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, func, text as sql_text
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.constants import EMBEDDING_DIM
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, UUIDMixin, CreatedAtMixin
 
 
-class Chunk(Base, TimestampMixin):
+class Chunk(Base, UUIDMixin, CreatedAtMixin):
     __tablename__ = "chunks"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    source_id: Mapped[int] = mapped_column(ForeignKey("sources.id"))
+    source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sources.id"))
     content: Mapped[str] = mapped_column(Text)
     section_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     lvl1: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     lvl2: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     lvl3: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    bridge_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("bridges.id"), nullable=True
+    bridge_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bridges.id"), nullable=True
     )
     bridge_binding_status: Mapped[str] = mapped_column(
         String(20),
@@ -49,8 +49,6 @@ class Chunk(Base, TimestampMixin):
         Index("ix_chunks_source", "source_id"),
         Index("ix_chunks_binding_status", "bridge_binding_status"),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
-        # pgvector IVFFLAT index for cosine distance (<=>).
-        # Note: Both IVFFLAT and HNSW have a 2000-dimension limit in pgvector.
         Index(
             "ix_chunks_embedding_ivfflat",
             "embedding",

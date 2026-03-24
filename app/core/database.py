@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 6
+LATEST_SCHEMA_VERSION = 1
 
 
 def get_db():
@@ -104,13 +104,16 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "id",
             "name",
             "aliases",
-            "location",
+            "region",
             "era",
             "bridge_type",
             "material",
             "function",
             "summary",
+            "latitude",
+            "longitude",
             "created_at",
+            "updated_at",
         },
         "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description"},
         "chunks": {
@@ -158,6 +161,25 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "created_by",
             "created_at",
             "updated_at",
+        },
+        "users": {
+            "id",
+            "username",
+            "hashed_password",
+            "display_name",
+            "is_active",
+            "created_at",
+            "updated_at",
+        },
+        "audit_logs": {
+            "id",
+            "user_id",
+            "action",
+            "resource_type",
+            "resource_id",
+            "detail",
+            "ip_address",
+            "created_at",
         },
     }
 
@@ -248,51 +270,6 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         )
 
 
-def _migrate_schema(engine: Engine, current_version: int, *, conn: Connection) -> None:
-    """Run incremental schema migrations."""
-    if current_version < 3:
-        logger.info("Migrating schema v2 → v3: adding users and audit_logs tables...")
-        from app.models.user import User
-        from app.models.audit_log import AuditLog
-
-        User.__table__.create(conn, checkfirst=True)
-        AuditLog.__table__.create(conn, checkfirst=True)
-        set_schema_version(engine, 3, "Add users and audit_logs tables", conn=conn)
-        logger.info("Migration to v3 complete.")
-
-    if current_version < 4:
-        logger.info("Migrating schema v3 → v4: adding chunks.needs_reindex column...")
-        conn.execute(
-            text(
-                "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS "
-                "needs_reindex BOOLEAN NOT NULL DEFAULT false"
-            )
-        )
-        set_schema_version(engine, 4, "Add chunk needs_reindex flag", conn=conn)
-        logger.info("Migration to v4 complete.")
-
-    if current_version < 5:
-        logger.info("Migrating schema v4 → v5: adding chunks.updated_at column...")
-        conn.execute(
-            text(
-                "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS "
-                "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
-            )
-        )
-        # Backfill: set updated_at = created_at for existing rows
-        conn.execute(text("UPDATE chunks SET updated_at = created_at"))
-        set_schema_version(engine, 5, "Add chunk updated_at for optimistic locking", conn=conn)
-        logger.info("Migration to v5 complete.")
-
-    if current_version < 6:
-        logger.info("Migrating schema v5 → v6: adding ingest_tasks table...")
-        from app.models.ingest_task import IngestTask
-
-        IngestTask.__table__.create(conn, checkfirst=True)
-        set_schema_version(engine, 6, "Add ingest_tasks table", conn=conn)
-        logger.info("Migration to v6 complete.")
-
-
 def _seed_taxonomy_if_empty(conn: Connection) -> None:
     """Seed taxonomy_nodes from config/taxonomy.yaml if table is empty."""
     result = conn.execute(text("SELECT COUNT(*) FROM taxonomy_nodes"))
@@ -351,7 +328,11 @@ def init_database() -> None:
             current_version = get_current_schema_version(engine, conn=conn)
             if current_version is not None:
                 if current_version < LATEST_SCHEMA_VERSION:
-                    _migrate_schema(engine, current_version, conn=conn)
+                    raise RuntimeError(
+                        f"Database schema version {current_version} is outdated. "
+                        f"Expected {LATEST_SCHEMA_VERSION}. "
+                        "Clean rebuild required: run scripts/reset_db.py --force"
+                    )
                 elif current_version > LATEST_SCHEMA_VERSION:
                     raise RuntimeError(
                         f"Unsupported database schema version {current_version}. "
@@ -380,7 +361,7 @@ def init_database() -> None:
 
             # Set initial version
             set_schema_version(
-                engine, LATEST_SCHEMA_VERSION, "Schema v6 with ingest_tasks table", conn=conn
+                engine, LATEST_SCHEMA_VERSION, "Schema v1: UUID primary keys, clean rebuild", conn=conn
             )
 
             logger.info("Database initialization completed successfully")
