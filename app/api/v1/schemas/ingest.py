@@ -1,5 +1,6 @@
 """Ingest endpoint request/response schemas."""
 from typing import Literal, TypeAlias
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +29,7 @@ class IngestedChunkSummary(BaseModel):
 
 class IngestResponse(BaseModel):
     """Response body for /api/v1/ingest endpoint."""
-    source_id: int
+    source_id: UUID
     title: str | None = None
     primary_bridge_names: list[str]
     ambiguous_chunk_count: int
