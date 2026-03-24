@@ -174,8 +174,7 @@ function AuditTimeline({ entries }: { entries: AuditLogItem[] }) {
 // --- Main page component ---
 
 export function Component() {
-  const { id } = useParams<{ id: string }>()
-  const taskId = Number(id)
+  const { id: taskId } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
   const {
@@ -183,13 +182,13 @@ export function Component() {
     loading,
     error,
     refetch,
-  } = useApi(() => fetchIngestTask(taskId), [taskId])
+  } = useApi(() => fetchIngestTask(taskId!), [taskId])
 
   const { data: auditData, loading: auditLoading } = useApi(
     () =>
       fetchAuditLogs({
         resource_type: "ingest_task",
-        resource_id: String(taskId),
+        resource_id: taskId,
         page_size: 50,
       }),
     [taskId],
@@ -238,7 +237,7 @@ export function Component() {
 
   async function handleDownload(type: "raw" | "parsed") {
     try {
-      const res = await getIngestTaskDownloadUrl(taskId, type)
+      const res = await getIngestTaskDownloadUrl(taskId!, type)
       window.open(res.url, "_blank")
     } catch {
       // silent — R2 may not have the file

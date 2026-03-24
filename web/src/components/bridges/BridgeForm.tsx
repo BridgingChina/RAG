@@ -54,7 +54,7 @@ export function BridgeForm({
     bridge_type: initialData?.bridge_type || null,
     material: initialData?.material || null,
     era: initialData?.era || null,
-    location: initialData?.location || null,
+    region: initialData?.region || null,
     function: initialData?.function || null,
     summary: initialData?.summary || null,
   })
@@ -177,13 +177,13 @@ export function BridgeForm({
           </Select>
         </div>
 
-        {/* Location */}
+        {/* Region */}
         <div className="space-y-2">
           <label className="text-sm font-medium">位置</label>
           <Input
-            value={form.location || ""}
+            value={form.region || ""}
             onChange={(e) =>
-              setForm({ ...form, location: e.target.value || null })
+              setForm({ ...form, region: e.target.value || null })
             }
             placeholder="地理位置"
           />

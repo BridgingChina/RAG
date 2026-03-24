@@ -55,19 +55,19 @@ export function Component() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data: bridge, loading, error, refetch } = useApi(
-    () => fetchBridge(Number(id)),
+    () => fetchBridge(id!),
     [id],
   )
 
   const { data: chunksData, refetch: refetchChunks } = useApi(
-    () => fetchBridgeChunks(Number(id), { page_size: 100 }),
+    () => fetchBridgeChunks(id!, { page_size: 100 }),
     [id],
   )
 
   const handleUpdate = async (data: BridgeUpdateRequest) => {
     if (!id) return
     setActionError(null)
-    await updateBridge(Number(id), data)
+    await updateBridge(id, data)
     refetch()
   }
 
@@ -76,7 +76,7 @@ export function Component() {
     setIsDeleting(true)
     setActionError(null)
     try {
-      await deleteBridge(Number(id))
+      await deleteBridge(id)
       navigate("/bridges")
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e))

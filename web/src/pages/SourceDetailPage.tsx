@@ -52,12 +52,12 @@ export function Component() {
   const navigate = useNavigate()
 
   const { data: source, loading, error } = useApi(
-    () => fetchSource(Number(id)),
+    () => fetchSource(id!),
     [id],
   )
 
   const { data: chunksData } = useApi(
-    () => fetchChunks({ source_id: Number(id), page_size: 100 }),
+    () => fetchChunks({ source_id: id!, page_size: 100 }),
     [id],
   )
 
