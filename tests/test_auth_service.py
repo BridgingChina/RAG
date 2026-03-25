@@ -1,6 +1,10 @@
 """Tests for auth service — password hashing and JWT."""
 
+import uuid
+
 from app.services.auth_service import hash_password, verify_password, create_access_token, decode_access_token
+
+_USER_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 def test_hash_and_verify_password():
@@ -11,10 +15,10 @@ def test_hash_and_verify_password():
 
 
 def test_create_and_decode_token():
-    token = create_access_token(user_id=1, username="admin")
+    token = create_access_token(user_id=_USER_UUID, username="admin")
     payload = decode_access_token(token)
     assert payload is not None
-    assert payload["sub"] == "1"
+    assert payload["sub"] == str(_USER_UUID)
     assert payload["username"] == "admin"
 
 

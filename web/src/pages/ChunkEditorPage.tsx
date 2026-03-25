@@ -1273,9 +1273,9 @@ export function Component() {
   const [reindexing, setReindexing] = useState(false)
   const [reindexError, setReindexError] = useState<string | null>(null)
 
-  // Sort ascending by id (API returns descending)
+  // Sort ascending by created_at (UUID ids have no meaningful order)
   const chunks: ChunkListItem[] = [...(chunksData?.items ?? [])].sort(
-    (a, b) => a.id.localeCompare(b.id),
+    (a, b) => a.created_at.localeCompare(b.created_at),
   )
 
   const stale = staleCount(chunks)

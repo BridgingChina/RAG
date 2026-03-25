@@ -45,7 +45,7 @@ class IngestedChunk(TypedDict):
     lvl1: Optional[str]
     lvl2: Optional[str]
     lvl3: Optional[str]
-    bridge_id: Optional[int]
+    bridge_id: Optional[str]
     embedding: list[float]
 
 

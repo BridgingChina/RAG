@@ -120,7 +120,7 @@ export function Component() {
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [r2Available, setR2Available] = useState(true)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
 
@@ -189,7 +189,7 @@ export function Component() {
     }
   }
 
-  const handleSelectRow = (id: number, checked: boolean) => {
+  const handleSelectRow = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
       if (checked) {
@@ -202,7 +202,7 @@ export function Component() {
   }
 
   // Row action handlers
-  async function handleConfirm(id: number) {
+  async function handleConfirm(id: string) {
     try {
       await confirmIngestTask(id)
       refetch()
@@ -211,7 +211,7 @@ export function Component() {
     }
   }
 
-  async function handleRetry(id: number) {
+  async function handleRetry(id: string) {
     try {
       await retryIngestTask(id)
       refetch()
@@ -220,7 +220,7 @@ export function Component() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     if (!confirm("确定删除此任务？")) return
     try {
       await deleteIngestTask(id)
@@ -459,7 +459,7 @@ interface TaskRowProps {
   onDelete: () => void
   onNavigate: () => void
   onNavigateEdit: () => void
-  onNavigateSource: (sourceId: number) => void
+  onNavigateSource: (sourceId: string) => void
 }
 
 function TaskRow({

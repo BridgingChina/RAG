@@ -61,10 +61,10 @@ export function Component() {
     lvl2?: string
     lvl3?: string
   } | null>(null)
-  const [selectedChunkIds, setSelectedChunkIds] = useState<Set<number>>(new Set())
+  const [selectedChunkIds, setSelectedChunkIds] = useState<Set<string>>(new Set())
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<{ nodeId: number; label: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ nodeId: string; label: string } | null>(null)
   const [isBatchUpdateDialogOpen, setIsBatchUpdateDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -118,7 +118,7 @@ export function Component() {
     setIsAddDialogOpen(true)
   }
 
-  const handleDeleteNode = (nodeId: number, nodeLabel: string) => {
+  const handleDeleteNode = (nodeId: string, nodeLabel: string) => {
     setDeleteTarget({ nodeId, label: nodeLabel })
     setActionError(null)
     setIsDeleteDialogOpen(true)
@@ -159,7 +159,7 @@ export function Component() {
     }
   }
 
-  const handleToggleChunk = (chunkId: number) => {
+  const handleToggleChunk = (chunkId: string) => {
     const newSet = new Set(selectedChunkIds)
     if (newSet.has(chunkId)) {
       newSet.delete(chunkId)

@@ -1,8 +1,17 @@
 """Unit tests for IngestTaskService (all external services mocked)."""
+import uuid
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.ingest_task import IngestTask
+
+_UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
+_UUID2 = uuid.UUID("00000000-0000-0000-0000-000000000002")
+_UUID3 = uuid.UUID("00000000-0000-0000-0000-000000000003")
+_UUID10 = uuid.UUID("00000000-0000-0000-0000-000000000010")
+_UUID11 = uuid.UUID("00000000-0000-0000-0000-000000000011")
+_UUID12 = uuid.UUID("00000000-0000-0000-0000-000000000012")
 
 
 @pytest.mark.asyncio
@@ -23,7 +32,7 @@ async def test_sync_and_parse_md_skips_zhipu():
     mock_chunk_result.section_title = "Test"
 
     task = IngestTask(
-        id=1,
+        id=_UUID1,
         status="syncing",
         file_name="test.md",
         file_type="md",
@@ -53,7 +62,7 @@ async def test_sync_and_parse_md_skips_zhipu():
             mock_doc.frontmatter = {"title": "Test"}
             mock_parse.return_value = mock_doc
 
-            await service.sync_and_parse(task_id=1)
+            await service.sync_and_parse(task_id=_UUID1)
 
     # Should NOT call file parser (it's an md file)
     assert task.status == "chunked"
@@ -83,7 +92,7 @@ async def test_sync_and_parse_pdf_calls_zhipu():
     mock_file_parser.poll_until_done.return_value = mock_parse_result
 
     task = IngestTask(
-        id=2,
+        id=_UUID2,
         status="syncing",
         file_name="test.pdf",
         file_type="pdf",
@@ -115,7 +124,7 @@ async def test_sync_and_parse_pdf_calls_zhipu():
             mock_doc.frontmatter = {"title": "Parsed PDF"}
             mock_parse.return_value = mock_doc
 
-            await service.sync_and_parse(task_id=2)
+            await service.sync_and_parse(task_id=_UUID2)
 
     mock_file_parser.create_task.assert_called_once()
     mock_file_parser.poll_until_done.assert_called_once_with("zhipu-task-123")
@@ -133,7 +142,7 @@ async def test_sync_and_parse_sets_failed_on_error():
     mock_r2.download.side_effect = Exception("R2 connection error")
 
     task = IngestTask(
-        id=3,
+        id=_UUID3,
         status="syncing",
         file_name="test.pdf",
         file_type="pdf",
@@ -149,7 +158,7 @@ async def test_sync_and_parse_sets_failed_on_error():
         provider=AsyncMock(),
     )
 
-    await service.sync_and_parse(task_id=3)
+    await service.sync_and_parse(task_id=_UUID3)
 
     assert task.status == "failed"
     assert "R2 connection error" in task.error_message
@@ -184,7 +193,7 @@ async def test_parse_pdf_with_download_url_extracts_markdown():
     mock_file_parser.poll_until_done.return_value = mock_parse_result
 
     task = IngestTask(
-        id=10,
+        id=_UUID10,
         status="syncing",
         file_name="test.pdf",
         file_type="pdf",
@@ -227,7 +236,7 @@ async def test_parse_pdf_with_download_url_extracts_markdown():
                 mock_client.__aexit__ = AsyncMock(return_value=False)
                 mock_httpx_cls.return_value = mock_client
 
-                await service.sync_and_parse(task_id=10)
+                await service.sync_and_parse(task_id=_UUID10)
 
     # Verify parsed_content came from zip
     assert task.parsed_content == "# Extracted\n\nContent from zip"
@@ -236,9 +245,10 @@ async def test_parse_pdf_with_download_url_extracts_markdown():
 
     # Verify R2 uploads: archive.zip + images/fig1.png + result.md
     upload_keys = [c.args[0] for c in mock_r2.upload.call_args_list]
-    assert "parsed/10/archive.zip" in upload_keys
-    assert "parsed/10/images/fig1.png" in upload_keys
-    assert "parsed/10/result.md" in upload_keys
+    prefix = f"parsed/{_UUID10}"
+    assert f"{prefix}/archive.zip" in upload_keys
+    assert f"{prefix}/images/fig1.png" in upload_keys
+    assert f"{prefix}/result.md" in upload_keys
 
 
 @pytest.mark.asyncio
@@ -267,7 +277,7 @@ async def test_parse_pdf_zip_without_markdown_fails():
     mock_file_parser.poll_until_done.return_value = mock_parse_result
 
     task = IngestTask(
-        id=11,
+        id=_UUID11,
         status="syncing",
         file_name="bad.pdf",
         file_type="pdf",
@@ -294,7 +304,7 @@ async def test_parse_pdf_zip_without_markdown_fails():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_httpx_cls.return_value = mock_client
 
-        await service.sync_and_parse(task_id=11)
+        await service.sync_and_parse(task_id=_UUID11)
 
     assert task.status == "failed"
     assert "No markdown file" in task.error_message
@@ -318,7 +328,7 @@ async def test_parse_pdf_neither_content_nor_download_url_fails():
     mock_file_parser.poll_until_done.return_value = mock_parse_result
 
     task = IngestTask(
-        id=12,
+        id=_UUID12,
         status="syncing",
         file_name="empty.pdf",
         file_type="pdf",
@@ -335,7 +345,7 @@ async def test_parse_pdf_neither_content_nor_download_url_fails():
         file_parser=mock_file_parser,
     )
 
-    await service.sync_and_parse(task_id=12)
+    await service.sync_and_parse(task_id=_UUID12)
 
     assert task.status == "failed"
     assert "neither content nor download_url" in task.error_message
