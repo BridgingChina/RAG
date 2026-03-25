@@ -1,5 +1,7 @@
 """Tests for HybridRetriever three-channel retrieval."""
 
+import uuid
+
 import pytest
 
 from app.services.ranker import ChunkScore
@@ -12,6 +14,19 @@ from app.services.hybrid_retriever import (
     format_evidence_for_llm,
 )
 
+# Deterministic UUIDs for tests
+_UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
+_UUID2 = uuid.UUID("00000000-0000-0000-0000-000000000002")
+_UUID3 = uuid.UUID("00000000-0000-0000-0000-000000000003")
+_UUID4 = uuid.UUID("00000000-0000-0000-0000-000000000004")
+_UUID5 = uuid.UUID("00000000-0000-0000-0000-000000000005")
+_UUID10 = uuid.UUID("00000000-0000-0000-0000-000000000010")
+_UUID20 = uuid.UUID("00000000-0000-0000-0000-000000000020")
+_UUID30 = uuid.UUID("00000000-0000-0000-0000-000000000030")
+_UUID42 = uuid.UUID("00000000-0000-0000-0000-000000000042")
+_UUID12 = uuid.UUID("00000000-0000-0000-0000-000000000012")
+_UUID28 = uuid.UUID("00000000-0000-0000-0000-000000000028")
+
 
 def test_default_quota():
     """Test DEFAULT_QUOTA has correct values."""
@@ -21,15 +36,15 @@ def test_default_quota():
 def test_retrieved_chunk_dataclass():
     """Test RetrievedChunk dataclass structure."""
     chunk = RetrievedChunk(
-        chunk_id=1,
+        chunk_id=_UUID1,
         content="Test content about Zhaozhou Bridge",
-        bridge_id=10,
+        bridge_id=_UUID10,
         bridge_name="赵州桥",
         score=0.95,
     )
-    assert chunk.chunk_id == 1
+    assert chunk.chunk_id == _UUID1
     assert chunk.content == "Test content about Zhaozhou Bridge"
-    assert chunk.bridge_id == 10
+    assert chunk.bridge_id == _UUID10
     assert chunk.bridge_name == "赵州桥"
     assert chunk.score == 0.95
 
@@ -37,15 +52,15 @@ def test_retrieved_chunk_dataclass():
 def test_hybrid_retrieval_result_all_chunks():
     """Test HybridRetrievalResult.all_chunks() returns all chunks from all channels."""
     anchor = [
-        RetrievedChunk(chunk_id=1, content="A1", bridge_id=10, bridge_name="Bridge A", score=0.9),
-        RetrievedChunk(chunk_id=2, content="A2", bridge_id=10, bridge_name="Bridge A", score=0.8),
+        RetrievedChunk(chunk_id=_UUID1, content="A1", bridge_id=_UUID10, bridge_name="Bridge A", score=0.9),
+        RetrievedChunk(chunk_id=_UUID2, content="A2", bridge_id=_UUID10, bridge_name="Bridge A", score=0.8),
     ]
     concept = [
-        RetrievedChunk(chunk_id=3, content="C1", bridge_id=None, bridge_name="", score=0.7),
+        RetrievedChunk(chunk_id=_UUID3, content="C1", bridge_id=None, bridge_name="", score=0.7),
     ]
     analogy = [
-        RetrievedChunk(chunk_id=4, content="X1", bridge_id=20, bridge_name="Bridge B", score=0.6),
-        RetrievedChunk(chunk_id=5, content="X2", bridge_id=30, bridge_name="Bridge C", score=0.5),
+        RetrievedChunk(chunk_id=_UUID4, content="X1", bridge_id=_UUID20, bridge_name="Bridge B", score=0.6),
+        RetrievedChunk(chunk_id=_UUID5, content="X2", bridge_id=_UUID30, bridge_name="Bridge C", score=0.5),
     ]
 
     result = HybridRetrievalResult(
@@ -57,7 +72,7 @@ def test_hybrid_retrieval_result_all_chunks():
     all_chunks = result.all_chunks()
     assert len(all_chunks) == 5
     chunk_ids = [c.chunk_id for c in all_chunks]
-    assert chunk_ids == [1, 2, 3, 4, 5]
+    assert chunk_ids == [_UUID1, _UUID2, _UUID3, _UUID4, _UUID5]
 
 
 def test_hybrid_retrieval_result_empty():
@@ -76,14 +91,14 @@ def test_hybrid_retrieval_result_empty():
 def test_format_evidence_for_llm():
     """Test format_evidence_for_llm formats result correctly."""
     anchor = [
-        RetrievedChunk(chunk_id=1, content="赵州桥是敞肩式石拱桥", bridge_id=10, bridge_name="赵州桥", score=0.9),
-        RetrievedChunk(chunk_id=2, content="建于隋代", bridge_id=10, bridge_name="赵州桥", score=0.8),
+        RetrievedChunk(chunk_id=_UUID1, content="赵州桥是敞肩式石拱桥", bridge_id=_UUID10, bridge_name="赵州桥", score=0.9),
+        RetrievedChunk(chunk_id=_UUID2, content="建于隋代", bridge_id=_UUID10, bridge_name="赵州桥", score=0.8),
     ]
     concept = [
-        RetrievedChunk(chunk_id=3, content="石拱桥的受力原理", bridge_id=None, bridge_name="", score=0.7),
+        RetrievedChunk(chunk_id=_UUID3, content="石拱桥的受力原理", bridge_id=None, bridge_name="", score=0.7),
     ]
     analogy = [
-        RetrievedChunk(chunk_id=4, content="卢沟桥也是石拱桥", bridge_id=20, bridge_name="卢沟桥", score=0.6),
+        RetrievedChunk(chunk_id=_UUID4, content="卢沟桥也是石拱桥", bridge_id=_UUID20, bridge_name="卢沟桥", score=0.6),
     ]
 
     result = HybridRetrievalResult(
@@ -132,11 +147,11 @@ def test_channel_debug_dataclass():
     """ChannelDebug holds per-channel retrieval debug info."""
     cd = ChannelDebug(
         channel="anchor",
-        filter_desc="bridge_id=42",
-        vec_ids=[1, 2, 3],
-        fts_ids=[2, 4],
-        rrf_scores=[(2, 0.03), (1, 0.02), (3, 0.01), (4, 0.005)],
-        final_ids=[2, 1, 3],
+        filter_desc=f"bridge_id={_UUID42}",
+        vec_ids=[_UUID1, _UUID2, _UUID3],
+        fts_ids=[_UUID2, _UUID4],
+        rrf_scores=[(_UUID2, 0.03), (_UUID1, 0.02), (_UUID3, 0.01), (_UUID4, 0.005)],
+        final_ids=[_UUID2, _UUID1, _UUID3],
     )
     assert cd.channel == "anchor"
     assert len(cd.vec_ids) == 3
@@ -163,12 +178,12 @@ def test_retrieve_channel_returns_debug_tuple():
     retriever = HybridRetriever(provider=provider)
 
     # Mock internal methods to avoid DB
-    retriever._vector_search = MagicMock(return_value=[10, 20])
-    retriever._fts_search = MagicMock(return_value=[20, 30])
+    retriever._vector_search = MagicMock(return_value=[_UUID10, _UUID20])
+    retriever._fts_search = MagicMock(return_value=[_UUID20, _UUID30])
     retriever._fetch_chunk_details = MagicMock(return_value={
-        10: {"content": "c10", "bridge_id": 1, "bridge_name": "B1"},
-        20: {"content": "c20", "bridge_id": 1, "bridge_name": "B1"},
-        30: {"content": "c30", "bridge_id": 1, "bridge_name": "B1"},
+        _UUID10: {"content": "c10", "bridge_id": _UUID1, "bridge_name": "B1"},
+        _UUID20: {"content": "c20", "bridge_id": _UUID1, "bridge_name": "B1"},
+        _UUID30: {"content": "c30", "bridge_id": _UUID1, "bridge_name": "B1"},
     })
 
     import asyncio
@@ -176,15 +191,15 @@ def test_retrieve_channel_returns_debug_tuple():
         db=MagicMock(),
         query="test",
         query_embedding=[0.1] * 1024,
-        bridge_filter=1,
+        bridge_filter=_UUID1,
         limit=3,
         debug=True,
         channel_name="anchor",
     ))
     assert isinstance(debug, ChannelDebug)
     assert debug.channel == "anchor"
-    assert debug.vec_ids == [10, 20]
-    assert debug.fts_ids == [20, 30]
+    assert debug.vec_ids == [_UUID10, _UUID20]
+    assert debug.fts_ids == [_UUID20, _UUID30]
     assert len(debug.final_ids) <= 3
 
 
@@ -196,12 +211,12 @@ def test_retrieve_channel_no_debug_returns_none():
     provider = MagicMock()
     retriever = HybridRetriever(provider=provider)
 
-    retriever._vector_search = MagicMock(return_value=[10, 20])
-    retriever._fts_search = MagicMock(return_value=[20, 30])
+    retriever._vector_search = MagicMock(return_value=[_UUID10, _UUID20])
+    retriever._fts_search = MagicMock(return_value=[_UUID20, _UUID30])
     retriever._fetch_chunk_details = MagicMock(return_value={
-        10: {"content": "c10", "bridge_id": 1, "bridge_name": "B1"},
-        20: {"content": "c20", "bridge_id": 1, "bridge_name": "B1"},
-        30: {"content": "c30", "bridge_id": 1, "bridge_name": "B1"},
+        _UUID10: {"content": "c10", "bridge_id": _UUID1, "bridge_name": "B1"},
+        _UUID20: {"content": "c20", "bridge_id": _UUID1, "bridge_name": "B1"},
+        _UUID30: {"content": "c30", "bridge_id": _UUID1, "bridge_name": "B1"},
     })
 
     import asyncio
@@ -209,7 +224,7 @@ def test_retrieve_channel_no_debug_returns_none():
         db=MagicMock(),
         query="test",
         query_embedding=[0.1] * 1024,
-        bridge_filter=1,
+        bridge_filter=_UUID1,
         limit=3,
     ))
     assert debug is None
@@ -230,19 +245,19 @@ def test_retrieve_channel_debug_filter_desc_variants():
 
     import asyncio
 
-    # bridge_filter=int
+    # bridge_filter=UUID
     _, debug = asyncio.run(retriever._retrieve_channel(
         db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
-        bridge_filter=42, limit=3, debug=True, channel_name="anchor",
+        bridge_filter=_UUID42, limit=3, debug=True, channel_name="anchor",
     ))
-    assert debug.filter_desc == "bridge_id = 42"
+    assert debug.filter_desc == f"bridge_id = {_UUID42}"
 
     # bridge_filter=list
     _, debug = asyncio.run(retriever._retrieve_channel(
         db=MagicMock(), query="q", query_embedding=[0.1] * 1024,
-        bridge_filter=[5, 12, 28], limit=3, debug=True, channel_name="analogy",
+        bridge_filter=[_UUID5, _UUID12, _UUID28], limit=3, debug=True, channel_name="analogy",
     ))
-    assert debug.filter_desc == "bridge_id IN [5, 12, 28]"
+    assert debug.filter_desc == f"bridge_id IN {[_UUID5, _UUID12, _UUID28]}"
 
     # require_no_bridge_id=True
     _, debug = asyncio.run(retriever._retrieve_channel(

@@ -1,7 +1,11 @@
 """Unit tests for optimistic locking."""
+import uuid
 from datetime import datetime, timezone
 
 import pytest
+
+_UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
+_UUID42 = uuid.UUID("00000000-0000-0000-0000-000000000042")
 
 
 def test_check_optimistic_lock_none_skips():
@@ -9,7 +13,7 @@ def test_check_optimistic_lock_none_skips():
     from app.services.chunk_editor import check_optimistic_lock
 
     class FakeChunk:
-        id = 1
+        id = _UUID1
         updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     check_optimistic_lock(FakeChunk(), expected=None)
@@ -22,7 +26,7 @@ def test_check_optimistic_lock_match_passes():
     ts = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
     class FakeChunk:
-        id = 42
+        id = _UUID42
         updated_at = ts
 
     check_optimistic_lock(FakeChunk(), expected=ts)
@@ -34,7 +38,7 @@ def test_check_optimistic_lock_mismatch_raises_409():
     from app.services.chunk_editor import check_optimistic_lock
 
     class FakeChunk:
-        id = 42
+        id = _UUID42
         updated_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
     with pytest.raises(HTTPException) as exc_info:

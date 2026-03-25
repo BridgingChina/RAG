@@ -1,6 +1,6 @@
 """Audit log API endpoints."""
-
 from datetime import datetime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/audit-logs", tags=["audit"])
 def list_audit_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    user_id: int | None = None,
+    user_id: UUID | None = None,
     action: str | None = None,
     resource_type: str | None = None,
     start: datetime | None = None,

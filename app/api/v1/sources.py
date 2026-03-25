@@ -1,4 +1,6 @@
 """Sources API endpoints."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -69,7 +71,7 @@ def list_sources(
 
 
 @router.get("/{source_id}", response_model=SourceDetail)
-def get_source(source_id: int, db: Session = Depends(get_db)) -> SourceDetail:
+def get_source(source_id: UUID, db: Session = Depends(get_db)) -> SourceDetail:
     """Get detailed information about a specific source."""
     source = db.query(Source).filter(Source.id == source_id).first()
     if not source:
@@ -91,7 +93,7 @@ def get_source(source_id: int, db: Session = Depends(get_db)) -> SourceDetail:
 
 @router.post("/{source_id}/reindex", response_model=ReindexResponse)
 def reindex_source(
-    source_id: int,
+    source_id: UUID,
     request: Request,
     force: bool = False,
     db: Session = Depends(get_db),

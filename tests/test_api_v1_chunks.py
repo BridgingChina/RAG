@@ -22,8 +22,8 @@ def test_chunks_list_not_404():
 def test_chunks_detail_not_found():
     from fastapi.testclient import TestClient
     client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/api/v1/chunks/999999")
-    assert response.status_code in (401, 404, 500)  # 401 without auth
+    response = client.get("/api/v1/chunks/00000000-0000-0000-0000-999999999999")
+    assert response.status_code in (401, 404)  # 401 without auth
 
 
 def test_chunks_split_endpoint_exists():

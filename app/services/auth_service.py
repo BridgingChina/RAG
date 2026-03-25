@@ -1,5 +1,6 @@
 """Authentication service — password hashing and JWT token management."""
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -23,7 +24,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     )
 
 
-def create_access_token(user_id: int, username: str) -> str:
+def create_access_token(user_id: uuid.UUID, username: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(hours=settings.access_token_expire_hours)
     payload = {
         "sub": str(user_id),

@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
@@ -68,28 +70,28 @@ def test_source(db_session):
 def test_bridges(db_session):
     target = Bridge(
         name="赵州桥",
-        location="河北 赵县 华北",
+        region="河北 赵县 华北",
         era="隋唐",
         bridge_type="石拱桥",
         material="石",
     )
     candidate1 = Bridge(
         name="卢沟桥",
-        location="北京 华北",
+        region="北京 华北",
         era="隋唐",
         bridge_type="石拱桥",
         material="石",
     )
     candidate2 = Bridge(
         name="安济桥",
-        location="山东 华北",
+        region="山东 华北",
         era="隋唐",
         bridge_type="石拱桥",
         material="石",
     )
     other = Bridge(
         name="泸定桥",
-        location="四川 西南",
+        region="四川 西南",
         era="明清",
         bridge_type="悬索桥",
         material="铁",
@@ -111,7 +113,7 @@ def chunk_factory(db_session, test_source, tokenizer):
         *,
         content: str,
         embedding: list[float],
-        bridge_id: int | None = None,
+        bridge_id: uuid.UUID | None = None,
         lvl1: str | None = "形制与技术",
         search_text: str | None = None,
     ) -> Chunk:

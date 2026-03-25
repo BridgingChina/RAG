@@ -300,7 +300,7 @@ function bridgeLinkRowsToInput(rows: BridgeLinkRow[]): BridgeLinkInput[] {
   return rows
     .filter((r) => r.bridge_id.trim() !== "")
     .map((r) => ({
-      bridge_id: Number(r.bridge_id),
+      bridge_id: r.bridge_id,
       role: r.role,
       confidence: Number.isNaN(Number(r.confidence))
         ? 1.0
@@ -370,7 +370,7 @@ function ChunkItem({ chunk, selected, checked, onSelect, onCheck }: ChunkItemPro
 // --- Right pane: single chunk editor ---
 
 interface ChunkEditorProps {
-  chunkId: number
+  chunkId: string
   onMutated: () => void
 }
 
@@ -939,7 +939,7 @@ function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
 // --- Batch toolbar ---
 
 interface BatchToolbarProps {
-  selectedIds: number[]
+  selectedIds: string[]
   taxItems: TaxonomyTreeItem[]
   onMutated: () => void
   onClearSelection: () => void
@@ -993,7 +993,7 @@ function BatchToolbar({
     setActing(true)
     setBatchError(null)
     try {
-      const bid = bBridgeId.trim() ? Number(bBridgeId) : null
+      const bid = bBridgeId.trim() || null
       await batchChunks({
         chunk_ids: selectedIds,
         action: "update",
@@ -1013,7 +1013,7 @@ function BatchToolbar({
     setMerging(true)
     setBatchError(null)
     try {
-      const sorted = [...selectedIds].sort((a, b) => a - b)
+      const sorted = [...selectedIds].sort((a, b) => a.localeCompare(b))
       await mergeChunks({ chunk_ids: sorted })
       onClearSelection()
       onMutated()
@@ -1250,7 +1250,7 @@ function BatchToolbar({
 export function Component() {
   const { sourceId } = useParams()
   const navigate = useNavigate()
-  const sid = Number(sourceId)
+  const sid = sourceId!
 
   // Source info
   const { data: source } = useApi(() => fetchSource(sid), [sid])
@@ -1266,16 +1266,16 @@ export function Component() {
   const { data: taxTree } = useApi(fetchTaxonomyTree, [])
 
   // Selection state
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
 
   // Reindex state
   const [reindexing, setReindexing] = useState(false)
   const [reindexError, setReindexError] = useState<string | null>(null)
 
-  // Sort ascending by id (API returns descending)
+  // Sort ascending by created_at (UUID ids have no meaningful order)
   const chunks: ChunkListItem[] = [...(chunksData?.items ?? [])].sort(
-    (a, b) => a.id - b.id,
+    (a, b) => a.created_at.localeCompare(b.created_at),
   )
 
   const stale = staleCount(chunks)
@@ -1302,7 +1302,7 @@ export function Component() {
     }
   }, [chunks, selectedId])
 
-  function toggleCheck(id: number, checked: boolean) {
+  function toggleCheck(id: string, checked: boolean) {
     setCheckedIds((prev) => {
       const next = new Set(prev)
       if (checked) next.add(id)

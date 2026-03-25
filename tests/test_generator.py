@@ -1,15 +1,20 @@
 """Tests for Generator service."""
+import uuid
+
 import pytest
 
 from app.providers import ChatResponse
 from app.services.generator import Citation, Generator
 from app.services.hybrid_retriever import HybridRetrievalResult, RetrievedChunk
 
+_UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
+_UUID2 = uuid.UUID("00000000-0000-0000-0000-000000000002")
+
 
 def test_citation_structure():
     """Test Citation dataclass structure."""
-    citation = Citation(chunk_id=1, source_title="来源", page_range="10-12")
-    assert citation.chunk_id == 1
+    citation = Citation(chunk_id=_UUID1, source_title="来源", page_range="10-12")
+    assert citation.chunk_id == _UUID1
     assert citation.page_range == "10-12"
 
 
@@ -28,9 +33,9 @@ async def test_generate_v2_with_confidence():
     evidence = HybridRetrievalResult(
         anchor_chunks=[
             RetrievedChunk(
-                chunk_id=1,
+                chunk_id=_UUID1,
                 content="测试内容",
-                bridge_id=1,
+                bridge_id=_UUID1,
                 bridge_name="赵州桥",
                 score=0.9,
             ),
@@ -45,7 +50,7 @@ async def test_generate_v2_with_confidence():
     assert result.confidence.level == "high"
     assert result.confidence.reason == "证据充分"
     assert len(result.citations) == 1
-    assert result.citations[0].chunk_id == 1
+    assert result.citations[0].chunk_id == _UUID1
 
 
 @pytest.mark.asyncio
@@ -65,9 +70,9 @@ async def test_generate_v2_with_analogy():
         concept_chunks=[],
         analogy_chunks=[
             RetrievedChunk(
-                chunk_id=2,
+                chunk_id=_UUID2,
                 content="卢沟桥石墩设计",
-                bridge_id=2,
+                bridge_id=_UUID2,
                 bridge_name="卢沟桥",
                 score=0.8,
             ),

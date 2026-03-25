@@ -54,7 +54,9 @@ export function BridgeForm({
     bridge_type: initialData?.bridge_type || null,
     material: initialData?.material || null,
     era: initialData?.era || null,
-    location: initialData?.location || null,
+    region: initialData?.region || null,
+    latitude: initialData?.latitude ?? null,
+    longitude: initialData?.longitude ?? null,
     function: initialData?.function || null,
     summary: initialData?.summary || null,
   })
@@ -177,15 +179,43 @@ export function BridgeForm({
           </Select>
         </div>
 
-        {/* Location */}
+        {/* Region */}
         <div className="space-y-2">
-          <label className="text-sm font-medium">位置</label>
+          <label className="text-sm font-medium">区域</label>
           <Input
-            value={form.location || ""}
+            value={form.region || ""}
             onChange={(e) =>
-              setForm({ ...form, location: e.target.value || null })
+              setForm({ ...form, region: e.target.value || null })
             }
-            placeholder="地理位置"
+            placeholder="地理区域"
+          />
+        </div>
+
+        {/* Latitude */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">纬度</label>
+          <Input
+            type="number"
+            step="any"
+            value={form.latitude ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, latitude: e.target.value ? Number(e.target.value) : null })
+            }
+            placeholder="例如: 30.2741"
+          />
+        </div>
+
+        {/* Longitude */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">经度</label>
+          <Input
+            type="number"
+            step="any"
+            value={form.longitude ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, longitude: e.target.value ? Number(e.target.value) : null })
+            }
+            placeholder="例如: 120.1551"
           />
         </div>
 

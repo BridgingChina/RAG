@@ -1,5 +1,7 @@
 """Taxonomy management schemas."""
 from __future__ import annotations
+from uuid import UUID
+
 from pydantic import BaseModel, field_validator
 
 
@@ -38,7 +40,7 @@ class TaxonomyNodeUpdate(BaseModel):
 
 
 class TaxonomyNodeDetail(BaseModel):
-    id: int
+    id: UUID
     lvl1: str
     lvl2: str | None
     lvl3: str | None
@@ -47,7 +49,7 @@ class TaxonomyNodeDetail(BaseModel):
 
 
 class TaxonomyTreeItem(BaseModel):
-    node_id: int
+    node_id: UUID
     label: str
     chunk_count: int
     children: list[TaxonomyTreeItem]
@@ -58,7 +60,7 @@ class TaxonomyTree(BaseModel):
 
 
 class TaxonomyBatchUpdate(BaseModel):
-    chunk_ids: list[int]
+    chunk_ids: list[UUID]
     lvl1: str
     lvl2: str | None = None
     lvl3: str | None = None

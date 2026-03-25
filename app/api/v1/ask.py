@@ -1,6 +1,7 @@
 """V1 Ask API endpoint."""
 import asyncio
 import time
+import uuid
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -30,7 +31,7 @@ _provider_cache: dict[object, object] = {}
 _tokenizer_cache: dict[str | None, Tokenizer] = {}
 
 
-def _resolve_bridge_from_question(db: Session, question: str) -> int | None:
+def _resolve_bridge_from_question(db: Session, question: str) -> uuid.UUID | None:
     """Try to find a bridge whose name appears in the question text.
 
     Matches the longest bridge name first to avoid partial matches

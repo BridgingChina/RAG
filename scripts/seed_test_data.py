@@ -55,7 +55,7 @@ def seed_bridges(session: Session) -> dict[str, Bridge]:
         bridge = Bridge(
             name=b["name"],
             aliases=b.get("aliases"),
-            location=b.get("location"),
+            region=b.get("region"),
             era=b.get("era"),
             bridge_type=b.get("bridge_type"),
             material=b.get("material"),

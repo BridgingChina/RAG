@@ -137,7 +137,7 @@ export function Component() {
                       </TableCell>
                       <TableCell>{bridge.chunk_count}</TableCell>
                       <TableCell>
-                        {bridge.location || (
+                        {bridge.region || (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>

@@ -1,12 +1,13 @@
 """Ask endpoint request/response schemas."""
 from typing import Literal, TypeAlias
+from uuid import UUID
 
 from pydantic import BaseModel
 
 
 class AskContext(BaseModel):
     """Optional context for filtering retrieval."""
-    bridge_id: int | None = None
+    bridge_id: UUID | None = None
     lvl1: str | None = None
     lvl2: str | None = None
     lvl3: str | None = None
@@ -15,14 +16,14 @@ class AskContext(BaseModel):
 class AskRequest(BaseModel):
     """Request body for /api/v1/ask endpoint."""
     question: str
-    target_bridge_id: int | None = None
+    target_bridge_id: UUID | None = None
     context: AskContext | None = None
     debug: bool = False
 
 
 class CitationResponse(BaseModel):
     """Citation reference in response."""
-    chunk_id: int
+    chunk_id: UUID
     source_title: str
     page_range: str | None
 
@@ -38,8 +39,8 @@ class ConfidenceResponse(BaseModel):
 
 class ChunkSummary(BaseModel):
     """Summary of a retrieved chunk."""
-    chunk_id: int
-    bridge_id: int | None = None
+    chunk_id: UUID
+    bridge_id: UUID | None = None
     bridge_name: str | None = None
     preview: str
 
@@ -55,10 +56,10 @@ class ChannelDebugResponse(BaseModel):
     """Debug info for a single retrieval channel."""
     channel: str
     filter_desc: str
-    vec_ids: list[int]
-    fts_ids: list[int]
-    rrf_scores: list[list[int | float]]  # [[chunk_id, score], ...]
-    final_ids: list[int]
+    vec_ids: list[UUID]
+    fts_ids: list[UUID]
+    rrf_scores: list[list[UUID | float]]  # [[chunk_id, score], ...]
+    final_ids: list[UUID]
 
 
 class DebugResponse(BaseModel):

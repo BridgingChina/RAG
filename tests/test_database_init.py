@@ -112,6 +112,8 @@ class TestVerifySchemaCompatibility:
             "chunks",
             "chunk_bridge_links",
             "ingest_tasks",
+            "users",
+            "audit_logs",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -122,13 +124,16 @@ class TestVerifySchemaCompatibility:
                 "id",
                 "name",
                 "aliases",
-                "location",
+                "region",
+                "latitude",
+                "longitude",
                 "era",
                 "bridge_type",
                 "material",
                 "function",
                 "summary",
                 "created_at",
+                "updated_at",
             },
             "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description"},
             "chunks": {
@@ -176,6 +181,25 @@ class TestVerifySchemaCompatibility:
                 "created_by",
                 "created_at",
                 "updated_at",
+            },
+            "users": {
+                "id",
+                "username",
+                "hashed_password",
+                "display_name",
+                "is_active",
+                "created_at",
+                "updated_at",
+            },
+            "audit_logs": {
+                "id",
+                "user_id",
+                "action",
+                "resource_type",
+                "resource_id",
+                "detail",
+                "ip_address",
+                "created_at",
             },
         }
 
@@ -218,6 +242,8 @@ class TestVerifySchemaCompatibility:
             "chunks",
             "chunk_bridge_links",
             "ingest_tasks",
+            "users",
+            "audit_logs",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -228,13 +254,16 @@ class TestVerifySchemaCompatibility:
                 "id",
                 "name",
                 "aliases",
-                "location",
+                "region",
+                "latitude",
+                "longitude",
                 "era",
                 "bridge_type",
                 "material",
                 "function",
                 "summary",
                 "created_at",
+                "updated_at",
             },
             "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description"},
             "chunks": {
@@ -282,6 +311,25 @@ class TestVerifySchemaCompatibility:
                 "created_by",
                 "created_at",
                 "updated_at",
+            },
+            "users": {
+                "id",
+                "username",
+                "hashed_password",
+                "display_name",
+                "is_active",
+                "created_at",
+                "updated_at",
+            },
+            "audit_logs": {
+                "id",
+                "user_id",
+                "action",
+                "resource_type",
+                "resource_id",
+                "detail",
+                "ip_address",
+                "created_at",
             },
         }
         mock_columns_result.all.return_value = [
@@ -360,7 +408,7 @@ class TestInitDatabase:
 
         # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, LATEST_SCHEMA_VERSION, "Schema v6 with ingest_tasks table", conn=mock_conn
+            mock_engine, LATEST_SCHEMA_VERSION, "Schema v1: UUID primary keys, clean rebuild", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")
@@ -431,4 +479,4 @@ class TestInitDatabase:
         with pytest.raises(RuntimeError) as exc_info:
             init_database()
 
-        assert "Unsupported database schema version" in str(exc_info.value)
+        assert "Schema version mismatch" in str(exc_info.value)

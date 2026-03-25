@@ -1,6 +1,7 @@
 """Tests for V1 Ingest API endpoint."""
 import hashlib
 import json
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -88,8 +89,9 @@ def test_ingest_response_schema():
     """Test IngestResponse schema structure."""
     from app.api.v1.schemas import IngestResponse, IngestedChunkSummary
 
+    _uuid1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
     response = IngestResponse(
-        source_id=1,
+        source_id=_uuid1,
         title="测试文档",
         primary_bridge_names=["赵州桥"],
         ambiguous_chunk_count=0,
@@ -106,7 +108,7 @@ def test_ingest_response_schema():
             )
         ],
     )
-    assert response.source_id == 1
+    assert response.source_id == _uuid1
     assert response.chunk_count == 2
     assert response.primary_bridge_names == ["赵州桥"]
     assert len(response.chunks) == 1

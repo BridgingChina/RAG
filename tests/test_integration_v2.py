@@ -4,6 +4,8 @@ Tests the full pipeline of tokenizer, facet extraction, hybrid retrieval,
 and generation with confidence assessment.
 """
 
+import uuid
+
 import pytest
 
 from app.core.constants import EMBEDDING_DIM
@@ -16,6 +18,18 @@ from app.services.hybrid_retriever import (
     RetrievedChunk,
 )
 from app.services.generator import Generator, GenerationResultV2, Confidence
+
+# Deterministic UUID constants for test IDs
+_UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
+_UUID2 = uuid.UUID("00000000-0000-0000-0000-000000000002")
+_UUID3 = uuid.UUID("00000000-0000-0000-0000-000000000003")
+_UUID4 = uuid.UUID("00000000-0000-0000-0000-000000000004")
+_UUID5 = uuid.UUID("00000000-0000-0000-0000-000000000005")
+_UUID10 = uuid.UUID("00000000-0000-0000-0000-000000000010")
+_UUID20 = uuid.UUID("00000000-0000-0000-0000-000000000020")
+_UUID30 = uuid.UUID("00000000-0000-0000-0000-000000000030")
+_UUID6 = uuid.UUID("00000000-0000-0000-0000-000000000006")
+_UUID7 = uuid.UUID("00000000-0000-0000-0000-000000000007")
 
 
 class MockProvider:
@@ -116,21 +130,21 @@ def test_rrf_merge_integration():
     - Handles empty lists
     """
     # Test basic merge with overlap
-    vec_results = [1, 2, 3, 4, 5]
-    fts_results = [3, 1, 6, 7]
+    vec_results = [_UUID1, _UUID2, _UUID3, _UUID4, _UUID5]
+    fts_results = [_UUID3, _UUID1, _UUID6, _UUID7]
 
     merged = rrf_merge(vec_results, fts_results, k=60)
 
-    # Item 3 appears in both lists (rank 3 and rank 1) -> highest score
-    # Item 1 appears in both lists (rank 1 and rank 2) -> second highest
+    # _UUID3 appears in both lists (rank 3 and rank 1) -> highest score
+    # _UUID1 appears in both lists (rank 1 and rank 2) -> second highest
     assert len(merged) == 7  # All unique items
 
     # Convert to dict for easier assertions
     score_map = dict(merged)
 
     # Items in both lists should have higher scores
-    assert score_map[3] > score_map[2]
-    assert score_map[1] > score_map[4]
+    assert score_map[_UUID3] > score_map[_UUID2]
+    assert score_map[_UUID1] > score_map[_UUID4]
 
     # Results should be sorted by score descending
     scores = [s for _, s in merged]
@@ -138,7 +152,7 @@ def test_rrf_merge_integration():
 
     # Test with empty lists
     assert rrf_merge([], [], k=60) == []
-    assert rrf_merge([1, 2], [], k=60) == [(1, 1/61), (2, 1/62)]
+    assert rrf_merge([_UUID1, _UUID2], [], k=60) == [(_UUID1, 1/61), (_UUID2, 1/62)]
 
 
 def test_hybrid_retrieval_result_structure():
@@ -152,15 +166,15 @@ def test_hybrid_retrieval_result_structure():
     """
     # Create test chunks
     anchor = [
-        RetrievedChunk(chunk_id=1, content="A1", bridge_id=10, bridge_name="桥A", score=0.9),
-        RetrievedChunk(chunk_id=2, content="A2", bridge_id=10, bridge_name="桥A", score=0.8),
+        RetrievedChunk(chunk_id=_UUID1, content="A1", bridge_id=_UUID10, bridge_name="桥A", score=0.9),
+        RetrievedChunk(chunk_id=_UUID2, content="A2", bridge_id=_UUID10, bridge_name="桥A", score=0.8),
     ]
     concept = [
-        RetrievedChunk(chunk_id=3, content="C1", bridge_id=None, bridge_name="", score=0.7),
+        RetrievedChunk(chunk_id=_UUID3, content="C1", bridge_id=None, bridge_name="", score=0.7),
     ]
     analogy = [
-        RetrievedChunk(chunk_id=4, content="X1", bridge_id=20, bridge_name="桥B", score=0.6),
-        RetrievedChunk(chunk_id=5, content="X2", bridge_id=30, bridge_name="桥C", score=0.5),
+        RetrievedChunk(chunk_id=_UUID4, content="X1", bridge_id=_UUID20, bridge_name="桥B", score=0.6),
+        RetrievedChunk(chunk_id=_UUID5, content="X2", bridge_id=_UUID30, bridge_name="桥C", score=0.5),
     ]
 
     result = HybridRetrievalResult(
@@ -175,11 +189,11 @@ def test_hybrid_retrieval_result_structure():
     assert len(all_chunks) == 5
 
     # Check order: anchor -> concept -> analogy
-    assert all_chunks[0].chunk_id == 1
-    assert all_chunks[1].chunk_id == 2
-    assert all_chunks[2].chunk_id == 3
-    assert all_chunks[3].chunk_id == 4
-    assert all_chunks[4].chunk_id == 5
+    assert all_chunks[0].chunk_id == _UUID1
+    assert all_chunks[1].chunk_id == _UUID2
+    assert all_chunks[2].chunk_id == _UUID3
+    assert all_chunks[3].chunk_id == _UUID4
+    assert all_chunks[4].chunk_id == _UUID5
 
     # Check metadata preservation
     assert all_chunks[0].bridge_name == "桥A"
@@ -208,13 +222,13 @@ async def test_generator_v2_integration():
     # Create mock evidence with all three channels
     evidence = HybridRetrievalResult(
         anchor_chunks=[
-            RetrievedChunk(chunk_id=1, content="赵州桥信息", bridge_id=1, bridge_name="赵州桥", score=0.9),
+            RetrievedChunk(chunk_id=_UUID1, content="赵州桥信息", bridge_id=_UUID1, bridge_name="赵州桥", score=0.9),
         ],
         concept_chunks=[
-            RetrievedChunk(chunk_id=2, content="通用知识", bridge_id=None, bridge_name="", score=0.7),
+            RetrievedChunk(chunk_id=_UUID2, content="通用知识", bridge_id=None, bridge_name="", score=0.7),
         ],
         analogy_chunks=[
-            RetrievedChunk(chunk_id=3, content="类比桥信息", bridge_id=2, bridge_name="卢沟桥", score=0.6),
+            RetrievedChunk(chunk_id=_UUID3, content="类比桥信息", bridge_id=_UUID2, bridge_name="卢沟桥", score=0.6),
         ],
     )
 
@@ -234,7 +248,7 @@ async def test_generator_v2_integration():
     # Check citations - should have one per chunk
     assert len(result.citations) == 3
     citation_ids = [c.chunk_id for c in result.citations]
-    assert citation_ids == [1, 2, 3]
+    assert citation_ids == [_UUID1, _UUID2, _UUID3]
 
     # Check sources - should have unique source titles
     # Note: empty bridge_name becomes "来源2" fallback
@@ -300,18 +314,18 @@ async def test_full_pipeline_integration():
     assert facet.bridge_type == "石拱桥"
 
     # Step 3: RRF merge (simulated retrieval results)
-    vec = [1, 2, 3]
-    fts = [2, 3, 4]
+    vec = [_UUID1, _UUID2, _UUID3]
+    fts = [_UUID2, _UUID3, _UUID4]
     merged = rrf_merge(vec, fts, k=60)
     merged_ids = [cid for cid, _ in merged]
     assert len(merged_ids) == 4
-    assert 2 in merged_ids  # Item in both lists
-    assert 3 in merged_ids  # Item in both lists
+    assert _UUID2 in merged_ids  # Item in both lists
+    assert _UUID3 in merged_ids  # Item in both lists
 
     # Step 4: Generate V2 result
     evidence = HybridRetrievalResult(
         anchor_chunks=[
-            RetrievedChunk(chunk_id=1, content="赵州桥信息", bridge_id=1, bridge_name="赵州桥", score=0.9),
+            RetrievedChunk(chunk_id=_UUID1, content="赵州桥信息", bridge_id=_UUID1, bridge_name="赵州桥", score=0.9),
         ],
         concept_chunks=[],
         analogy_chunks=[],
