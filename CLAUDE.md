@@ -81,10 +81,10 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 1 — Clean rebuild with UUID v4 primary keys (all tables created fresh, no incremental migrations)
+- Current version: 2 — Adds knowledge_points + knowledge_point_key_points tables
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
-- Schema migration: `python scripts/migrate_db.py`（当前为版本检查占位符，clean rebuild 无增量迁移）
+- Schema migration: `python scripts/migrate_db.py`（支持增量迁移，`MIGRATIONS` dict 定义版本间迁移函数）
 
 ## Architecture
 
@@ -131,6 +131,8 @@ The system uses automatic schema versioning:
 - `users` — 用户账户（username/hashed_password/display_name/is_active）
 - `audit_logs` — 审计日志（user_id/action/resource_type/resource_id/detail/ip_address）
 - `ingest_tasks` — 异步入库任务（status/file_name/file_type/r2_raw_key/zhipu_task_id/source_id/parsed_content）
+- `knowledge_points` — 知识点实体（name/aliases/difficulty/summary/l2_content JSONB），挂在 taxonomy_nodes lvl3 下
+- `knowledge_point_key_points` — 知识点要点（summary/explanation/order_index/chunk_ids[]），ON DELETE CASCADE
 
 **API Endpoints:**
 
@@ -147,7 +149,9 @@ The system uses automatic schema versioning:
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 - Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
 - Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
-- 除 `/health` 和 `/auth/login` 外，所有端点均需 JWT Bearer token 认证
+- Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /api/mobile/v1/bridges`, `GET /api/mobile/v1/bridges/{id}`, `GET /api/mobile/v1/bridges/{id}/knowledge-points`, `GET /api/mobile/v1/knowledge/tree`, `GET /api/mobile/v1/knowledge/points/{id}`, `GET /api/mobile/v1/knowledge/points/{id}/bridges`, `POST /api/mobile/v1/qa/ask` (SSE), `GET /api/mobile/v1/search`
+- Mobile endpoints use `MobileResponse`/`MobilePaginatedResponse` wrappers (not `PaginatedResponse`)
+- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证
 - 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
@@ -204,12 +208,14 @@ title: 资料标题
 - 智谱文件解析 API `download_link` 模式下 `content=None` — 解析结果在 zip 包（`result.md` + `images/`）里，不在 `content` 字段中。`text` 模式有 1MB 上限
 - `test_health_endpoint` 已知失败 — health 端点加了 `commit`/`build_date` 但测试断言未更新（来自 `66af062`）
 - 类型迁移（如 int→UUID）时注意"边缘文件" — `schemas/stats.py` 等非主路径 schema、前端组件的 `useState<number>` 局部状态不在主依赖链上，IDE/tsc 未必能检出
-- `migrate_db.py` 当前为版本检查占位符 — 版本不匹配时以非零退出码退出，不做实际迁移
+- `migrate_db.py` 增量迁移脚本 — `MIGRATIONS` dict 按版本号索引迁移函数，`docker-entrypoint.sh` 启动时自动执行
 - Ingest task 软删除：`status="deleted"` 保留任务记录和 R2 文件，`_cleanup_task_data` 清理 chunks/bridge_links/source 但不删 R2 — retry/delete/batch-delete 共用
 - `useApi` hook 的 `loading` 每次 `refetch()` 都重置为 `true` — 轮询场景用 `loading && !data` 显示骨架屏，避免每 3 秒闪烁
 - Worktree 开发修改共享类型（如 `IngestTaskStatus` 加枚举值）后，main 上未修改的旧组件可能引用该类型而报错 — worktree 中 `tsc` 不会检查 main 独有的文件，squash merge 后 Docker build 才暴露
 - `ChunkEditor` 的 `handleConflictError` + conflict dialog 被 save/split/delete 共用 — 修改对话框文案时要保持通用（不能用 save-specific 语言）
 - 进入新 UI 模式（如 split mode）时必须 `setActionError(null)` — 否则前一个操作的错误会泄漏到新模式
+- Mobile API 响应格式与管理后台不同：`{"data": ..., "meta": ...}` 而非 `{"items": ..., "total": ...}`
+- `generate_streaming()` 返回 `list[tuple]` 而非 async generator — 伪流式，单次 LLM 调用后拆分，后续 TODO 升级为真流式
 
 ## Worktrees
 

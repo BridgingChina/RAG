@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
 
 
 def get_db():
@@ -124,6 +124,15 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "r2_raw_key", "r2_parsed_prefix", "zhipu_task_id",
             "source_id", "parsed_content", "chunk_count", "image_count",
             "error_message", "created_by", "created_at", "updated_at",
+        },
+        "knowledge_points": {
+            "id", "taxonomy_node_id", "name", "aliases", "difficulty",
+            "summary", "l2_content", "created_at", "updated_at",
+        },
+        "knowledge_point_key_points": {
+            "id", "knowledge_point_id", "summary", "explanation",
+            "order_index", "chunk_ids", "illustration_urls",
+            "related_term_ids", "created_at",
         },
     }
 
@@ -301,7 +310,7 @@ def init_database() -> None:
             # Set initial version
             set_schema_version(
                 engine, LATEST_SCHEMA_VERSION,
-                "Schema v1: UUID primary keys, clean rebuild",
+                "Schema v2: knowledge_points + knowledge_point_key_points",
                 conn=conn,
             )
 

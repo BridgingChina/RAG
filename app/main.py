@@ -52,6 +52,10 @@ app.add_middleware(
 # API v1 routes
 app.include_router(v1_router, prefix="/api/v1", tags=["v1"])
 
+# Mobile API routes (no auth required)
+from app.api.mobile import router as mobile_router
+app.include_router(mobile_router, prefix="/api/mobile/v1", tags=["mobile"])
+
 
 @app.get("/health")
 async def health():
