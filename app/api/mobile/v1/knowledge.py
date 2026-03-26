@@ -148,6 +148,34 @@ def get_knowledge_point(
             "typical_bridges_count": 0,
         }
 
+    # Build chunk_id → source mapping for citations
+    all_chunk_ids: list = []
+    for kp_item in key_points:
+        if kp_item.chunk_ids:
+            all_chunk_ids.extend(kp_item.chunk_ids)
+
+    # Map chunk_id → source_id, then dedupe sources with stable IDs
+    chunk_to_source: dict = {}
+    sources: list[dict] = []
+    source_id_map: dict = {}  # source.id → display index (1-based)
+    if all_chunk_ids:
+        from app.models import Chunk, Source
+        rows = (
+            db.query(Chunk.id, Source.id, Source.title, Source.type)
+            .join(Source, Chunk.source_id == Source.id)
+            .filter(Chunk.id.in_(all_chunk_ids))
+            .all()
+        )
+        for chunk_id, source_id, source_title, source_type in rows:
+            chunk_to_source[chunk_id] = source_id
+            if source_id not in source_id_map:
+                idx = len(source_id_map) + 1
+                source_id_map[source_id] = idx
+                sources.append({
+                    "id": idx, "title": source_title, "author": None,
+                    "type": source_type, "excerpt": None, "location": None,
+                })
+
     if level in ("L1", "all"):
         result["l1"] = {
             "key_points": [
@@ -160,7 +188,11 @@ def get_knowledge_point(
                         for url in (kp_item.illustration_urls or [])
                     ],
                     "related_terms": [],
-                    "citations": list(range(1, len(kp_item.chunk_ids or []) + 1)),
+                    "citations": sorted({
+                        source_id_map[chunk_to_source[cid]]
+                        for cid in (kp_item.chunk_ids or [])
+                        if cid in chunk_to_source and chunk_to_source[cid] in source_id_map
+                    }),
                 }
                 for kp_item in key_points
             ],
@@ -169,27 +201,6 @@ def get_knowledge_point(
     if level in ("L2", "all"):
         result["l2"] = kp.l2_content or {}
 
-    # Sources: aggregate from chunk_ids
-    all_chunk_ids: list = []
-    for kp_item in key_points:
-        if kp_item.chunk_ids:
-            all_chunk_ids.extend(kp_item.chunk_ids)
-
-    sources: list[dict] = []
-    if all_chunk_ids:
-        from app.models import Chunk, Source
-        rows = (
-            db.query(Source.id, Source.title, Source.type)
-            .join(Chunk, Chunk.source_id == Source.id)
-            .filter(Chunk.id.in_(all_chunk_ids))
-            .distinct()
-            .all()
-        )
-        for idx, row in enumerate(rows, 1):
-            sources.append({
-                "id": idx, "title": row.title, "author": None,
-                "type": row.type, "excerpt": None, "location": None,
-            })
     result["sources"] = sources
 
     return MobileResponse(data=result)
