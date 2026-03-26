@@ -45,6 +45,14 @@ class RetrievedChunk:
 
 
 @dataclass
+class TaxonomyFilter:
+    """Filter chunks by taxonomy labels."""
+    lvl1: str | None = None
+    lvl2: str | None = None
+    lvl3: str | None = None
+
+
+@dataclass
 class ChannelDebug:
     """Debug info for a single retrieval channel."""
     channel: str                                  # "anchor" | "concept" | "analogy"
@@ -153,6 +161,7 @@ class HybridRetriever:
         db: Session,
         query: str,
         target_bridge_id: Optional[uuid.UUID] = None,
+        taxonomy_filter: Optional[TaxonomyFilter] = None,
         quota: tuple[int, int, int] = DEFAULT_QUOTA,
         facet: Optional[Facet] = None,
         debug: bool = False,
@@ -190,7 +199,7 @@ class HybridRetriever:
 
         # Execute three channels
         anchor_chunks: list[RetrievedChunk] = []
-        if target_bridge_id is not None and anchor_quota > 0:
+        if anchor_quota > 0 and (target_bridge_id is not None or taxonomy_filter is not None):
             if debug:
                 t0 = time.perf_counter()
             anchor_chunks, anchor_dbg = await self._retrieve_channel(
@@ -198,6 +207,7 @@ class HybridRetriever:
                 query,
                 query_embedding,
                 bridge_filter=target_bridge_id,
+                taxonomy_filter=taxonomy_filter if target_bridge_id is None else None,
                 limit=anchor_quota,
                 debug=debug,
                 channel_name="anchor",
@@ -266,6 +276,7 @@ class HybridRetriever:
         query_embedding: list[float],
         bridge_filter: Optional[uuid.UUID | list[uuid.UUID]] = None,
         require_no_bridge_id: bool = False,
+        taxonomy_filter: Optional[TaxonomyFilter] = None,
         limit: int = 10,
         debug: bool = False,
         channel_name: str = "",
@@ -290,10 +301,12 @@ class HybridRetriever:
 
         # Run vector and FTS search in parallel
         vec_results = self._vector_search(
-            db, query_embedding, bridge_filter, require_no_bridge_id, fetch_limit
+            db, query_embedding, bridge_filter, require_no_bridge_id, fetch_limit,
+            taxonomy_filter=taxonomy_filter,
         )
         fts_results = self._fts_search(
-            db, query, bridge_filter, require_no_bridge_id, fetch_limit
+            db, query, bridge_filter, require_no_bridge_id, fetch_limit,
+            taxonomy_filter=taxonomy_filter,
         )
 
         # RRF fusion
@@ -371,6 +384,7 @@ class HybridRetriever:
         bridge_filter: Optional[uuid.UUID | list[uuid.UUID]],
         require_no_bridge_id: bool,
         limit: int,
+        taxonomy_filter: Optional[TaxonomyFilter] = None,
     ) -> list[uuid.UUID]:
         """Perform vector similarity search using pgvector.
 
@@ -395,6 +409,17 @@ class HybridRetriever:
             if require_no_bridge_id:
                 sql += " AND bridge_id IS NULL"
 
+            if taxonomy_filter:
+                if taxonomy_filter.lvl1:
+                    sql += " AND lvl1 = :tax_lvl1"
+                    params["tax_lvl1"] = taxonomy_filter.lvl1
+                if taxonomy_filter.lvl2:
+                    sql += " AND lvl2 = :tax_lvl2"
+                    params["tax_lvl2"] = taxonomy_filter.lvl2
+                if taxonomy_filter.lvl3:
+                    sql += " AND lvl3 = :tax_lvl3"
+                    params["tax_lvl3"] = taxonomy_filter.lvl3
+
             sql += " ORDER BY embedding <=> (:embedding)::vector LIMIT :limit"
             stmt = text(sql)
             if bind_params:
@@ -411,6 +436,7 @@ class HybridRetriever:
         bridge_filter: Optional[uuid.UUID | list[uuid.UUID]],
         require_no_bridge_id: bool,
         limit: int,
+        taxonomy_filter: Optional[TaxonomyFilter] = None,
     ) -> list[uuid.UUID]:
         """Perform full-text search using PostgreSQL GIN index.
 
@@ -441,6 +467,17 @@ class HybridRetriever:
 
             if require_no_bridge_id:
                 sql += " AND bridge_id IS NULL"
+
+            if taxonomy_filter:
+                if taxonomy_filter.lvl1:
+                    sql += " AND lvl1 = :tax_lvl1"
+                    params["tax_lvl1"] = taxonomy_filter.lvl1
+                if taxonomy_filter.lvl2:
+                    sql += " AND lvl2 = :tax_lvl2"
+                    params["tax_lvl2"] = taxonomy_filter.lvl2
+                if taxonomy_filter.lvl3:
+                    sql += " AND lvl3 = :tax_lvl3"
+                    params["tax_lvl3"] = taxonomy_filter.lvl3
 
             sql += """
                 ORDER BY ts_rank(tsv, to_tsquery('simple', :tsquery)) DESC
