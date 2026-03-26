@@ -106,3 +106,60 @@ async def test_generate_v2_parse_error_fallback():
     # Should fallback gracefully
     assert result.confidence.level == "low"
     assert "无法解析" in result.confidence.reason or "格式错误" in result.confidence.reason
+
+
+@pytest.mark.asyncio
+async def test_generate_streaming_returns_event_list():
+    """Test generate_streaming returns structured SSE events."""
+
+    class MockProvider:
+        async def chat(self, messages):
+            return ChatResponse(
+                content='{"key_points": [{"summary": "要点一", "explanation": "解释一", "citations": [1]}, {"summary": "要点二", "explanation": "解释二", "citations": [2]}], "deep_dive": null, "confidence": {"level": "high", "reason": "充分"}}',
+                usage={"total_tokens": 200},
+            )
+
+    generator = Generator(provider=MockProvider())
+    evidence = HybridRetrievalResult(
+        anchor_chunks=[
+            RetrievedChunk(chunk_id=_UUID1, content="内容一", bridge_id=_UUID1, bridge_name="赵州桥", score=0.9),
+            RetrievedChunk(chunk_id=_UUID2, content="内容二", bridge_id=_UUID1, bridge_name="赵州桥", score=0.8),
+        ],
+        concept_chunks=[],
+        analogy_chunks=[],
+    )
+    events = await generator.generate_streaming("测试问题", evidence)
+
+    assert isinstance(events, list)
+    event_types = [e[0] for e in events]
+    assert event_types[0] == "outline"
+    assert event_types[1] == "detail"
+    assert event_types[2] == "detail"
+    assert event_types[3] == "sources"
+
+    outline_data = events[0][1]
+    assert len(outline_data["key_points"]) == 2
+    assert outline_data["key_points"][0]["summary"] == "要点一"
+
+    detail_data = events[1][1]
+    assert detail_data["explanation"] == "解释一"
+
+
+@pytest.mark.asyncio
+async def test_generate_streaming_fallback_on_bad_json():
+    """Test generate_streaming handles malformed LLM output."""
+
+    class MockProvider:
+        async def chat(self, messages):
+            return ChatResponse(content="这不是JSON", usage={"total_tokens": 50})
+
+    generator = Generator(provider=MockProvider())
+    evidence = HybridRetrievalResult(
+        anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
+    )
+    events = await generator.generate_streaming("测试问题", evidence)
+
+    assert isinstance(events, list)
+    assert len(events) >= 1
+    event_types = [e[0] for e in events]
+    assert "outline" in event_types or "error" in event_types

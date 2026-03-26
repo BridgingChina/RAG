@@ -175,3 +175,128 @@ class Generator:
                 citations=citations,
                 sources=sources,
             )
+
+    async def generate_streaming(
+        self,
+        question: str,
+        evidence: HybridRetrievalResult,
+    ) -> list[tuple[str, dict]]:
+        """Single LLM call + pseudo-streaming split into SSE events.
+
+        Returns list of (event_type, data) tuples:
+        - ("outline", {"key_points": [...]})
+        - ("detail", {"key_point_id": ..., "explanation": ..., "citations": [...]})
+        - ("deep_dive", {...})  -- if present
+        - ("sources", {"sources": [...]})
+
+        TODO: Upgrade to real LLM streaming with async generator.
+        """
+        from app.services.hybrid_retriever import format_evidence_for_llm
+
+        evidence_text = format_evidence_for_llm(evidence)
+
+        prompt = f"""你是桥梁知识助手。根据以下证据回答问题。
+
+{evidence_text}
+
+问题：{question}
+
+请按以下JSON格式回答（不要输出任何其他内容）：
+{{
+    "key_points": [
+        {{"summary": "要点摘要", "explanation": "详细解释", "citations": [1, 2]}}
+    ],
+    "deep_dive": null,
+    "confidence": {{
+        "level": "high|medium|low",
+        "reason": "置信度理由"
+    }}
+}}
+
+要求：
+- key_points 包含 3~7 个要点，每个有 summary（一句话）和 explanation（展开说明）
+- citations 引用证据编号（从1开始）
+- deep_dive 如有比较或争议可填写，否则 null
+- 置信度按证据充分程度判断"""
+
+        messages = [ChatMessage(role="user", content=prompt)]
+        response = await self.provider.chat(messages)
+
+        return self._parse_streaming_response(response.content, evidence)
+
+    def _parse_streaming_response(
+        self,
+        content: str,
+        evidence: HybridRetrievalResult,
+    ) -> list[tuple[str, dict]]:
+        """Parse LLM JSON response into a list of SSE events."""
+        events: list[tuple[str, dict]] = []
+
+        try:
+            json_start = content.find("{")
+            json_end = content.rfind("}") + 1
+            if json_start < 0 or json_end <= json_start:
+                raise json.JSONDecodeError("No JSON found", content, 0)
+
+            data = json.loads(content[json_start:json_end])
+            key_points = data.get("key_points", [])
+
+            kp_entries = []
+            for i, kp in enumerate(key_points, 1):
+                kp_id = str(uuid.uuid4())
+                kp_entries.append({
+                    "id": kp_id,
+                    "summary": kp.get("summary", ""),
+                    "order": i,
+                    "_explanation": kp.get("explanation", ""),
+                    "_citations": kp.get("citations", []),
+                })
+
+            events.append(("outline", {
+                "key_points": [
+                    {"id": kp["id"], "summary": kp["summary"], "order": kp["order"]}
+                    for kp in kp_entries
+                ],
+            }))
+
+            for kp in kp_entries:
+                events.append(("detail", {
+                    "key_point_id": kp["id"],
+                    "explanation": kp["_explanation"],
+                    "citations": kp["_citations"],
+                }))
+
+            deep_dive = data.get("deep_dive")
+            if deep_dive:
+                events.append(("deep_dive", deep_dive))
+
+        except (json.JSONDecodeError, KeyError, TypeError):
+            fallback_id = str(uuid.uuid4())
+            events.append(("outline", {
+                "key_points": [{"id": fallback_id, "summary": content[:200], "order": 1}],
+            }))
+            events.append(("detail", {
+                "key_point_id": fallback_id,
+                "explanation": content,
+                "citations": [],
+            }))
+
+        # Sources event
+        all_chunks = evidence.all_chunks()
+        sources = []
+        seen_sources: set[str] = set()
+        for i, chunk in enumerate(all_chunks, 1):
+            source_title = chunk.bridge_name or f"来源{i}"
+            if source_title not in seen_sources:
+                sources.append({
+                    "id": i,
+                    "title": source_title,
+                    "author": None,
+                    "type": None,
+                    "excerpt": chunk.content[:100] if chunk.content else None,
+                    "location": None,
+                })
+                seen_sources.add(source_title)
+        events.append(("sources", {"sources": sources}))
+
+        return events
