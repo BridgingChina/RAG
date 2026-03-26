@@ -4,6 +4,8 @@ from app.models.bridge import Bridge
 from app.models.chunk import Chunk
 from app.models.chunk_bridge_link import ChunkBridgeLink
 from app.models.ingest_task import IngestTask
+from app.models.knowledge_point import KnowledgePoint
+from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
 from app.models.schema_version import SchemaVersion
 from app.models.source import Source
 from app.models.taxonomy import TaxonomyNode
@@ -16,6 +18,8 @@ __all__ = [
     "Chunk",
     "ChunkBridgeLink",
     "IngestTask",
+    "KnowledgePoint",
+    "KnowledgePointKeyPoint",
     "SchemaVersion",
     "Source",
     "TaxonomyNode",
