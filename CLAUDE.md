@@ -84,7 +84,7 @@ The system uses automatic schema versioning:
 - Current version: 2 — Adds knowledge_points + knowledge_point_key_points tables
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
-- Schema migration: `python scripts/migrate_db.py`（当前为版本检查占位符，clean rebuild 无增量迁移）
+- Schema migration: `python scripts/migrate_db.py`（支持增量迁移，`MIGRATIONS` dict 定义版本间迁移函数）
 
 ## Architecture
 
@@ -151,7 +151,7 @@ The system uses automatic schema versioning:
 - Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
 - Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /bridges`, `GET /bridges/{id}`, `GET /bridges/{id}/knowledge-points`, `GET /knowledge/tree`, `GET /knowledge/points/{id}`, `GET /knowledge/points/{id}/bridges`, `POST /qa/ask` (SSE), `GET /search`
 - Mobile endpoints use `MobileResponse`/`MobilePaginatedResponse` wrappers (not `PaginatedResponse`)
-- 除 `/health` 和 `/auth/login` 外，所有端点均需 JWT Bearer token 认证
+- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证
 - 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
@@ -208,7 +208,7 @@ title: 资料标题
 - 智谱文件解析 API `download_link` 模式下 `content=None` — 解析结果在 zip 包（`result.md` + `images/`）里，不在 `content` 字段中。`text` 模式有 1MB 上限
 - `test_health_endpoint` 已知失败 — health 端点加了 `commit`/`build_date` 但测试断言未更新（来自 `66af062`）
 - 类型迁移（如 int→UUID）时注意"边缘文件" — `schemas/stats.py` 等非主路径 schema、前端组件的 `useState<number>` 局部状态不在主依赖链上，IDE/tsc 未必能检出
-- `migrate_db.py` 当前为版本检查占位符 — 版本不匹配时以非零退出码退出，不做实际迁移
+- `migrate_db.py` 增量迁移脚本 — `MIGRATIONS` dict 按版本号索引迁移函数，`docker-entrypoint.sh` 启动时自动执行
 - Ingest task 软删除：`status="deleted"` 保留任务记录和 R2 文件，`_cleanup_task_data` 清理 chunks/bridge_links/source 但不删 R2 — retry/delete/batch-delete 共用
 - `useApi` hook 的 `loading` 每次 `refetch()` 都重置为 `true` — 轮询场景用 `loading && !data` 显示骨架屏，避免每 3 秒闪烁
 - Worktree 开发修改共享类型（如 `IngestTaskStatus` 加枚举值）后，main 上未修改的旧组件可能引用该类型而报错 — worktree 中 `tsc` 不会检查 main 独有的文件，squash merge 后 Docker build 才暴露
