@@ -1,4 +1,5 @@
 """Mobile API: Bridge endpoints."""
+import math
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,11 @@ from app.models import Bridge, Chunk
 router = APIRouter()
 
 
+def _escape_like(s: str) -> str:
+    """Escape SQL LIKE metacharacters."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @router.get("")
 def list_bridges(
     bridge_type: str | None = None,
@@ -22,7 +28,7 @@ def list_bridges(
     near_lat: float | None = None,
     near_lng: float | None = None,
     near_radius: int = Query(default=50000, ge=1),
-    sort: str = "name",
+    sort: str = Query(default="name", pattern="^(name)$"),  # TODO: add "distance", "era"
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -39,13 +45,16 @@ def list_bridges(
         if eras:
             query = query.filter(Bridge.era.in_(eras))
     if region:
-        query = query.filter(Bridge.region.ilike(f"%{region}%"))
+        escaped = _escape_like(region)
+        query = query.filter(Bridge.region.ilike(f"%{escaped}%"))
     if keyword:
-        pattern = f"%{keyword}%"
+        escaped = _escape_like(keyword)
+        pattern = f"%{escaped}%"
         query = query.filter(or_(Bridge.name.ilike(pattern), Bridge.aliases.ilike(pattern)))
     if near_lat is not None and near_lng is not None:
         delta_lat = near_radius / 111_000
-        delta_lng = near_radius / 111_000
+        # Adjust longitude delta for latitude (1° longitude ≈ 111km * cos(lat))
+        delta_lng = near_radius / (111_000 * max(math.cos(math.radians(near_lat)), 0.01))
         query = query.filter(
             Bridge.latitude.isnot(None),
             Bridge.latitude.between(near_lat - delta_lat, near_lat + delta_lat),
@@ -67,7 +76,7 @@ def list_bridges(
 
     return MobilePaginatedResponse(
         data={"bridges": items},
-        meta=MobileMeta(total=total, page=page, page_size=page_size, has_more=(page * page_size < total)),
+        meta=MobileMeta(total=total, page=page, page_size=page_size),
     )
 
 

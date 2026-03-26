@@ -22,5 +22,5 @@ def search(
     """
     return MobilePaginatedResponse(
         data={"results": [], "suggestions": []},
-        meta=MobileMeta(total=0, page=page, page_size=page_size, has_more=False),
+        meta=MobileMeta(total=0, page=page, page_size=page_size),
     )

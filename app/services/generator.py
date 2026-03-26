@@ -1,10 +1,13 @@
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Literal, Optional, TypeAlias
 
 from app.providers import ChatMessage, LLMProvider
 from app.services.hybrid_retriever import HybridRetrievalResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -222,6 +225,10 @@ class Generator:
         messages = [ChatMessage(role="user", content=prompt)]
         response = await self.provider.chat(messages)
 
+        if not response.content:
+            logger.warning("LLM returned empty content for streaming QA")
+            return [("error", {"code": "EMPTY_LLM_RESPONSE", "message": "LLM返回了空响应"})]
+
         return self._parse_streaming_response(response.content, evidence)
 
     def _parse_streaming_response(
@@ -270,7 +277,8 @@ class Generator:
             if deep_dive:
                 events.append(("deep_dive", deep_dive))
 
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("Failed to parse streaming LLM response, falling back to raw text: %s", e)
             fallback_id = str(uuid.uuid4())
             events.append(("outline", {
                 "key_points": [{"id": fallback_id, "summary": content[:200], "order": 1}],
@@ -281,15 +289,15 @@ class Generator:
                 "citations": [],
             }))
 
-        # Sources event
+        # Sources event — contiguous IDs for deduplicated sources
         all_chunks = evidence.all_chunks()
         sources = []
         seen_sources: set[str] = set()
-        for i, chunk in enumerate(all_chunks, 1):
-            source_title = chunk.bridge_name or f"来源{i}"
+        for chunk in all_chunks:
+            source_title = chunk.bridge_name or f"来源"
             if source_title not in seen_sources:
                 sources.append({
-                    "id": i,
+                    "id": len(sources) + 1,
                     "title": source_title,
                     "author": None,
                     "type": None,

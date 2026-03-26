@@ -15,3 +15,25 @@ def test_mobile_qa_ask_accepts_post():
         json={"question": "测试问题"},
     )
     assert response.status_code not in (404, 405)
+
+
+def test_qa_request_rejects_empty_question():
+    """POST with empty question string returns 422."""
+    from fastapi.testclient import TestClient
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.post(
+        "/api/mobile/v1/qa/ask",
+        json={"question": ""},
+    )
+    assert response.status_code == 422
+
+
+def test_qa_context_rejects_invalid_type():
+    """POST with invalid context type returns 422."""
+    from fastapi.testclient import TestClient
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.post(
+        "/api/mobile/v1/qa/ask",
+        json={"question": "test", "context": {"type": "invalid_type"}},
+    )
+    assert response.status_code == 422

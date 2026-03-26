@@ -1,15 +1,16 @@
 """Mobile QA schemas."""
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QAContext(BaseModel):
-    type: str | None = None       # "bridge" / "knowledge_point" / "search" / "map" / None
+    type: Literal["bridge", "knowledge_point", "search", "map"] | None = None
     id: UUID | None = None
     filters: dict | None = None
 
 
 class QARequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1)
     context: QAContext | None = None

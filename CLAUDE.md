@@ -149,7 +149,7 @@ The system uses automatic schema versioning:
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 - Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
 - Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
-- Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /bridges`, `GET /bridges/{id}`, `GET /bridges/{id}/knowledge-points`, `GET /knowledge/tree`, `GET /knowledge/points/{id}`, `GET /knowledge/points/{id}/bridges`, `POST /qa/ask` (SSE), `GET /search`
+- Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /api/mobile/v1/bridges`, `GET /api/mobile/v1/bridges/{id}`, `GET /api/mobile/v1/bridges/{id}/knowledge-points`, `GET /api/mobile/v1/knowledge/tree`, `GET /api/mobile/v1/knowledge/points/{id}`, `GET /api/mobile/v1/knowledge/points/{id}/bridges`, `POST /api/mobile/v1/qa/ask` (SSE), `GET /api/mobile/v1/search`
 - Mobile endpoints use `MobileResponse`/`MobilePaginatedResponse` wrappers (not `PaginatedResponse`)
 - 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证
 - 所有写操作自动记录审计日志（含登录成功/失败）

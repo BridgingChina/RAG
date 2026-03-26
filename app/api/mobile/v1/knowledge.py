@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get("/tree")
 def get_knowledge_tree(
-    depth: int | None = None,
+    depth: int | None = Query(default=None, ge=0, le=3),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
     """Return the knowledge architecture tree.
@@ -162,11 +162,13 @@ def get_knowledge_point(
         from app.models import Chunk, Source
         rows = (
             db.query(Chunk.id, Source.id, Source.title, Source.type)
-            .join(Source, Chunk.source_id == Source.id)
+            .outerjoin(Source, Chunk.source_id == Source.id)
             .filter(Chunk.id.in_(all_chunk_ids))
             .all()
         )
         for chunk_id, source_id, source_title, source_type in rows:
+            if source_id is None:
+                continue
             chunk_to_source[chunk_id] = source_id
             if source_id not in source_id_map:
                 idx = len(source_id_map) + 1

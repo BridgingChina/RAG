@@ -292,3 +292,14 @@ def test_taxonomy_filter_all_none():
     assert tf.lvl1 is None
     assert tf.lvl2 is None
     assert tf.lvl3 is None
+
+
+def test_taxonomy_filter_is_empty():
+    """Test TaxonomyFilter.is_empty property."""
+    from app.services.hybrid_retriever import TaxonomyFilter
+
+    tf_empty = TaxonomyFilter()
+    assert tf_empty.is_empty is True
+
+    tf_with_lvl1 = TaxonomyFilter(lvl1="形制与技术")
+    assert tf_with_lvl1.is_empty is False

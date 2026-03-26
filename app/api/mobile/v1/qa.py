@@ -1,5 +1,10 @@
-"""Mobile API: SSE streaming QA endpoint."""
+"""Mobile API: SSE pseudo-streaming QA endpoint.
+
+Single LLM call + structured JSON split into sequential SSE events
+(started -> outline -> detail* -> sources -> done). Not real token streaming.
+"""
 import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends
@@ -19,6 +24,8 @@ from app.services.hybrid_retriever import (
     TaxonomyFilter,
 )
 from app.services.tokenizer import Tokenizer, default_user_dict_path
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -42,16 +49,23 @@ def _resolve_context(
         kp = db.query(KnowledgePoint).filter(
             KnowledgePoint.id == request.context.id
         ).first()
-        if kp and kp.taxonomy_node_id:
-            tax_node = db.query(TaxonomyNode).filter(
-                TaxonomyNode.id == kp.taxonomy_node_id
-            ).first()
-            if tax_node:
-                return None, TaxonomyFilter(
-                    lvl1=tax_node.lvl1,
-                    lvl2=tax_node.lvl2,
-                    lvl3=tax_node.lvl3,
-                )
+        if not kp:
+            logger.warning("QA context references non-existent knowledge_point %s", request.context.id)
+            return None, None
+        if not kp.taxonomy_node_id:
+            logger.warning("Knowledge point %s has no taxonomy_node_id, ignoring context", kp.id)
+            return None, None
+        tax_node = db.query(TaxonomyNode).filter(
+            TaxonomyNode.id == kp.taxonomy_node_id
+        ).first()
+        if not tax_node:
+            logger.warning("Knowledge point %s references missing taxonomy node %s", kp.id, kp.taxonomy_node_id)
+            return None, None
+        return None, TaxonomyFilter(
+            lvl1=tax_node.lvl1,
+            lvl2=tax_node.lvl2,
+            lvl3=tax_node.lvl3,
+        )
     return None, None
 
 
@@ -85,7 +99,7 @@ async def ask_sse(
             try:
                 facet = await facet_extractor.extract(request.question)
             except Exception:
-                pass
+                logger.warning("Facet extraction failed, continuing without facets", exc_info=True)
 
             try:
                 evidence = await retriever.retrieve(
@@ -96,9 +110,13 @@ async def ask_sse(
                     facet=facet,
                 )
             except Exception:
-                evidence = HybridRetrievalResult(
-                    anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
-                )
+                logger.error("Retrieval failed for question=%r", request.question, exc_info=True)
+                yield _sse_event("error", {
+                    "code": "RETRIEVAL_FAILED",
+                    "message": "检索系统暂时不可用，请稍后重试",
+                })
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
 
             if not evidence.all_chunks():
                 yield _sse_event("error", {
@@ -115,10 +133,11 @@ async def ask_sse(
 
             yield _sse_event("done", {"qa_id": qa_id})
 
-        except Exception as e:
+        except Exception:
+            logger.error("SSE QA stream failed", exc_info=True)
             yield _sse_event("error", {
                 "code": "INTERNAL_ERROR",
-                "message": f"服务端内部错误: {str(e)}",
+                "message": "服务端内部错误，请稍后重试",
             })
             yield _sse_event("done", {"qa_id": qa_id})
 

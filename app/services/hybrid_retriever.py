@@ -4,6 +4,7 @@ Implements Anchor (target bridge), Concept (general knowledge), and
 Analogy (similar bridges) retrieval channels.
 """
 
+import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -11,6 +12,8 @@ from typing import Optional, TypedDict
 
 from sqlalchemy import bindparam, or_, select, text
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.models import Bridge, Chunk
 from app.providers import LLMProvider
@@ -46,10 +49,18 @@ class RetrievedChunk:
 
 @dataclass
 class TaxonomyFilter:
-    """Filter chunks by taxonomy labels."""
+    """Filter chunks by taxonomy labels.
+
+    Only non-None fields are applied as AND conditions, so setting lvl1
+    alone matches all chunks under that line.
+    """
     lvl1: str | None = None
     lvl2: str | None = None
     lvl3: str | None = None
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.lvl1 or self.lvl2 or self.lvl3)
 
 
 @dataclass
@@ -172,6 +183,8 @@ class HybridRetriever:
             db: Database session
             query: User query
             target_bridge_id: Optional target bridge for anchor channel
+            taxonomy_filter: Optional TaxonomyFilter for taxonomy-scoped anchor
+                retrieval (used when context is a knowledge_point)
             quota: (anchor_limit, concept_limit, analogy_limit)
             facet: Optional Facet for analogy bridge selection
             debug: If True, populate result.debug with RetrievalDebug
@@ -199,7 +212,7 @@ class HybridRetriever:
 
         # Execute three channels
         anchor_chunks: list[RetrievedChunk] = []
-        if anchor_quota > 0 and (target_bridge_id is not None or taxonomy_filter is not None):
+        if anchor_quota > 0 and (target_bridge_id is not None or (taxonomy_filter is not None and not taxonomy_filter.is_empty)):
             if debug:
                 t0 = time.perf_counter()
             anchor_chunks, anchor_dbg = await self._retrieve_channel(
@@ -299,7 +312,7 @@ class HybridRetriever:
         # Get more than needed for diversity filtering
         fetch_limit = limit * FETCH_MULTIPLIER
 
-        # Run vector and FTS search in parallel
+        # Run vector and FTS search sequentially
         vec_results = self._vector_search(
             db, query_embedding, bridge_filter, require_no_bridge_id, fetch_limit,
             taxonomy_filter=taxonomy_filter,
@@ -426,6 +439,7 @@ class HybridRetriever:
                 stmt = stmt.bindparams(*bind_params)
             return db.execute(stmt, params).scalars().all()
         except Exception:
+            logger.error("Vector search failed", exc_info=True)
             self._mark_degraded("vector")
             return []
 
@@ -448,7 +462,7 @@ class HybridRetriever:
             return []
 
         try:
-            # Search in both search_text and content
+            # Full-text search using pre-computed tsv column
             sql = """
                 SELECT id FROM chunks
                 WHERE tsv @@ to_tsquery('simple', :tsquery)
@@ -488,6 +502,7 @@ class HybridRetriever:
                 stmt = stmt.bindparams(*bind_params)
             return db.execute(stmt, params).scalars().all()
         except Exception:
+            logger.error("FTS search failed", exc_info=True)
             self._mark_degraded("fts")
             return []
 
@@ -579,6 +594,7 @@ class HybridRetriever:
                 for row in rows
             }
         except Exception:
+            logger.error("Chunk detail fetch failed", exc_info=True)
             self._mark_degraded("fetch_chunks")
             return {}
 
