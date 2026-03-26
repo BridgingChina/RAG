@@ -1,13 +1,61 @@
-"""DB migration script (placeholder).
+"""DB migration script.
 
-After the UUID clean rebuild (Batch 0), all legacy migrations were removed.
-Use `python scripts/reset_db.py --force` to recreate the database from scratch.
+Supports incremental migrations from v1 onward.
+Use `python scripts/reset_db.py --force` to recreate from scratch.
 """
 import sys
 
 import click
+from sqlalchemy import text
 
-from app.core.database import LATEST_SCHEMA_VERSION, engine, get_current_schema_version
+from app.core.database import (
+    LATEST_SCHEMA_VERSION,
+    engine,
+    get_current_schema_version,
+    set_schema_version,
+)
+
+
+def migrate_v1_to_v2(conn) -> None:
+    """Add knowledge_points + knowledge_point_key_points tables."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS knowledge_points (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            taxonomy_node_id UUID REFERENCES taxonomy_nodes(id),
+            name VARCHAR(200) NOT NULL,
+            aliases TEXT,
+            difficulty VARCHAR(20),
+            summary TEXT,
+            l2_content JSONB,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_kp_taxonomy ON knowledge_points(taxonomy_node_id)"
+    ))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS knowledge_point_key_points (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            knowledge_point_id UUID NOT NULL REFERENCES knowledge_points(id) ON DELETE CASCADE,
+            summary TEXT NOT NULL,
+            explanation TEXT,
+            order_index INTEGER NOT NULL,
+            chunk_ids UUID[],
+            illustration_urls TEXT[],
+            related_term_ids UUID[],
+            created_at TIMESTAMPTZ DEFAULT now()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_kpkp_kp ON knowledge_point_key_points(knowledge_point_id)"
+    ))
+    set_schema_version(engine, 2, "Add knowledge_points + knowledge_point_key_points", conn=conn)
+
+
+MIGRATIONS = {
+    1: migrate_v1_to_v2,
+}
 
 
 @click.command()
@@ -16,14 +64,26 @@ def main() -> None:
     if current is None:
         click.echo("No schema_version table found — init_database() will create it on startup.")
         return
-    if current != LATEST_SCHEMA_VERSION:
+    if current == LATEST_SCHEMA_VERSION:
+        click.echo(f"Schema v{current} matches code. No migrations needed.")
+        return
+    if current > LATEST_SCHEMA_VERSION:
         click.echo(
-            f"ERROR: DB schema v{current} does not match code v{LATEST_SCHEMA_VERSION}. "
-            f"Run `python scripts/reset_db.py --force` to recreate.",
+            f"ERROR: DB schema v{current} is ahead of code v{LATEST_SCHEMA_VERSION}.",
             err=True,
         )
         sys.exit(1)
-    click.echo(f"Schema v{current} matches code. No migrations needed.")
+
+    click.echo(f"Migrating from v{current} to v{LATEST_SCHEMA_VERSION}...")
+    with engine.begin() as conn:
+        for v in range(current, LATEST_SCHEMA_VERSION):
+            migrate_fn = MIGRATIONS.get(v)
+            if migrate_fn is None:
+                click.echo(f"ERROR: No migration function for v{v} → v{v+1}.", err=True)
+                sys.exit(1)
+            click.echo(f"  Running v{v} → v{v+1}...")
+            migrate_fn(conn)
+    click.echo(f"Migration complete. Now at v{LATEST_SCHEMA_VERSION}.")
 
 
 if __name__ == "__main__":

@@ -114,6 +114,8 @@ class TestVerifySchemaCompatibility:
             "ingest_tasks",
             "users",
             "audit_logs",
+            "knowledge_points",
+            "knowledge_point_key_points",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -199,6 +201,28 @@ class TestVerifySchemaCompatibility:
                 "resource_id",
                 "detail",
                 "ip_address",
+                "created_at",
+            },
+            "knowledge_points": {
+                "id",
+                "taxonomy_node_id",
+                "name",
+                "aliases",
+                "difficulty",
+                "summary",
+                "l2_content",
+                "created_at",
+                "updated_at",
+            },
+            "knowledge_point_key_points": {
+                "id",
+                "knowledge_point_id",
+                "summary",
+                "explanation",
+                "order_index",
+                "chunk_ids",
+                "illustration_urls",
+                "related_term_ids",
                 "created_at",
             },
         }
@@ -244,6 +268,8 @@ class TestVerifySchemaCompatibility:
             "ingest_tasks",
             "users",
             "audit_logs",
+            "knowledge_points",
+            "knowledge_point_key_points",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -329,6 +355,28 @@ class TestVerifySchemaCompatibility:
                 "resource_id",
                 "detail",
                 "ip_address",
+                "created_at",
+            },
+            "knowledge_points": {
+                "id",
+                "taxonomy_node_id",
+                "name",
+                "aliases",
+                "difficulty",
+                "summary",
+                "l2_content",
+                "created_at",
+                "updated_at",
+            },
+            "knowledge_point_key_points": {
+                "id",
+                "knowledge_point_id",
+                "summary",
+                "explanation",
+                "order_index",
+                "chunk_ids",
+                "illustration_urls",
+                "related_term_ids",
                 "created_at",
             },
         }
@@ -408,7 +456,7 @@ class TestInitDatabase:
 
         # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, LATEST_SCHEMA_VERSION, "Schema v1: UUID primary keys, clean rebuild", conn=mock_conn
+            mock_engine, LATEST_SCHEMA_VERSION, "Schema v2: knowledge_points + knowledge_point_key_points", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")
