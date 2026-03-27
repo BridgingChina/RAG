@@ -280,6 +280,15 @@ async def generate_key_points(
             detail="Failed to parse LLM response as JSON",
         )
 
+    # 5b. Validate shape before iterating
+    if not isinstance(generated_kps, list):
+        logger.error("key_points is not a list: %s", type(generated_kps))
+        raise HTTPException(status_code=502, detail="LLM returned malformed key_points")
+    for i, item in enumerate(generated_kps):
+        if not isinstance(item, dict):
+            logger.error("key_points[%d] is not a dict: %s", i, type(item))
+            raise HTTPException(status_code=502, detail="LLM returned malformed key point data")
+
     # 6. Transaction: delete old key_points, insert new ones
     db.query(KnowledgePointKeyPoint).filter(
         KnowledgePointKeyPoint.knowledge_point_id == kp_id
