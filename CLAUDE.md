@@ -112,6 +112,8 @@ The system uses automatic schema versioning:
 - `app/services/chunk_editor.py` — Chunk 手动校对服务：content 编辑（重算 search_text/tsv）、bridge_links 替换、split/merge、批量 reindex。编辑后设 `needs_reindex=True`
 - `app/services/reindex_cron.py` — 每日 03:00 后台 cron，自动重建 stale chunks 的 search_text + tsv（不含 embedding）
 
+**桥梁详情聚合：** 四章节（structure/geography/society/history）从 chunks 实时聚合（无独立表），通过 `LVL1_TO_SECTION` 映射 lvl1 → section key。L0 = section_title 或 content 截断，L1 = 完整 content + citations。
+
 **索引链路（search_text pipeline）：** chunk 入库时经历 `content → contextual_text（ContextEnricher 生成的上下文描述）→ search_text（拼合后用于检索的文本）→ tsv（jieba 分词后的 tsvector）`。向量索引用 `embedding` 列，全文索引用 `tsv` 列。
 
 **Configuration:**
@@ -159,7 +161,7 @@ The system uses automatic schema versioning:
 - Mobile review (X-Device-Id): `GET /api/mobile/v1/review/today`, `GET /api/mobile/v1/review/cards`, `PUT /api/mobile/v1/review/progress/{id}`
 - Mobile history (X-Device-Id): `GET/POST /api/mobile/v1/history`
 - Mobile endpoints use `MobileResponse`/`MobilePaginatedResponse` wrappers (not `PaginatedResponse`)
-- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证
+- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证。Mobile 端点中 favorites/review/history 需要 `X-Device-Id` header（UUID v4），其余 mobile 端点完全公开
 - 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
