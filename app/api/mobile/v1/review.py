@@ -1,5 +1,7 @@
 """Mobile API: Review endpoints."""
+import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,7 +18,7 @@ router = APIRouter()
 
 
 class ReviewProgressUpdate(BaseModel):
-    mastery: str  # "mastered" or "needs_review"
+    mastery: Literal["mastered", "needs_review"]
 
 
 def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None) -> dict:
@@ -41,7 +43,7 @@ def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None) -> dict:
 
 @router.get("/today")
 def get_today_queue(
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[list[dict]]:
     """Today's review queue: favorited flashcards that need review."""
@@ -77,7 +79,7 @@ def get_today_queue(
 
 @router.get("/cards")
 def list_review_cards(
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -116,13 +118,10 @@ def list_review_cards(
 def update_review_progress(
     flashcard_id: UUID,
     body: ReviewProgressUpdate,
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
     """Upsert review progress for a flashcard."""
-    if body.mastery not in ("mastered", "needs_review"):
-        raise HTTPException(400, detail="mastery must be 'mastered' or 'needs_review'")
-
     # Verify flashcard exists
     fc = db.get(Flashcard, flashcard_id)
     if not fc:

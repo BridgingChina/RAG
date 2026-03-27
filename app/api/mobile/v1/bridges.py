@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.mobile.v1.schemas.bridge import BridgeSections, BridgeSectionLevel, MobileBridgeDetail, MobileBridgeListItem
 from app.api.mobile.v1.schemas.common import MobileMeta, MobilePaginatedResponse, MobileResponse
+from app.api.mobile.v1.utils import escape_like as _escape_like
 from app.core.database import get_db
 from app.models import Bridge, Chunk, Source
 
@@ -19,11 +20,6 @@ LVL1_TO_SECTION: dict[str, str] = {
     "功能与社会": "society",
     "历史与演变": "history",
 }
-
-
-def _escape_like(s: str) -> str:
-    """Escape SQL LIKE metacharacters."""
-    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 @router.get("")

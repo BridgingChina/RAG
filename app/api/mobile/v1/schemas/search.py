@@ -1,10 +1,12 @@
 """Mobile search schemas."""
+from typing import Literal
 from uuid import UUID
+
 from pydantic import BaseModel
 
 
 class SearchResultItem(BaseModel):
-    type: str
+    type: Literal["bridge", "knowledge_point"]
     id: UUID
     name: str
     aliases: str | None

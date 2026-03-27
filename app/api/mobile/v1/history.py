@@ -1,7 +1,8 @@
 """Mobile API: View history endpoints."""
+import uuid
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -13,6 +14,8 @@ from app.models import Bridge, DeviceViewHistory, KnowledgePoint
 
 router = APIRouter()
 
+VALID_HISTORY_TYPES = {"bridge", "knowledge_point"}
+
 
 class HistoryRecordRequest(BaseModel):
     target_type: str
@@ -21,7 +24,7 @@ class HistoryRecordRequest(BaseModel):
 
 @router.get("")
 def list_history(
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -74,10 +77,13 @@ def list_history(
 @router.post("", status_code=201)
 def record_view(
     body: HistoryRecordRequest,
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
     """Record a view history entry. No dedup — each call creates a new record."""
+    if body.target_type not in VALID_HISTORY_TYPES:
+        raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}. Must be one of: {', '.join(sorted(VALID_HISTORY_TYPES))}")
+
     record = DeviceViewHistory(
         device_id=device_id,
         target_type=body.target_type,

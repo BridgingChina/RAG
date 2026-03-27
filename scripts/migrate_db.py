@@ -58,7 +58,7 @@ def migrate_v2_to_v3(conn) -> None:
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS flashcards (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            knowledge_point_id UUID NOT NULL REFERENCES knowledge_points(id),
+            knowledge_point_id UUID NOT NULL REFERENCES knowledge_points(id) ON DELETE CASCADE,
             card_type VARCHAR(20) NOT NULL,
             front_title TEXT NOT NULL,
             front_hint TEXT,

@@ -12,7 +12,7 @@ class Flashcard(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "flashcards"
 
     knowledge_point_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("knowledge_points.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("knowledge_points.id", ondelete="CASCADE"), nullable=False
     )
     card_type: Mapped[str] = mapped_column(String(20), nullable=False)
     front_title: Mapped[str] = mapped_column(Text, nullable=False)

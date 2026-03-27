@@ -1,6 +1,7 @@
 """Tests for mobile unified search."""
 from app.main import app
-from app.api.mobile.v1.search import _highlight, _escape_like
+from app.api.mobile.v1.search import _highlight
+from app.api.mobile.v1.utils import escape_like as _escape_like
 
 
 def test_highlight_wraps_keyword():

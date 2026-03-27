@@ -44,12 +44,12 @@ def list_favorites(
     type: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobilePaginatedResponse[list[dict]]:
     """List favorites for a device, with optional type filter."""
     query = db.query(DeviceFavorite).filter(
-        DeviceFavorite.device_id == uuid.UUID(device_id)
+        DeviceFavorite.device_id == device_id
     )
     if type:
         if type not in VALID_TYPES:
@@ -93,7 +93,7 @@ def list_favorites(
 @router.post("", status_code=201)
 def add_favorite(
     body: FavoriteAddRequest,
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
     """Add a favorite. Returns 409 on duplicate."""
@@ -101,16 +101,18 @@ def add_favorite(
         raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}")
 
     fav = DeviceFavorite(
-        device_id=uuid.UUID(device_id),
+        device_id=device_id,
         target_type=body.target_type,
         target_id=body.target_id,
     )
     db.add(fav)
     try:
         db.flush()
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
-        raise HTTPException(409, detail="Already favorited")
+        if "uq_device_fav" in str(e.orig):
+            raise HTTPException(409, detail="Already favorited")
+        raise
     db.commit()
     db.refresh(fav)
 
@@ -125,14 +127,14 @@ def add_favorite(
 @router.delete("/{favorite_id}", status_code=204)
 def remove_favorite(
     favorite_id: UUID,
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> None:
     """Remove a favorite. Verifies device_id ownership."""
     fav = db.query(DeviceFavorite).filter(DeviceFavorite.id == favorite_id).first()
     if not fav:
         raise HTTPException(404, detail="Favorite not found")
-    if str(fav.device_id) != device_id:
+    if fav.device_id != device_id:
         raise HTTPException(404, detail="Favorite not found")
     db.delete(fav)
     db.commit()
@@ -141,20 +143,19 @@ def remove_favorite(
 @router.post("/check")
 def check_favorites(
     body: FavoriteCheckRequest,
-    device_id: str = Depends(require_device_id),
+    device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
     """Batch check which targets are favorited."""
     if not body.targets:
         return MobileResponse(data={})
 
-    device_uuid = uuid.UUID(device_id)
     # Query all favorites for this device matching the requested targets
     target_ids = [t.id for t in body.targets]
     existing = (
         db.query(DeviceFavorite)
         .filter(
-            DeviceFavorite.device_id == device_uuid,
+            DeviceFavorite.device_id == device_id,
             DeviceFavorite.target_id.in_(target_ids),
         )
         .all()

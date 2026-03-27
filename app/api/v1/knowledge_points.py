@@ -254,9 +254,13 @@ async def generate_key_points(
     )
 
     provider = ZhipuProvider()
-    response = await provider.chat([
-        ChatMessage(role="user", content=prompt),
-    ])
+    try:
+        response = await provider.chat([
+            ChatMessage(role="user", content=prompt),
+        ])
+    except Exception as e:
+        logger.error("LLM call failed for KP %s: %s", kp_id, e)
+        raise HTTPException(status_code=502, detail="LLM service unavailable. Please try again later.")
 
     # 5. Parse JSON response
     try:
@@ -269,7 +273,7 @@ async def generate_key_points(
             text = text.strip()
         parsed = json.loads(text)
         generated_kps = parsed["key_points"]
-    except (json.JSONDecodeError, KeyError) as e:
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
         logger.error("Failed to parse LLM response: %s\nResponse: %s", e, response.content)
         raise HTTPException(
             status_code=502,
@@ -292,7 +296,7 @@ async def generate_key_points(
 
         kpkp = KnowledgePointKeyPoint(
             knowledge_point_id=kp_id,
-            summary=item["summary"],
+            summary=item.get("summary", ""),
             explanation=item.get("explanation", ""),
             order_index=idx,
             chunk_ids=chunk_ids if chunk_ids else None,
