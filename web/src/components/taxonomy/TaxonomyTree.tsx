@@ -9,7 +9,7 @@ interface TaxonomyTreeProps {
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
   onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
-  onDeleteNode: (nodeId: number, nodeLabel: string) => void
+  onDeleteNode: (nodeId: string, nodeLabel: string) => void
 }
 
 interface TreeNodeProps {
@@ -19,7 +19,7 @@ interface TreeNodeProps {
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
   onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
-  onDeleteNode: (nodeId: number, nodeLabel: string) => void
+  onDeleteNode: (nodeId: string, nodeLabel: string) => void
 }
 
 function TreeNode({

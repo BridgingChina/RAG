@@ -24,8 +24,7 @@ export function AskPanel() {
     setError(null)
     setResult(null)
     try {
-      const bid = bridgeId ? parseInt(bridgeId, 10) : undefined
-      const res = await askQuestion(q, isNaN(bid as number) ? undefined : bid, debug)
+      const res = await askQuestion(q, bridgeId || undefined, debug)
       setResult(res)
     } catch (err) {
       setError(err instanceof Error ? err.message : "请求失败")
