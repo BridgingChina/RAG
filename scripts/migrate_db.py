@@ -53,8 +53,72 @@ def migrate_v1_to_v2(conn) -> None:
     set_schema_version(engine, 2, "Add knowledge_points + knowledge_point_key_points", conn=conn)
 
 
+def migrate_v2_to_v3(conn) -> None:
+    """Add flashcards + device tables."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS flashcards (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            knowledge_point_id UUID NOT NULL REFERENCES knowledge_points(id),
+            card_type VARCHAR(20) NOT NULL,
+            front_title TEXT NOT NULL,
+            front_hint TEXT,
+            back_answer TEXT NOT NULL,
+            back_key_features TEXT[],
+            back_example_bridge_id UUID REFERENCES bridges(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_flashcards_kp ON flashcards(knowledge_point_id)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS device_favorites (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            device_id UUID NOT NULL,
+            target_type VARCHAR(20) NOT NULL,
+            target_id UUID NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            CONSTRAINT uq_device_fav UNIQUE (device_id, target_type, target_id)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_device_favorites_device ON device_favorites(device_id)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS device_review_progress (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            device_id UUID NOT NULL,
+            flashcard_id UUID NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
+            mastery VARCHAR(20) NOT NULL DEFAULT 'needs_review',
+            last_reviewed_at TIMESTAMPTZ,
+            interval INTEGER NOT NULL DEFAULT 1,
+            ease_factor REAL NOT NULL DEFAULT 2.5,
+            CONSTRAINT uq_device_review UNIQUE (device_id, flashcard_id)
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS device_view_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            device_id UUID NOT NULL,
+            target_type VARCHAR(20) NOT NULL,
+            target_id UUID NOT NULL,
+            viewed_at TIMESTAMPTZ DEFAULT now() NOT NULL
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_device_view_history_device ON device_view_history(device_id)"
+    ))
+
+    set_schema_version(engine, 3, "Add flashcards + device tables", conn=conn)
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
+    2: migrate_v2_to_v3,
 }
 
 
