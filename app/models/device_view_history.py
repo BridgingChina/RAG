@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, func
+from sqlalchemy import CheckConstraint, DateTime, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,4 +20,5 @@ class DeviceViewHistory(Base, UUIDMixin):
 
     __table_args__ = (
         Index("ix_device_view_history_device", "device_id"),
+        CheckConstraint("target_type IN ('bridge', 'knowledge_point')", name="ck_history_target_type"),
     )

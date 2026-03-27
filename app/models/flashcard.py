@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,4 +29,5 @@ class Flashcard(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         Index("ix_flashcards_kp", "knowledge_point_id"),
+        CheckConstraint("card_type IN ('concept', 'identification')", name="ck_flashcard_card_type"),
     )

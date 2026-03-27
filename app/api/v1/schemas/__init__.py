@@ -48,7 +48,7 @@ from .chunk import (
 )
 
 # Knowledge point schemas
-from .knowledge_point import KPCreate, KPDetail, KPListItem, KPUpdate
+from .knowledge_point import KeyPointItem, KPCreate, KPDetail, KPListItem, KPUpdate
 
 # Ingest schemas
 from .ingest import (

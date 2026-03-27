@@ -21,6 +21,14 @@ class KPUpdate(BaseModel):
     l2_content: dict | None = None
 
 
+class KeyPointItem(BaseModel):
+    id: UUID
+    summary: str
+    explanation: str | None
+    order_index: int
+    chunk_ids: list[str] = []
+
+
 class KPDetail(BaseModel):
     id: UUID
     taxonomy_node_id: UUID | None
@@ -29,7 +37,7 @@ class KPDetail(BaseModel):
     difficulty: str | None
     summary: str | None
     l2_content: dict | None
-    key_points: list[dict] = []
+    key_points: list[KeyPointItem] = []
 
 
 class KPListItem(BaseModel):

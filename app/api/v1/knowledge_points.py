@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.schemas.knowledge_point import (
+    KeyPointItem,
     KPCreate,
     KPDetail,
     KPListItem,
@@ -35,13 +36,13 @@ def _build_detail(kp: KnowledgePoint, key_points: list[KnowledgePointKeyPoint]) 
         summary=kp.summary,
         l2_content=kp.l2_content,
         key_points=[
-            {
-                "id": str(kpkp.id),
-                "summary": kpkp.summary,
-                "explanation": kpkp.explanation,
-                "order_index": kpkp.order_index,
-                "chunk_ids": [str(cid) for cid in (kpkp.chunk_ids or [])],
-            }
+            KeyPointItem(
+                id=kpkp.id,
+                summary=kpkp.summary,
+                explanation=kpkp.explanation,
+                order_index=kpkp.order_index,
+                chunk_ids=[str(cid) for cid in (kpkp.chunk_ids or [])],
+            )
             for kpkp in key_points
         ],
     )
@@ -96,8 +97,7 @@ def create_knowledge_point(
     """Create a new knowledge point."""
     kp = KnowledgePoint(**body.model_dump())
     db.add(kp)
-    db.commit()
-    db.refresh(kp)
+    db.flush()  # get the kp.id
 
     AuditService.log(
         db,
@@ -107,7 +107,8 @@ def create_knowledge_point(
         resource_id=str(kp.id),
         ip_address=get_client_ip(request),
     )
-    db.commit()
+    db.commit()  # single atomic commit
+    db.refresh(kp)
 
     return _build_detail(kp, [])
 
@@ -149,8 +150,7 @@ def update_knowledge_point(
     for key, value in update_data.items():
         setattr(kp, key, value)
 
-    db.commit()
-    db.refresh(kp)
+    db.flush()  # flush entity change
 
     AuditService.log(
         db,
@@ -160,7 +160,7 @@ def update_knowledge_point(
         resource_id=str(kp_id),
         ip_address=get_client_ip(request),
     )
-    db.commit()
+    db.commit()  # single atomic commit
 
     return get_knowledge_point(kp_id, db)
 

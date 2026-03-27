@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import REAL, DateTime, ForeignKey, Integer, String, UniqueConstraint, text
+from sqlalchemy import REAL, CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,4 +29,5 @@ class DeviceReviewProgress(Base, UUIDMixin):
 
     __table_args__ = (
         UniqueConstraint("device_id", "flashcard_id", name="uq_device_review"),
+        CheckConstraint("mastery IN ('mastered', 'needs_review')", name="ck_review_mastery"),
     )

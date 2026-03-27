@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Index, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,4 +17,5 @@ class DeviceFavorite(Base, UUIDMixin, CreatedAtMixin):
     __table_args__ = (
         UniqueConstraint("device_id", "target_type", "target_id", name="uq_device_fav"),
         Index("ix_device_favorites_device", "device_id"),
+        CheckConstraint("target_type IN ('bridge', 'knowledge_point', 'flashcard')", name="ck_fav_target_type"),
     )

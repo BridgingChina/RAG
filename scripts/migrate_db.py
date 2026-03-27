@@ -59,7 +59,7 @@ def migrate_v2_to_v3(conn) -> None:
         CREATE TABLE IF NOT EXISTS flashcards (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             knowledge_point_id UUID NOT NULL REFERENCES knowledge_points(id) ON DELETE CASCADE,
-            card_type VARCHAR(20) NOT NULL,
+            card_type VARCHAR(20) NOT NULL CHECK (card_type IN ('concept', 'identification')),
             front_title TEXT NOT NULL,
             front_hint TEXT,
             back_answer TEXT NOT NULL,
@@ -77,7 +77,7 @@ def migrate_v2_to_v3(conn) -> None:
         CREATE TABLE IF NOT EXISTS device_favorites (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             device_id UUID NOT NULL,
-            target_type VARCHAR(20) NOT NULL,
+            target_type VARCHAR(20) NOT NULL CHECK (target_type IN ('bridge', 'knowledge_point', 'flashcard')),
             target_id UUID NOT NULL,
             created_at TIMESTAMPTZ DEFAULT now(),
             CONSTRAINT uq_device_fav UNIQUE (device_id, target_type, target_id)
@@ -92,7 +92,7 @@ def migrate_v2_to_v3(conn) -> None:
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             device_id UUID NOT NULL,
             flashcard_id UUID NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
-            mastery VARCHAR(20) NOT NULL DEFAULT 'needs_review',
+            mastery VARCHAR(20) NOT NULL DEFAULT 'needs_review' CHECK (mastery IN ('mastered', 'needs_review')),
             last_reviewed_at TIMESTAMPTZ,
             interval INTEGER NOT NULL DEFAULT 1,
             ease_factor REAL NOT NULL DEFAULT 2.5,
@@ -104,7 +104,7 @@ def migrate_v2_to_v3(conn) -> None:
         CREATE TABLE IF NOT EXISTS device_view_history (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             device_id UUID NOT NULL,
-            target_type VARCHAR(20) NOT NULL,
+            target_type VARCHAR(20) NOT NULL CHECK (target_type IN ('bridge', 'knowledge_point')),
             target_id UUID NOT NULL,
             viewed_at TIMESTAMPTZ DEFAULT now() NOT NULL
         )
