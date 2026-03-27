@@ -3,6 +3,10 @@ from app.models.base import Base
 from app.models.bridge import Bridge
 from app.models.chunk import Chunk
 from app.models.chunk_bridge_link import ChunkBridgeLink
+from app.models.device_favorite import DeviceFavorite
+from app.models.device_review_progress import DeviceReviewProgress
+from app.models.device_view_history import DeviceViewHistory
+from app.models.flashcard import Flashcard
 from app.models.ingest_task import IngestTask
 from app.models.knowledge_point import KnowledgePoint
 from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
@@ -17,6 +21,10 @@ __all__ = [
     "Bridge",
     "Chunk",
     "ChunkBridgeLink",
+    "DeviceFavorite",
+    "DeviceReviewProgress",
+    "DeviceViewHistory",
+    "Flashcard",
     "IngestTask",
     "KnowledgePoint",
     "KnowledgePointKeyPoint",

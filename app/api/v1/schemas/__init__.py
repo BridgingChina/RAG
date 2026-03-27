@@ -47,6 +47,9 @@ from .chunk import (
     ReindexResponse,
 )
 
+# Knowledge point schemas
+from .knowledge_point import KeyPointItem, KPCreate, KPDetail, KPListItem, KPUpdate
+
 # Ingest schemas
 from .ingest import (
     BridgeBindingStatus,
@@ -129,6 +132,11 @@ __all__ = [
     "ChunkSplitResponse",
     "ChunkUpdate",
     "ReindexResponse",
+    # Knowledge point
+    "KPCreate",
+    "KPDetail",
+    "KPListItem",
+    "KPUpdate",
     # Ingest
     "BridgeBindingStatus",
     "IngestRequest",

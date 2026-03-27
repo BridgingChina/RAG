@@ -15,3 +15,8 @@ def test_mobile_knowledge_point_detail_endpoint_exists():
 def test_mobile_knowledge_point_bridges_endpoint_exists():
     route_paths = [route.path for route in app.routes]
     assert "/api/mobile/v1/knowledge/points/{point_id}/bridges" in route_paths
+
+
+def test_knowledge_point_flashcards_endpoint_exists():
+    route_paths = [route.path for route in app.routes]
+    assert "/api/mobile/v1/knowledge/points/{point_id}/flashcards" in route_paths

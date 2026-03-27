@@ -13,6 +13,7 @@ from app.api.v1.stats import router as stats_router
 from app.api.v1.system import router as system_router
 from app.api.v1.taxonomy import router as taxonomy_router
 from app.api.v1.ingest_tasks import router as ingest_tasks_router
+from app.api.v1.knowledge_points import router as knowledge_points_router
 from app.api.v1.dependencies import get_current_user
 
 router = APIRouter()
@@ -28,6 +29,7 @@ protected.include_router(bridges_router)
 protected.include_router(chunks_router)
 protected.include_router(ingest_router)
 protected.include_router(ingest_tasks_router)
+protected.include_router(knowledge_points_router)
 protected.include_router(sources_router)
 protected.include_router(stats_router)
 protected.include_router(system_router)

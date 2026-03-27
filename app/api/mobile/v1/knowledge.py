@@ -8,6 +8,7 @@ from app.api.mobile.v1.schemas.common import MobileResponse
 from app.core.database import get_db
 from app.models import TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
+from app.models.flashcard import Flashcard
 from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
 
 router = APIRouter()
@@ -220,3 +221,37 @@ def get_knowledge_point_bridges(
     if not kp:
         raise HTTPException(404, detail="知识点不存在")
     return MobileResponse(data={"bridges": []})
+
+
+@router.get("/points/{point_id}/flashcards")
+def get_knowledge_point_flashcards(
+    point_id: UUID,
+    card_type: str = Query(default="all", pattern="^(all|concept|identification)$"),
+    db: Session = Depends(get_db),
+) -> MobileResponse[dict]:
+    """Get flashcards for a knowledge point."""
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == point_id).first()
+    if not kp:
+        raise HTTPException(404, detail="知识点不存在")
+
+    query = db.query(Flashcard).filter(Flashcard.knowledge_point_id == point_id)
+    if card_type != "all":
+        query = query.filter(Flashcard.card_type == card_type)
+
+    flashcards = query.order_by(Flashcard.created_at).all()
+
+    cards = []
+    for fc in flashcards:
+        cards.append({
+            "id": str(fc.id),
+            "knowledge_point_id": str(fc.knowledge_point_id),
+            "card_type": fc.card_type,
+            "front": {"title": fc.front_title, "hint": fc.front_hint},
+            "back": {
+                "answer": fc.back_answer,
+                "key_features": fc.back_key_features or [],
+                "example_bridge": {"id": str(fc.back_example_bridge_id), "name": None} if fc.back_example_bridge_id else None,
+            },
+        })
+
+    return MobileResponse(data={"cards": cards})

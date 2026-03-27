@@ -11,7 +11,7 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 
 
 def get_db():
@@ -133,6 +133,21 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "id", "knowledge_point_id", "summary", "explanation",
             "order_index", "chunk_ids", "illustration_urls",
             "related_term_ids", "created_at",
+        },
+        "flashcards": {
+            "id", "knowledge_point_id", "card_type", "front_title", "front_hint",
+            "back_answer", "back_key_features", "back_example_bridge_id",
+            "created_at", "updated_at",
+        },
+        "device_favorites": {
+            "id", "device_id", "target_type", "target_id", "created_at",
+        },
+        "device_review_progress": {
+            "id", "device_id", "flashcard_id", "mastery",
+            "last_reviewed_at", "interval", "ease_factor",
+        },
+        "device_view_history": {
+            "id", "device_id", "target_type", "target_id", "viewed_at",
         },
     }
 
@@ -310,7 +325,7 @@ def init_database() -> None:
             # Set initial version
             set_schema_version(
                 engine, LATEST_SCHEMA_VERSION,
-                "Schema v2: knowledge_points + knowledge_point_key_points",
+                "Schema v3: flashcards + device tables",
                 conn=conn,
             )
 

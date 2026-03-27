@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 2 — Adds knowledge_points + knowledge_point_key_points tables
+- Current version: 3 — Adds flashcards + device_favorites + device_review_progress + device_view_history tables
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`（支持增量迁移，`MIGRATIONS` dict 定义版本间迁移函数）
@@ -112,6 +112,8 @@ The system uses automatic schema versioning:
 - `app/services/chunk_editor.py` — Chunk 手动校对服务：content 编辑（重算 search_text/tsv）、bridge_links 替换、split/merge、批量 reindex。编辑后设 `needs_reindex=True`
 - `app/services/reindex_cron.py` — 每日 03:00 后台 cron，自动重建 stale chunks 的 search_text + tsv（不含 embedding）
 
+**桥梁详情聚合：** 四章节（structure/geography/society/history）从 chunks 实时聚合（无独立表），通过 `LVL1_TO_SECTION` 映射 lvl1 → section key。L0 = section_title 或 content 截断，L1 = 完整 content + citations。
+
 **索引链路（search_text pipeline）：** chunk 入库时经历 `content → contextual_text（ContextEnricher 生成的上下文描述）→ search_text（拼合后用于检索的文本）→ tsv（jieba 分词后的 tsvector）`。向量索引用 `embedding` 列，全文索引用 `tsv` 列。
 
 **Configuration:**
@@ -133,6 +135,10 @@ The system uses automatic schema versioning:
 - `ingest_tasks` — 异步入库任务（status/file_name/file_type/r2_raw_key/zhipu_task_id/source_id/parsed_content）
 - `knowledge_points` — 知识点实体（name/aliases/difficulty/summary/l2_content JSONB），挂在 taxonomy_nodes lvl3 下
 - `knowledge_point_key_points` — 知识点要点（summary/explanation/order_index/chunk_ids[]），ON DELETE CASCADE
+- `flashcards` — 闪卡内容（card_type/front_title/back_answer/back_key_features），FK → knowledge_points + bridges(SET NULL)
+- `device_favorites` — 设备收藏（device_id/target_type/target_id），UNIQUE 约束
+- `device_review_progress` — 闪卡复习状态（mastery/last_reviewed_at），预留 SM-2 字段（interval/ease_factor），FK → flashcards(CASCADE)
+- `device_view_history` — 设备浏览历史（target_type/target_id/viewed_at）
 
 **API Endpoints:**
 
@@ -149,9 +155,13 @@ The system uses automatic schema versioning:
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 - Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
 - Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
-- Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /api/mobile/v1/bridges`, `GET /api/mobile/v1/bridges/{id}`, `GET /api/mobile/v1/bridges/{id}/knowledge-points`, `GET /api/mobile/v1/knowledge/tree`, `GET /api/mobile/v1/knowledge/points/{id}`, `GET /api/mobile/v1/knowledge/points/{id}/bridges`, `POST /api/mobile/v1/qa/ask` (SSE), `GET /api/mobile/v1/search`
+- Knowledge Points CRUD: `GET/POST /api/v1/knowledge-points`, `GET/PUT/DELETE /api/v1/knowledge-points/{id}`, `POST /api/v1/knowledge-points/{id}/generate-key-points`（LLM 生成 key_points）
+- Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /api/mobile/v1/bridges`, `GET /api/mobile/v1/bridges/clusters`, `GET /api/mobile/v1/bridges/{id}`, `GET /api/mobile/v1/bridges/{id}/knowledge-points`, `GET /api/mobile/v1/knowledge/tree`, `GET /api/mobile/v1/knowledge/points/{id}`, `GET /api/mobile/v1/knowledge/points/{id}/bridges`, `GET /api/mobile/v1/knowledge/points/{id}/flashcards`, `POST /api/mobile/v1/qa/ask` (SSE), `GET /api/mobile/v1/search`
+- Mobile favorites (X-Device-Id): `GET/POST /api/mobile/v1/favorites`, `DELETE /api/mobile/v1/favorites/{id}`, `POST /api/mobile/v1/favorites/check`
+- Mobile review (X-Device-Id): `GET /api/mobile/v1/review/today`, `GET /api/mobile/v1/review/cards`, `PUT /api/mobile/v1/review/progress/{id}`
+- Mobile history (X-Device-Id): `GET/POST /api/mobile/v1/history`
 - Mobile endpoints use `MobileResponse`/`MobilePaginatedResponse` wrappers (not `PaginatedResponse`)
-- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证
+- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证。Mobile 端点中 favorites/review/history 需要 `X-Device-Id` header（UUID v4），其余 mobile 端点完全公开
 - 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
@@ -216,6 +226,10 @@ title: 资料标题
 - 进入新 UI 模式（如 split mode）时必须 `setActionError(null)` — 否则前一个操作的错误会泄漏到新模式
 - Mobile API 响应格式与管理后台不同：`{"data": ..., "meta": ...}` 而非 `{"items": ..., "total": ...}`
 - `generate_streaming()` 返回 `list[tuple]` 而非 async generator — 伪流式，单次 LLM 调用后拆分，后续 TODO 升级为真流式
+- `GET /bridges/clusters` 必须在 `/{bridge_id}` 之前注册（bridges.py 文件中），否则 "clusters" 被当作 UUID 解析
+- `device_favorites` 使用 UNIQUE(device_id, target_type, target_id) — 重复添加收藏会触发 IntegrityError，需捕获返回 409
+- `review/today` 端点的复习规则：mastery IS NULL OR needs_review OR (mastered 且 last_reviewed_at 超 3 天)
+- `generate-key-points` 端点的 chunk 检索策略：先 lvl3 匹配，不足 3 条时退化到 lvl2
 
 ## Worktrees
 

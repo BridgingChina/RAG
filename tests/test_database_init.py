@@ -116,6 +116,10 @@ class TestVerifySchemaCompatibility:
             "audit_logs",
             "knowledge_points",
             "knowledge_point_key_points",
+            "flashcards",
+            "device_favorites",
+            "device_review_progress",
+            "device_view_history",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -224,6 +228,41 @@ class TestVerifySchemaCompatibility:
                 "illustration_urls",
                 "related_term_ids",
                 "created_at",
+            },
+            "flashcards": {
+                "id",
+                "knowledge_point_id",
+                "card_type",
+                "front_title",
+                "front_hint",
+                "back_answer",
+                "back_key_features",
+                "back_example_bridge_id",
+                "created_at",
+                "updated_at",
+            },
+            "device_favorites": {
+                "id",
+                "device_id",
+                "target_type",
+                "target_id",
+                "created_at",
+            },
+            "device_review_progress": {
+                "id",
+                "device_id",
+                "flashcard_id",
+                "mastery",
+                "last_reviewed_at",
+                "interval",
+                "ease_factor",
+            },
+            "device_view_history": {
+                "id",
+                "device_id",
+                "target_type",
+                "target_id",
+                "viewed_at",
             },
         }
 
@@ -270,6 +309,10 @@ class TestVerifySchemaCompatibility:
             "audit_logs",
             "knowledge_points",
             "knowledge_point_key_points",
+            "flashcards",
+            "device_favorites",
+            "device_review_progress",
+            "device_view_history",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -378,6 +421,41 @@ class TestVerifySchemaCompatibility:
                 "illustration_urls",
                 "related_term_ids",
                 "created_at",
+            },
+            "flashcards": {
+                "id",
+                "knowledge_point_id",
+                "card_type",
+                "front_title",
+                "front_hint",
+                "back_answer",
+                "back_key_features",
+                "back_example_bridge_id",
+                "created_at",
+                "updated_at",
+            },
+            "device_favorites": {
+                "id",
+                "device_id",
+                "target_type",
+                "target_id",
+                "created_at",
+            },
+            "device_review_progress": {
+                "id",
+                "device_id",
+                "flashcard_id",
+                "mastery",
+                "last_reviewed_at",
+                "interval",
+                "ease_factor",
+            },
+            "device_view_history": {
+                "id",
+                "device_id",
+                "target_type",
+                "target_id",
+                "viewed_at",
             },
         }
         mock_columns_result.all.return_value = [
@@ -456,7 +534,7 @@ class TestInitDatabase:
 
         # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, LATEST_SCHEMA_VERSION, "Schema v2: knowledge_points + knowledge_point_key_points", conn=mock_conn
+            mock_engine, LATEST_SCHEMA_VERSION, "Schema v3: flashcards + device tables", conn=mock_conn
         )
 
     @patch("app.core.database.verify_schema_compatibility")
