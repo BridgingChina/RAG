@@ -100,6 +100,16 @@ def add_favorite(
     if body.target_type not in VALID_TYPES:
         raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}")
 
+    # Verify target exists
+    _TARGET_MODELS_MAP = {
+        "bridge": Bridge,
+        "knowledge_point": KnowledgePoint,
+        "flashcard": Flashcard,
+    }
+    model_cls = _TARGET_MODELS_MAP.get(body.target_type)
+    if model_cls and not db.query(model_cls.id).filter(model_cls.id == body.target_id).first():
+        raise HTTPException(404, detail=f"{body.target_type} not found")
+
     fav = DeviceFavorite(
         device_id=device_id,
         target_type=body.target_type,

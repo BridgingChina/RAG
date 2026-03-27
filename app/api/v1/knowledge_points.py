@@ -296,11 +296,13 @@ async def generate_key_points(
 
     new_key_points = []
     for idx, item in enumerate(generated_kps):
-        # Map citation indices to chunk IDs
+        # Map citation indices to chunk IDs (defensive: LLM may return non-int values)
         citation_indices = item.get("citations", [])
+        if not isinstance(citation_indices, list):
+            citation_indices = []
         chunk_ids = []
         for ci in citation_indices:
-            if 1 <= ci <= len(chunks):
+            if isinstance(ci, int) and 1 <= ci <= len(chunks):
                 chunk_ids.append(chunks[ci - 1].id)
 
         kpkp = KnowledgePointKeyPoint(
@@ -313,13 +315,7 @@ async def generate_key_points(
         db.add(kpkp)
         new_key_points.append(kpkp)
 
-    db.commit()
-
-    # Refresh to get generated IDs
-    for kpkp in new_key_points:
-        db.refresh(kpkp)
-
-    # 7. Audit log
+    # 7. Audit log (before commit so it's in the same transaction)
     AuditService.log(
         db,
         action="generate_key_points",
@@ -330,6 +326,10 @@ async def generate_key_points(
         ip_address=get_client_ip(request),
     )
     db.commit()
+
+    # Refresh to get generated IDs
+    for kpkp in new_key_points:
+        db.refresh(kpkp)
 
     return {
         "generated": len(new_key_points),

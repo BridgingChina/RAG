@@ -69,7 +69,7 @@ def list_history(
     ]
 
     return MobilePaginatedResponse(
-        data={"items": items},
+        data=items,
         meta=MobileMeta(total=total, page=page, page_size=page_size),
     )
 
@@ -83,6 +83,15 @@ def record_view(
     """Record a view history entry. No dedup — each call creates a new record."""
     if body.target_type not in VALID_HISTORY_TYPES:
         raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}. Must be one of: {', '.join(sorted(VALID_HISTORY_TYPES))}")
+
+    # Verify target exists
+    _HISTORY_TARGET_MODELS = {
+        "bridge": Bridge,
+        "knowledge_point": KnowledgePoint,
+    }
+    model_cls = _HISTORY_TARGET_MODELS.get(body.target_type)
+    if model_cls and not db.query(model_cls.id).filter(model_cls.id == body.target_id).first():
+        raise HTTPException(404, detail=f"{body.target_type} not found")
 
     record = DeviceViewHistory(
         device_id=device_id,

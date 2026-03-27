@@ -92,7 +92,7 @@ def _kp_to_item(kp: KnowledgePoint, q: str) -> SearchResultItem:
 @router.get("/search")
 def search(
     q: str = Query(..., min_length=1),
-    type: str = Query(default="all"),
+    type: str = Query(default="all", pattern="^(all|bridge|knowledge_point)$"),
     bridge_type: str | None = Query(default=None),
     era: str | None = Query(default=None),
     region: str | None = Query(default=None),
@@ -127,8 +127,8 @@ def search(
             meta=MobileMeta(total=total, page=page, page_size=page_size),
         )
 
-    # --- type="all": interleaved strategy ---
-    # Each type gets half the page, surplus fills from whichever has more.
+    # --- type="all": merge both types, paginate combined list ---
+    # Data volume is small (<1000 bridges + KPs), so in-memory merge is fine.
     bridge_q = _build_bridge_query(db, like_pattern, bridge_type, era, region)
     kp_q = _build_kp_query(db, like_pattern, line, category)
 
@@ -136,27 +136,23 @@ def search(
     kp_total = kp_q.count()
     total = bridge_total + kp_total
 
-    half = page_size // 2
-    # Each type gets at least half, but if one type has fewer, the other gets more
-    b_limit = min(half, bridge_total - offset) if offset < bridge_total else 0
-    b_limit = max(b_limit, 0)
-    k_limit = page_size - b_limit
-
-    # Cap knowledge point limit by what's actually available
-    kp_avail = max(kp_total - offset, 0) if offset < kp_total else 0
-    if k_limit > kp_avail:
-        # Give surplus back to bridges
-        extra = min(k_limit - kp_avail, max(bridge_total - offset - b_limit, 0))
-        b_limit += extra
-        k_limit = kp_avail
-
+    # Fetch only what we need: skip via SQL where possible
     results: list[SearchResultItem] = []
-    if b_limit > 0:
-        bridges = bridge_q.order_by(Bridge.name).offset(offset).limit(b_limit).all()
-        results.extend(_bridge_to_item(b, q) for b in bridges)
-    if k_limit > 0:
-        kps = kp_q.order_by(KnowledgePoint.name).offset(offset).limit(k_limit).all()
-        results.extend(_kp_to_item(kp, q) for kp in kps)
+
+    if offset < bridge_total:
+        # Page starts in bridges
+        b_items = bridge_q.order_by(Bridge.name).offset(offset).limit(page_size).all()
+        results.extend(_bridge_to_item(b, q) for b in b_items)
+        remaining = page_size - len(results)
+        if remaining > 0:
+            # Fill rest from KPs (from the start)
+            kp_items = kp_q.order_by(KnowledgePoint.name).limit(remaining).all()
+            results.extend(_kp_to_item(kp, q) for kp in kp_items)
+    else:
+        # Page is entirely in KPs
+        kp_offset = offset - bridge_total
+        kp_items = kp_q.order_by(KnowledgePoint.name).offset(kp_offset).limit(page_size).all()
+        results.extend(_kp_to_item(kp, q) for kp in kp_items)
 
     return MobilePaginatedResponse(
         data=results,
