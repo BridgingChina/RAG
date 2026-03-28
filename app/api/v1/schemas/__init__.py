@@ -25,12 +25,15 @@ from .ask import (
 
 # Bridge schemas
 from .bridge import (
+    BatchGeocodeRequest,
+    BatchGeocodeResponse,
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
     BridgeMergePreview,
     BridgeMergeRequest,
     BridgeUpdate,
+    CSVImportResponse,
 )
 
 # Chunk schemas
@@ -134,12 +137,15 @@ __all__ = [
     "DebugResponse",
     "EvidenceGroupsResponse",
     # Bridge
+    "BatchGeocodeRequest",
+    "BatchGeocodeResponse",
     "BridgeCreate",
     "BridgeDetail",
     "BridgeListItem",
     "BridgeMergePreview",
     "BridgeMergeRequest",
     "BridgeUpdate",
+    "CSVImportResponse",
     # Chunk
     "BridgeLinkInput",
     "ChunkBatchRequest",

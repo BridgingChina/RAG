@@ -1,19 +1,22 @@
 """Bridges CRUD API endpoints."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy import desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.bridge import (
+    BatchGeocodeRequest,
+    BatchGeocodeResponse,
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
     BridgeMergePreview,
     BridgeMergeRequest,
     BridgeUpdate,
+    CSVImportResponse,
 )
 from app.api.v1.schemas.bridge_image import (
     BridgeImageResponse,
@@ -28,6 +31,7 @@ from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, User
 from app.services.audit_service import AuditService
 from app.services.bridge_image_service import BridgeImageService
+from app.services.geocode_service import GeocodeService
 from app.services.r2_storage import R2StorageService
 
 router = APIRouter(prefix="/bridges", tags=["bridges"])
@@ -221,6 +225,76 @@ def delete_bridge_image(
         raise HTTPException(status_code=404, detail="Image not found")
 
     db.commit()
+
+
+# ── Geocode endpoints (must be before /{bridge_id} parametric route) ──
+
+
+@router.post("/batch-geocode", response_model=BatchGeocodeResponse)
+async def batch_geocode(
+    body: BatchGeocodeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BatchGeocodeResponse:
+    """Batch geocode bridges using Amap API. Synchronous — returns results directly."""
+    svc = GeocodeService()
+    result = await svc.batch_geocode(body.bridge_ids)
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        detail={
+            "action": "batch_geocode",
+            "total": result["total"],
+            "success": result["success"],
+            "failed": result["failed"],
+        },
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return BatchGeocodeResponse(
+        total=result["total"],
+        success=result["success"],
+        failed=result["failed"],
+    )
+
+
+@router.post("/import-coordinates", response_model=CSVImportResponse)
+async def import_coordinates(
+    file: UploadFile,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CSVImportResponse:
+    """Import bridge coordinates from a CSV file (columns: name, latitude, longitude)."""
+    content = await file.read()
+    csv_content = content.decode("utf-8-sig")
+
+    svc = GeocodeService()
+    result = svc.import_from_csv(db, csv_content)
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        detail={
+            "action": "import_coordinates",
+            "matched": result["matched"],
+            "unmatched": result["unmatched"],
+        },
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return CSVImportResponse(
+        matched=result["matched"],
+        unmatched=result["unmatched"],
+    )
 
 
 # ── Bridge CRUD endpoints ──

@@ -73,3 +73,18 @@ class BridgeMergePreview(BaseModel):
     chunks_to_move: int
     links_to_move: int
     aliases_to_add: list[str]
+
+
+class BatchGeocodeRequest(BaseModel):
+    bridge_ids: list[UUID] | None = None  # None = all missing coordinates
+
+
+class BatchGeocodeResponse(BaseModel):
+    total: int
+    success: int
+    failed: int
+
+
+class CSVImportResponse(BaseModel):
+    matched: int
+    unmatched: list[str]
