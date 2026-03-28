@@ -11,6 +11,10 @@ from app.api.mobile.v1.schemas.common import MobileMeta, MobilePaginatedResponse
 from app.api.mobile.v1.utils import escape_like as _escape_like
 from app.core.database import get_db
 from app.models import Bridge, Chunk, Source
+from app.models.bridge_image import BridgeImage
+from app.models.knowledge_point import KnowledgePoint
+from app.models.knowledge_point_bridge import KnowledgePointBridge
+from app.services.bridge_image_service import BridgeImageService
 
 router = APIRouter()
 
@@ -31,7 +35,7 @@ def list_bridges(
     near_lat: float | None = None,
     near_lng: float | None = None,
     near_radius: int = Query(default=50000, ge=1),
-    sort: str = Query(default="name", pattern="^(name)$"),  # TODO: add "distance", "era"
+    sort: str = Query(default="name", pattern="^(name|distance)$"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -65,17 +69,38 @@ def list_bridges(
         )
 
     total = query.count()
-    # TODO: sort=distance
-    query = query.order_by(Bridge.name)
+
+    # Compute distance expression for sorting and per-item distance
+    distance_expr = None
+    cos_lat = 1.0
+    if near_lat is not None and near_lng is not None:
+        cos_lat = math.cos(math.radians(near_lat))
+        distance_expr = func.sqrt(
+            func.pow((Bridge.latitude - near_lat) * 111000, 2)
+            + func.pow((Bridge.longitude - near_lng) * 111000 * cos_lat, 2)
+        )
+
+    if sort == "distance" and distance_expr is not None:
+        query = query.order_by(distance_expr.asc())
+    else:
+        query = query.order_by(Bridge.name)
+
     bridges = query.offset((page - 1) * page_size).limit(page_size).all()
 
-    items = [
-        MobileBridgeListItem(
-            id=b.id, name=b.name, aliases=b.aliases, bridge_type=b.bridge_type,
-            era=b.era, region=b.region, latitude=b.latitude, longitude=b.longitude,
-        ).model_dump()
-        for b in bridges
-    ]
+    items = []
+    for b in bridges:
+        dist = None
+        if near_lat is not None and near_lng is not None and b.latitude is not None and b.longitude is not None:
+            dlat = (b.latitude - near_lat) * 111000
+            dlng = (b.longitude - near_lng) * 111000 * cos_lat
+            dist = round(math.sqrt(dlat**2 + dlng**2), 1)
+        items.append(
+            MobileBridgeListItem(
+                id=b.id, name=b.name, aliases=b.aliases, bridge_type=b.bridge_type,
+                era=b.era, region=b.region, latitude=b.latitude, longitude=b.longitude,
+                distance=dist,
+            ).model_dump()
+        )
 
     return MobilePaginatedResponse(
         data={"bridges": items},
@@ -216,11 +241,42 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse
 
     sections = BridgeSections(**section_data)
 
+    # Tags: derive from non-null bridge attributes
+    tags = [v for v in [bridge.bridge_type, bridge.material, bridge.era] if v]
+
+    # Images: query bridge_images table
+    images_rows = (
+        db.query(BridgeImage)
+        .filter(BridgeImage.bridge_id == bridge_id)
+        .order_by(BridgeImage.order_index)
+        .all()
+    )
+    image_list = [
+        {"url": BridgeImageService.get_public_url(img.r2_key), "caption": img.caption, "type": img.type}
+        for img in images_rows
+    ]
+
+    # Related knowledge points via association table
+    kp_links = (
+        db.query(KnowledgePointBridge, KnowledgePoint)
+        .join(KnowledgePoint, KnowledgePointBridge.knowledge_point_id == KnowledgePoint.id)
+        .filter(KnowledgePointBridge.bridge_id == bridge_id)
+        .order_by(KnowledgePointBridge.order_index)
+        .all()
+    )
+    related_kps = [
+        {"id": str(kp.id), "name": kp.name, "relevance": link.relevance_note}
+        for link, kp in kp_links
+    ]
+
     detail = MobileBridgeDetail(
         id=bridge.id, name=bridge.name, aliases=bridge.aliases,
         bridge_type=bridge.bridge_type, era=bridge.era, region=bridge.region,
         latitude=bridge.latitude, longitude=bridge.longitude,
+        tags=tags,
+        images=image_list,
         sections=sections,
+        related_knowledge_points=related_kps,
         sources=sources_list,
         sources_count=len(sources_list),
     )
@@ -229,8 +285,20 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse
 
 @router.get("/{bridge_id}/knowledge-points")
 def get_bridge_knowledge_points(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse[dict]:
-    """TODO (P2): Implement via knowledge_point_bridges association table."""
+    """Get knowledge points associated with a bridge."""
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
     if not bridge:
         raise HTTPException(404, detail="桥梁不存在")
-    return MobileResponse(data={"knowledge_points": []})
+
+    kp_links = (
+        db.query(KnowledgePointBridge, KnowledgePoint)
+        .join(KnowledgePoint, KnowledgePointBridge.knowledge_point_id == KnowledgePoint.id)
+        .filter(KnowledgePointBridge.bridge_id == bridge_id)
+        .order_by(KnowledgePointBridge.order_index)
+        .all()
+    )
+    knowledge_points = [
+        {"id": str(kp.id), "name": kp.name, "line": None, "relevance": link.relevance_note}
+        for link, kp in kp_links
+    ]
+    return MobileResponse(data={"knowledge_points": knowledge_points})

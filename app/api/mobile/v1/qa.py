@@ -5,6 +5,7 @@ Single LLM call + structured JSON split into sequential SSE events
 """
 import json
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, Request
@@ -79,11 +80,31 @@ async def ask_sse(
 ):
     """SSE streaming QA endpoint.
     TODO: Upgrade to real LLM streaming.
-    TODO: SSE heartbeat (15s ping) + total timeout (60s).
     """
     async def event_stream():
         qa_id = str(uuid.uuid4())
+        start_time = time.monotonic()
+        last_event_time = start_time
+        timeout_seconds = 60
+        ping_interval = 15
+
+        def _is_timed_out() -> bool:
+            return time.monotonic() - start_time > timeout_seconds
+
+        def _maybe_ping() -> str:
+            nonlocal last_event_time
+            now = time.monotonic()
+            if now - last_event_time > ping_interval:
+                last_event_time = now
+                return _sse_event("ping", {})
+            return ""
+
+        def _mark_event() -> None:
+            nonlocal last_event_time
+            last_event_time = time.monotonic()
+
         yield _sse_event("started", {"qa_id": qa_id})
+        _mark_event()
 
         try:
             provider = ZhipuProvider()
@@ -98,11 +119,25 @@ async def ask_sse(
                 from app.api.v1.ask import _resolve_bridge_from_question
                 target_bridge_id = _resolve_bridge_from_question(db, body.question)
 
+            if _is_timed_out():
+                yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
+
             facet = None
             try:
                 facet = await facet_extractor.extract(body.question)
             except Exception:
                 logger.warning("Facet extraction failed, continuing without facets", exc_info=True)
+
+            ping = _maybe_ping()
+            if ping:
+                yield ping
+
+            if _is_timed_out():
+                yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
 
             try:
                 evidence = await retriever.retrieve(
@@ -121,6 +156,10 @@ async def ask_sse(
                 yield _sse_event("done", {"qa_id": qa_id})
                 return
 
+            ping = _maybe_ping()
+            if ping:
+                yield ping
+
             if not evidence.all_chunks():
                 yield _sse_event("error", {
                     "code": "INSUFFICIENT_EVIDENCE",
@@ -130,9 +169,19 @@ async def ask_sse(
                 yield _sse_event("done", {"qa_id": qa_id})
                 return
 
+            if _is_timed_out():
+                yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
+
             events = await generator.generate_streaming(body.question, evidence)
             for event_type, data in events:
+                if _is_timed_out():
+                    yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                    yield _sse_event("done", {"qa_id": qa_id})
+                    return
                 yield _sse_event(event_type, data)
+                _mark_event()
 
             yield _sse_event("done", {"qa_id": qa_id})
 
