@@ -22,7 +22,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { BridgeForm } from "@/components/bridges/BridgeForm"
+import { BridgeImageManager } from "@/components/bridges/BridgeImageManager"
 import { BridgeMergeDialog } from "@/components/bridges/BridgeMergeDialog"
+import { MapCoordinatePicker } from "@/components/bridges/MapCoordinatePicker"
 import { useApi } from "@/hooks/useApi"
 import {
   fetchBridge,
@@ -52,6 +54,7 @@ export function Component() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isMergeDialogOpen, setIsMergeDialogOpen] = useState(false)
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
   const { data: bridge, loading, error, refetch } = useApi(
@@ -83,6 +86,17 @@ export function Component() {
       setIsDeleteDialogOpen(false)
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  const handleMapConfirm = async (lat: number, lng: number) => {
+    if (!id) return
+    setActionError(null)
+    try {
+      await updateBridge(id, { latitude: lat, longitude: lng })
+      refetch()
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e))
     }
   }
 
@@ -144,6 +158,35 @@ export function Component() {
             />
           </CardContent>
         </Card>
+
+        {/* Map Picker + Geocode Source */}
+        <Card>
+          <CardHeader>
+            <CardTitle>坐标定位</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-4">
+              <div className="text-sm">
+                <span className="font-medium">纬度:</span>{" "}
+                {bridge.latitude !== null ? bridge.latitude : "—"}
+                <span className="ml-4 font-medium">经度:</span>{" "}
+                {bridge.longitude !== null ? bridge.longitude : "—"}
+              </div>
+              {bridge.geocode_source && (
+                <Badge variant="outline">{bridge.geocode_source}</Badge>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setIsMapPickerOpen(true)}
+            >
+              地图选点
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Bridge Images */}
+        <BridgeImageManager bridgeId={id!} />
 
         {/* Associated Chunks */}
         <Card>
@@ -252,6 +295,15 @@ export function Component() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Map Coordinate Picker */}
+      <MapCoordinatePicker
+        open={isMapPickerOpen}
+        onOpenChange={setIsMapPickerOpen}
+        initialLat={bridge.latitude}
+        initialLng={bridge.longitude}
+        onConfirm={handleMapConfirm}
+      />
 
       {/* Merge Dialog */}
       <BridgeMergeDialog

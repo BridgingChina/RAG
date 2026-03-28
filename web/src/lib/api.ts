@@ -4,6 +4,7 @@ import type {
   BatchDeleteResponse,
   BridgeCreateRequest,
   BridgeDetail,
+  BridgeImage,
   BridgeListItem,
   BridgeMergeRequest,
   BridgeUpdateRequest,
@@ -413,6 +414,30 @@ export function mergeBridge(
   data: BridgeMergeRequest,
 ): Promise<BridgeDetail> {
   return post<BridgeDetail>(`/bridges/${targetId}/merge`, data)
+}
+
+// --- Bridge Images ---
+
+export function presignBridgeImage(bridgeId: string, data: { file_name: string; content_type: string }) {
+  return post<{ image_id: string; upload_url: string; r2_key: string }>(
+    `/bridges/${bridgeId}/images/presign`, data
+  )
+}
+
+export function confirmBridgeImage(bridgeId: string, data: { image_id: string; caption?: string; type?: string }) {
+  return post<BridgeImage>(`/bridges/${bridgeId}/images`, data)
+}
+
+export function fetchBridgeImages(bridgeId: string) {
+  return get<{ items: BridgeImage[] }>(`/bridges/${bridgeId}/images`)
+}
+
+export function reorderBridgeImages(bridgeId: string, imageIds: string[]) {
+  return put<void>(`/bridges/${bridgeId}/images/reorder`, { image_ids: imageIds })
+}
+
+export function deleteBridgeImage(bridgeId: string, imageId: string) {
+  return del(`/bridges/${bridgeId}/images/${imageId}`)
 }
 
 // --- Sources ---

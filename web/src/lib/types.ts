@@ -295,7 +295,18 @@ export interface BridgeDetail {
   longitude: number | null
   function: string | null
   summary: string | null
+  geocode_source: string | null
   chunk_count: number
+  created_at: string
+}
+
+export interface BridgeImage {
+  id: string
+  bridge_id: string
+  url: string
+  caption: string | null
+  type: string | null
+  order_index: number
   created_at: string
 }
 
