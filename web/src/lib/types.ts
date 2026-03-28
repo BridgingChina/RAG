@@ -463,6 +463,50 @@ export interface ChangePasswordRequest {
   new_password: string
 }
 
+// --- Knowledge Points ---
+
+export interface KnowledgePointListItem {
+  id: string
+  name: string
+  taxonomy_node_id: string | null
+  difficulty: string | null
+  summary: string | null
+}
+
+export interface KeyPointItem {
+  id: string
+  summary: string
+  explanation: string | null
+  order_index: number
+  chunk_ids: string[]
+}
+
+export interface KnowledgePointDetail {
+  id: string
+  taxonomy_node_id: string | null
+  name: string
+  aliases: string | null
+  difficulty: string | null
+  summary: string | null
+  l2_content: L2Content | null
+  key_points: KeyPointItem[]
+}
+
+export interface L2Content {
+  comparisons?: Array<{ title: string; content: string }>
+  evolution?: string
+  controversies?: Array<{ title: string; description: string }>
+  further_reading?: Array<{ title: string; source_id?: string }>
+}
+
+export interface KPBridgeItem {
+  id: string
+  bridge_id: string
+  bridge_name: string
+  relevance_note: string | null
+  order_index: number
+}
+
 // Audit
 export interface AuditLogItem {
   id: string

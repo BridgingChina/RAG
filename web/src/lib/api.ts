@@ -21,6 +21,9 @@ import type {
   IngestResponse,
   IngestTaskCreateRequest,
   IngestTaskItem,
+  KnowledgePointDetail,
+  KnowledgePointListItem,
+  KPBridgeItem,
   LoginRequest,
   LoginResponse,
   PaginatedResponse,
@@ -510,6 +513,81 @@ export function fetchMe(): Promise<UserInfo> {
 
 export function changePassword(data: ChangePasswordRequest): Promise<void> {
   return put<void>("/auth/password", data)
+}
+
+// --- Audit ---
+
+// --- Knowledge Points ---
+
+export function fetchKnowledgePoints(params?: {
+  page?: number
+  page_size?: number
+  taxonomy_node_id?: string
+}): Promise<PaginatedResponse<KnowledgePointListItem>> {
+  return get<PaginatedResponse<KnowledgePointListItem>>("/knowledge-points", params)
+}
+
+export function fetchKnowledgePoint(id: string): Promise<KnowledgePointDetail> {
+  return get<KnowledgePointDetail>(`/knowledge-points/${id}`)
+}
+
+export function createKnowledgePoint(data: {
+  name: string
+  taxonomy_node_id?: string
+  aliases?: string
+  difficulty?: string
+  summary?: string
+}): Promise<KnowledgePointDetail> {
+  return post<KnowledgePointDetail>("/knowledge-points", data)
+}
+
+export function updateKnowledgePoint(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<KnowledgePointDetail> {
+  return put<KnowledgePointDetail>(`/knowledge-points/${id}`, data)
+}
+
+export function deleteKnowledgePoint(id: string): Promise<void> {
+  return del(`/knowledge-points/${id}`)
+}
+
+export function generateKeyPoints(
+  id: string,
+): Promise<{ generated: number }> {
+  return post<{ generated: number }>(`/knowledge-points/${id}/generate-key-points`, {})
+}
+
+export function generateFlashcards(
+  id: string,
+): Promise<{ generated: number; errors: Array<{ kp_id: string; error: string }> }> {
+  return post<{ generated: number; errors: Array<{ kp_id: string; error: string }> }>(
+    `/knowledge-points/${id}/generate-flashcards`,
+    {},
+  )
+}
+
+export function syncKPBridges(
+  id: string,
+  useLlm = false,
+): Promise<{ synced: number }> {
+  return post<{ synced: number }>(
+    `/knowledge-points/${id}/sync-bridges?use_llm=${useLlm}`,
+    {},
+  )
+}
+
+export function fetchKPBridges(
+  id: string,
+): Promise<{ items: KPBridgeItem[] }> {
+  return get<{ items: KPBridgeItem[] }>(`/knowledge-points/${id}/bridges`)
+}
+
+export function replaceKPBridges(
+  id: string,
+  items: Array<{ bridge_id: string; relevance_note?: string; order_index?: number }>,
+): Promise<{ items: KPBridgeItem[] }> {
+  return put<{ items: KPBridgeItem[] }>(`/knowledge-points/${id}/bridges`, { items })
 }
 
 // --- Audit ---
