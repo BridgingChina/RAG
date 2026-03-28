@@ -19,7 +19,7 @@ cd web && npm run lint   # ESLint
 cd web && npx tsc --noEmit  # Type check only (no build)
 ```
 
-**Pages:** Dashboard, Chunks (list/detail/editor), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Ingest (list/detail), Ask, Settings, Audit Logs, Login
+**Pages:** Dashboard, Chunks (list/detail/editor), Bridges (list/create/detail), Sources (list/detail), Taxonomy, Knowledge Points (list/detail), Ingest (list/detail), Ask, Settings (+ batch operations), Audit Logs, Login
 
 ### Development Setup
 
@@ -140,6 +140,8 @@ The system uses automatic schema versioning:
 - `device_favorites` — 设备收藏（device_id/target_type/target_id），UNIQUE 约束
 - `device_review_progress` — 闪卡复习状态（mastery/last_reviewed_at），预留 SM-2 字段（interval/ease_factor），FK → flashcards(CASCADE)
 - `device_view_history` — 设备浏览历史（target_type/target_id/viewed_at）
+- `bridge_images` — 桥梁图片（bridge_id/r2_key/caption/type/order_index），FK → bridges(CASCADE)
+- `knowledge_point_bridges` — 知识点-桥梁关联（knowledge_point_id/bridge_id/relevance_note/order_index），UNIQUE(kp, bridge)
 
 **API Endpoints:**
 
@@ -156,7 +158,9 @@ The system uses automatic schema versioning:
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
 - Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
 - Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
-- Knowledge Points CRUD: `GET/POST /api/v1/knowledge-points`, `GET/PUT/DELETE /api/v1/knowledge-points/{id}`, `POST /api/v1/knowledge-points/{id}/generate-key-points`（LLM 生成 key_points）
+- Knowledge Points CRUD: `GET/POST /api/v1/knowledge-points`, `GET/PUT/DELETE /api/v1/knowledge-points/{id}`, `POST /api/v1/knowledge-points/{id}/generate-key-points`（LLM 生成 key_points），`POST /{id}/generate-flashcards`，`POST /{id}/sync-bridges`，`GET/PUT /{id}/bridges`
+- Bridge Images: `POST /api/v1/bridges/{id}/images/presign`, `POST /images`, `GET /images`, `PUT /images/reorder`, `DELETE /images/{image_id}`
+- Batch Operations: `POST /api/v1/bridges/batch-geocode`（高德 API），`POST /bridges/import-coordinates`（CSV），`POST /api/v1/flashcards/batch-generate`
 - Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /api/mobile/v1/bridges`, `GET /api/mobile/v1/bridges/clusters`, `GET /api/mobile/v1/bridges/{id}`, `GET /api/mobile/v1/bridges/{id}/knowledge-points`, `GET /api/mobile/v1/knowledge/tree`, `GET /api/mobile/v1/knowledge/points/{id}`, `GET /api/mobile/v1/knowledge/points/{id}/bridges`, `GET /api/mobile/v1/knowledge/points/{id}/flashcards`, `POST /api/mobile/v1/qa/ask` (SSE), `GET /api/mobile/v1/search`
 - Mobile favorites (X-Device-Id): `GET/POST /api/mobile/v1/favorites`, `DELETE /api/mobile/v1/favorites/{id}`, `POST /api/mobile/v1/favorites/check`
 - Mobile review (X-Device-Id): `GET /api/mobile/v1/review/today`, `GET /api/mobile/v1/review/cards`, `PUT /api/mobile/v1/review/progress/{id}`
