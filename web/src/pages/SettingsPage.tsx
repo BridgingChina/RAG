@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/layout/PageHeader"
+import { BatchOperationsPanel } from "@/components/settings/BatchOperationsPanel"
 import { useApi } from "@/hooks/useApi"
 import { fetchSystemStatus } from "@/lib/api"
 import type { SystemStatus } from "@/lib/types"
@@ -56,6 +57,10 @@ export function Component() {
             </Card>
           </div>
         )}
+
+        <div className="mt-6">
+          <BatchOperationsPanel />
+        </div>
       </main>
     </>
   )

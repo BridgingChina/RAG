@@ -590,6 +590,44 @@ export function replaceKPBridges(
   return put<{ items: KPBridgeItem[] }>(`/knowledge-points/${id}/bridges`, { items })
 }
 
+// --- Batch Operations ---
+
+export function batchGeocode(bridgeIds?: string[]) {
+  return post<{ total: number; success: number; failed: number }>(
+    "/bridges/batch-geocode",
+    { bridge_ids: bridgeIds ?? null },
+  )
+}
+
+export async function importCoordinatesCsv(file: File) {
+  const formData = new FormData()
+  formData.append("file", file)
+  const token = localStorage.getItem("auth-token")
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  const resp = await fetch(`${BASE}/bridges/import-coordinates`, {
+    method: "POST",
+    headers,
+    body: formData,
+  })
+  if (!resp.ok) {
+    if (resp.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
+    const text = await resp.text()
+    throw new Error(text || `HTTP ${resp.status}`)
+  }
+  return resp.json() as Promise<{ matched: number; unmatched: string[] }>
+}
+
+export function batchGenerateFlashcards(knowledgePointIds: string[]) {
+  return post<{ total_generated: number; errors: Array<{ kp_id: string; error: string }> }>(
+    "/flashcards/batch-generate",
+    { knowledge_point_ids: knowledgePointIds },
+  )
+}
+
 // --- Audit ---
 
 export function fetchAuditLogs(params?: {
