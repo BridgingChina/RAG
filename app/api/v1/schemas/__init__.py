@@ -82,6 +82,15 @@ from .stats import (
     RecentIngest,
 )
 
+# Bridge image schemas
+from .bridge_image import (
+    BridgeImageResponse,
+    ImageConfirmRequest,
+    ImagePresignRequest,
+    ImagePresignResponse,
+    ImageReorderRequest,
+)
+
 # Taxonomy schemas
 from .taxonomy import (
     TaxonomyBatchUpdate,
@@ -159,6 +168,12 @@ __all__ = [
     "DashboardStats",
     "Lvl1Distribution",
     "RecentIngest",
+    # Bridge image
+    "BridgeImageResponse",
+    "ImageConfirmRequest",
+    "ImagePresignRequest",
+    "ImagePresignResponse",
+    "ImageReorderRequest",
     # Taxonomy
     "TaxonomyBatchUpdate",
     "TaxonomyBatchUpdateResult",
