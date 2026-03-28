@@ -1,7 +1,7 @@
 """Knowledge point admin schemas."""
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class KPCreate(BaseModel):
@@ -51,3 +51,22 @@ class KPListItem(BaseModel):
     taxonomy_node_id: UUID | None
     difficulty: str | None
     summary: str | None
+
+
+class KPBridgeItem(BaseModel):
+    id: UUID
+    bridge_id: UUID
+    bridge_name: str
+    relevance_note: str | None
+    order_index: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KPBridgeReplaceItem(BaseModel):
+    bridge_id: UUID
+    relevance_note: str | None = None
+    order_index: int = 0
+
+
+class KPBridgeReplaceRequest(BaseModel):
+    items: list[KPBridgeReplaceItem]

@@ -49,7 +49,17 @@ from .chunk import (
 )
 
 # Knowledge point schemas
-from .knowledge_point import GenerateKeyPointsResponse, KeyPointItem, KPCreate, KPDetail, KPListItem, KPUpdate
+from .knowledge_point import (
+    GenerateKeyPointsResponse,
+    KPBridgeItem,
+    KPBridgeReplaceItem,
+    KPBridgeReplaceRequest,
+    KPCreate,
+    KPDetail,
+    KPListItem,
+    KPUpdate,
+    KeyPointItem,
+)
 
 # Ingest schemas
 from .ingest import (
@@ -143,6 +153,9 @@ __all__ = [
     "ChunkUpdate",
     "ReindexResponse",
     # Knowledge point
+    "KPBridgeItem",
+    "KPBridgeReplaceItem",
+    "KPBridgeReplaceRequest",
     "KPCreate",
     "KPDetail",
     "KPListItem",
