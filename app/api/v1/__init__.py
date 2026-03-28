@@ -7,6 +7,7 @@ from app.api.v1.audit import router as audit_router
 from app.api.v1.ask import router as ask_router
 from app.api.v1.bridges import router as bridges_router
 from app.api.v1.chunks import router as chunks_router
+from app.api.v1.flashcards import router as flashcards_router
 from app.api.v1.ingest import router as ingest_router
 from app.api.v1.sources import router as sources_router
 from app.api.v1.stats import router as stats_router
@@ -27,6 +28,7 @@ protected.include_router(audit_router)
 protected.include_router(ask_router)
 protected.include_router(bridges_router)
 protected.include_router(chunks_router)
+protected.include_router(flashcards_router)
 protected.include_router(ingest_router)
 protected.include_router(ingest_tasks_router)
 protected.include_router(knowledge_points_router)

@@ -19,9 +19,10 @@ from app.api.v1.schemas.knowledge_point import (
     KeyPointItem,
 )
 from app.core.database import get_db
-from app.models import Bridge, Chunk, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode, User
+from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode, User
 from app.providers import ChatMessage, ZhipuProvider
 from app.services.audit_service import AuditService
+from app.services.flashcard_generator import FlashcardBatchGenerator
 from app.services.kp_bridge_service import KnowledgePointBridgeService
 
 logger = logging.getLogger(__name__)
@@ -232,6 +233,62 @@ def replace_kp_bridges(
         )
         for r in created
     ]
+
+
+@router.post("/{kp_id}/generate-flashcards")
+async def generate_flashcards(
+    kp_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate flashcards for a knowledge point using LLM."""
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+
+    generator = FlashcardBatchGenerator()
+    provider = ZhipuProvider()
+
+    try:
+        cards = await generator.generate_for_kp(db, kp_id, provider)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("LLM call failed for KP %s flashcards: %s", kp_id, e)
+        raise HTTPException(status_code=502, detail="LLM service unavailable. Please try again later.")
+
+    AuditService.log(
+        db,
+        action="generate_flashcards",
+        resource_type="knowledge_point",
+        user_id=current_user.id,
+        resource_id=str(kp_id),
+        detail={"generated": len(cards)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    # Refresh to get generated IDs
+    for card in cards:
+        db.refresh(card)
+
+    return {
+        "generated": len(cards),
+        "cards": [
+            {
+                "id": str(card.id),
+                "knowledge_point_id": str(card.knowledge_point_id),
+                "card_type": card.card_type,
+                "front_title": card.front_title,
+                "front_hint": card.front_hint,
+                "back_answer": card.back_answer,
+                "back_key_features": card.back_key_features,
+                "back_example_bridge_id": str(card.back_example_bridge_id) if card.back_example_bridge_id else None,
+            }
+            for card in cards
+        ],
+    }
 
 
 @router.get("/{kp_id}", response_model=KPDetail)
