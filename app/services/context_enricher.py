@@ -1,7 +1,10 @@
 import json
+import logging
 from dataclasses import dataclass
 
 from app.providers import ChatMessage, LLMProvider
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,9 +85,14 @@ class ContextEnricher:
         except (json.JSONDecodeError, KeyError):
             pass
 
-        # Fallback: use raw content as contextual_text
+        # Fallback: return empty contextual_text to avoid polluting index
+        logger.warning(
+            "Failed to parse ContextEnricher LLM response as JSON, "
+            "returning empty contextual_text. Raw response: %.200s",
+            content,
+        )
         return ContextResult(
-            contextual_text=content[:160],
+            contextual_text="",
             entities=[],
             resolved_references={},
         )
