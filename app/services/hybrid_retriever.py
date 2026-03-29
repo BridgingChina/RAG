@@ -406,7 +406,7 @@ class HybridRetriever:
         """
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
         try:
-            sql = "SELECT id FROM chunks WHERE 1=1"
+            sql = "SELECT id FROM chunks WHERE needs_reindex = false"
             params: dict[str, object] = {"embedding": embedding_str, "limit": limit}
             bind_params: list[object] = []
 
@@ -465,7 +465,8 @@ class HybridRetriever:
             # Full-text search using pre-computed tsv column
             sql = """
                 SELECT id FROM chunks
-                WHERE tsv @@ to_tsquery('simple', :tsquery)
+                WHERE needs_reindex = false
+                  AND tsv @@ to_tsquery('simple', :tsquery)
             """
             params: dict[str, object] = {"tsquery": tsquery, "limit": limit}
             bind_params: list[object] = []
