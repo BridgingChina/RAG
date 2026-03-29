@@ -159,7 +159,7 @@ function KPBridgeSyncSection() {
       let totalSynced = 0
       for (const id of allIds) {
         const res = await syncKPBridges(id)
-        totalSynced += res.synced
+        totalSynced += res.length
       }
       setResult({ total: allIds.length, synced: totalSynced })
     } catch (e) {

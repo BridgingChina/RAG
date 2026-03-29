@@ -58,7 +58,7 @@ class GeocodeService:
         db = SessionLocal()
         try:
             query = db.query(Bridge)
-            if bridge_ids:
+            if bridge_ids is not None:
                 query = query.filter(Bridge.id.in_(bridge_ids))
             else:
                 query = query.filter(Bridge.latitude.is_(None))

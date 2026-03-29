@@ -58,7 +58,7 @@ export function BridgeImageManager({ bridgeId }: { bridgeId: string }) {
   const [editState, setEditState] = useState<EditState | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const images = data?.items ?? []
+  const images = data ?? []
 
   const handleUpload = async (file: File) => {
     setUploading(true)

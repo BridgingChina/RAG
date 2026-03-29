@@ -432,7 +432,7 @@ export function confirmBridgeImage(bridgeId: string, data: { image_id: string; c
 }
 
 export function fetchBridgeImages(bridgeId: string) {
-  return get<{ items: BridgeImage[] }>(`/bridges/${bridgeId}/images`)
+  return get<BridgeImage[]>(`/bridges/${bridgeId}/images`)
 }
 
 export function reorderBridgeImages(bridgeId: string, imageIds: string[]) {
@@ -570,8 +570,8 @@ export function generateFlashcards(
 export function syncKPBridges(
   id: string,
   useLlm = false,
-): Promise<{ synced: number }> {
-  return post<{ synced: number }>(
+): Promise<KPBridgeItem[]> {
+  return post<KPBridgeItem[]>(
     `/knowledge-points/${id}/sync-bridges?use_llm=${useLlm}`,
     {},
   )
@@ -579,15 +579,15 @@ export function syncKPBridges(
 
 export function fetchKPBridges(
   id: string,
-): Promise<{ items: KPBridgeItem[] }> {
-  return get<{ items: KPBridgeItem[] }>(`/knowledge-points/${id}/bridges`)
+): Promise<KPBridgeItem[]> {
+  return get<KPBridgeItem[]>(`/knowledge-points/${id}/bridges`)
 }
 
 export function replaceKPBridges(
   id: string,
   items: Array<{ bridge_id: string; relevance_note?: string; order_index?: number }>,
-): Promise<{ items: KPBridgeItem[] }> {
-  return put<{ items: KPBridgeItem[] }>(`/knowledge-points/${id}/bridges`, { items })
+): Promise<KPBridgeItem[]> {
+  return put<KPBridgeItem[]>(`/knowledge-points/${id}/bridges`, { items })
 }
 
 // --- Batch Operations ---

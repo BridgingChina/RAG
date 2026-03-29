@@ -126,7 +126,7 @@ export function Component() {
     }
   }
 
-  const bridges: KPBridgeItem[] = bridgesData?.items || []
+  const bridges: KPBridgeItem[] = bridgesData ?? []
 
   // --- Handlers ---
 
@@ -198,7 +198,7 @@ export function Component() {
     setBridgeSuccess(null)
     try {
       const result = await syncKPBridges(id)
-      setBridgeSuccess(`已同步 ${result.synced} 个关联`)
+      setBridgeSuccess(`已同步 ${result.length} 个关联`)
       refetchBridges()
     } catch (e) {
       setBridgeError(e instanceof Error ? e.message : String(e))
