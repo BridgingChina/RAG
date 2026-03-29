@@ -416,7 +416,6 @@ export interface SystemStatus {
   git_date: string
   python_version: string
   db_connected: boolean
-  db_version: string | null
   schema_version: number | null
   vector_dimension: number
   index_type: string

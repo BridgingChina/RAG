@@ -9,7 +9,6 @@ class SystemStatus(BaseModel):
     git_date: str = ""
     python_version: str
     db_connected: bool
-    db_version: str | None = None
     schema_version: int | None = None
     vector_dimension: int
     index_type: str

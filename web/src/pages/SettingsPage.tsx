@@ -35,7 +35,7 @@ export function Component() {
             <Card>
               <CardHeader><CardTitle>系统状态</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                <StatusRow label="数据库" connected={data.db_connected} detail={data.db_version} />
+                <StatusRow label="数据库" connected={data.db_connected} detail={data.db_connected ? "已连接" : "未连接"} />
                 <InfoRow label="Schema 版本" value={data.schema_version != null ? `v${data.schema_version}` : "未知"} />
                 <StatusRow label="API 密钥" connected={data.api_key_configured} detail={data.api_key_configured ? "已配置" : "未配置"} />
                 <InfoRow label="版本" value={formatVersion(data)} />
