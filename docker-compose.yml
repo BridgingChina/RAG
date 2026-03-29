@@ -2,6 +2,12 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: bridge_rag_db
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=256MB
+      -c effective_cache_size=768MB
     ports:
       - "5433:5432"  # Expose for local development workflow (docker compose up -d db)
     environment:
