@@ -403,7 +403,7 @@ def retry_ingest_task(
     return IngestTaskDetail(**_task_to_detail(task))
 
 
-@router.delete("/{task_id}")
+@router.delete("/{task_id}", status_code=204)
 def delete_ingest_task(
     task_id: UUID,
     request: Request,
@@ -436,4 +436,4 @@ def delete_ingest_task(
     )
     db.commit()
 
-    return {"ok": True}
+    return None
