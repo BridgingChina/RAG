@@ -38,9 +38,6 @@ class GenerationResult:
     sources: list[str]
 
 
-# Alias for backwards compatibility
-GenerationResultV2 = GenerationResult
-
 
 class Generator:
     def __init__(self, provider: LLMProvider):

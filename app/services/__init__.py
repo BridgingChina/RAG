@@ -7,7 +7,6 @@ from app.services.generator import (
     Citation,
     Confidence,
     GenerationResult,
-    GenerationResultV2,
     Generator,
 )
 from app.services.hybrid_retriever import (
@@ -43,7 +42,6 @@ __all__ = [
     "Citation",
     "Confidence",
     "GenerationResult",
-    "GenerationResultV2",
     "Generator",
     # Hybrid Retriever
     "DEFAULT_QUOTA",

@@ -17,7 +17,7 @@ from app.services.hybrid_retriever import (
     HybridRetrievalResult,
     RetrievedChunk,
 )
-from app.services.generator import Generator, GenerationResultV2, Confidence
+from app.services.generator import Generator, GenerationResult, Confidence
 
 # Deterministic UUID constants for test IDs
 _UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -235,7 +235,7 @@ async def test_generator_v2_integration():
     result = await generator.generate_v2("测试问题", evidence)
 
     # Check result structure
-    assert isinstance(result, GenerationResultV2)
+    assert isinstance(result, GenerationResult)
     assert result.summary == "测试要点"
     assert result.details == "测试详细"
     assert result.analogy is None
