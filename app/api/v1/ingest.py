@@ -84,7 +84,10 @@ def _extract_bridge_hints(frontmatter: dict, request_candidates: list[str] | Non
     return deduped
 
 
-@router.post("/ingest", response_model=IngestResponse)
+# DEPRECATED: This synchronous ingest endpoint is superseded by the async
+# /api/v1/ingest-tasks pipeline, which supports R2 upload, Zhipu file parsing,
+# and multi-stage task tracking. Use /ingest-tasks for all new integrations.
+@router.post("/ingest", response_model=IngestResponse, deprecated=True)
 def ingest(
     body: IngestRequest,
     request: Request,
@@ -94,6 +97,10 @@ def ingest(
     current_user: User = Depends(get_current_user),
 ):
     """Ingest a Markdown document.
+
+    .. deprecated::
+        Use the async ``/api/v1/ingest-tasks`` pipeline instead, which supports
+        R2 upload, Zhipu file parsing, and multi-stage task tracking.
 
     Parses Markdown with YAML front matter, chunks the content, enriches with
     context, tags with taxonomy, links chunk-level bridge entities, and stores in DB.
