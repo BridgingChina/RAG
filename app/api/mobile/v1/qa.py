@@ -7,8 +7,10 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.api.mobile.v1.schemas.qa import QARequest
@@ -28,6 +30,7 @@ from app.services.tokenizer import Tokenizer, default_user_dict_path
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 def _sse_event(event: str, data: dict) -> str:
@@ -70,8 +73,10 @@ def _resolve_context(
 
 
 @router.post("/ask")
+@limiter.limit("10/minute")
 async def ask_sse(
-    request: QARequest,
+    request: Request,
+    body: QARequest,
     db: Session = Depends(get_db),
 ):
     """SSE streaming QA endpoint.
@@ -89,28 +94,28 @@ async def ask_sse(
             generator = Generator(provider=provider)
             facet_extractor = FacetExtractor(provider=provider)
 
-            target_bridge_id, taxonomy_filter = _resolve_context(db, request)
+            target_bridge_id, taxonomy_filter = _resolve_context(db, body)
 
             if not target_bridge_id and not taxonomy_filter:
                 from app.api.v1.ask import _resolve_bridge_from_question
-                target_bridge_id = _resolve_bridge_from_question(db, request.question)
+                target_bridge_id = _resolve_bridge_from_question(db, body.question)
 
             facet = None
             try:
-                facet = await facet_extractor.extract(request.question)
+                facet = await facet_extractor.extract(body.question)
             except Exception:
                 logger.warning("Facet extraction failed, continuing without facets", exc_info=True)
 
             try:
                 evidence = await retriever.retrieve(
                     db,
-                    request.question,
+                    body.question,
                     target_bridge_id=target_bridge_id,
                     taxonomy_filter=taxonomy_filter,
                     facet=facet,
                 )
             except Exception:
-                logger.error("Retrieval failed for question=%r", request.question, exc_info=True)
+                logger.error("Retrieval failed for question=%r", body.question, exc_info=True)
                 yield _sse_event("error", {
                     "code": "RETRIEVAL_FAILED",
                     "message": "检索系统暂时不可用，请稍后重试",
@@ -127,7 +132,7 @@ async def ask_sse(
                 yield _sse_event("done", {"qa_id": qa_id})
                 return
 
-            events = await generator.generate_streaming(request.question, evidence)
+            events = await generator.generate_streaming(body.question, evidence)
             for event_type, data in events:
                 yield _sse_event(event_type, data)
 
