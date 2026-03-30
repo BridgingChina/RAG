@@ -189,7 +189,7 @@ async def test_parse_pdf_with_download_url_extracts_markdown():
     mock_file_parser.create_task.return_value = "zhipu-task-zip"
     mock_parse_result = MagicMock()
     mock_parse_result.content = None  # download_link mode: content is None
-    mock_parse_result.download_url = "https://example.com/result.zip"
+    mock_parse_result.download_url = "https://open.bigmodel.cn/result.zip"
     mock_file_parser.poll_until_done.return_value = mock_parse_result
 
     task = IngestTask(
@@ -273,7 +273,7 @@ async def test_parse_pdf_zip_without_markdown_fails():
     mock_file_parser.create_task.return_value = "zhipu-task-nomd"
     mock_parse_result = MagicMock()
     mock_parse_result.content = None
-    mock_parse_result.download_url = "https://example.com/result.zip"
+    mock_parse_result.download_url = "https://open.bigmodel.cn/result.zip"
     mock_file_parser.poll_until_done.return_value = mock_parse_result
 
     task = IngestTask(
