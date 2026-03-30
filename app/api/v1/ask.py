@@ -1,5 +1,6 @@
 """V1 Ask API endpoint."""
 import asyncio
+import logging
 import time
 import uuid
 
@@ -24,6 +25,8 @@ from app.services import Generator
 from app.services.facet_extractor import FacetExtractor
 from app.services.hybrid_retriever import HybridRetriever, HybridRetrievalResult
 from app.services.tokenizer import Tokenizer, default_user_dict_path
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -133,7 +136,22 @@ def ask(
 
         if want_debug:
             t0 = time.perf_counter()
-        result = await generator.generate_v2(request.question, evidence)
+        try:
+            result = await generator.generate_v2(request.question, evidence)
+        except Exception:
+            logger.exception("LLM generation failed for question: %s", request.question[:200])
+            degraded.append("generation")
+            # Return a structured degraded response instead of 500
+            from app.services.generator import GenerationResult, Confidence
+
+            result = GenerationResult(
+                summary="抱歉，生成回答时出现错误，请稍后重试。",
+                details="",
+                analogy=None,
+                citations=[],
+                sources=[],
+                confidence=Confidence(level="low", reason="LLM generation failed"),
+            )
         if want_debug:
             t_gen = time.perf_counter() - t0
 
