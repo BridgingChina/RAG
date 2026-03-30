@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -15,6 +16,10 @@ async def lifespan(app: FastAPI):
     # Startup: Initialize database
     logger.info("Starting application...")
     if settings.secret_key == "change-me-in-production":
+        if os.getenv("ENV") != "development":
+            raise RuntimeError(
+                "SECRET_KEY must be set before starting in production"
+            )
         logger.warning(
             "SECRET_KEY is using the default value! "
             "Set SECRET_KEY in .env for production use."
