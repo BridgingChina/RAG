@@ -31,7 +31,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             db,
             action=AuditService.LOGIN_FAILURE,
             resource_type="auth",
-            detail={"username": body.username},
+            detail={"username": body.username[:64]},
             ip_address=get_client_ip(request),
         )
         db.commit()
