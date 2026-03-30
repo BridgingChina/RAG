@@ -347,13 +347,14 @@ class BridgeLinker:
             bridge = self._bridge_alias_map.get(name)
             if bridge is None and allow_create:
                 try:
+                    nested = db.begin_nested()
                     bridge = Bridge(name=name)
                     db.add(bridge)
                     db.flush()
                     created.append(name)
                     self._register_bridge(bridge)
                 except IntegrityError:
-                    db.rollback()
+                    nested.rollback()
                     bridge = db.query(Bridge).filter(Bridge.name == name).first()
                     if bridge is not None:
                         self._register_bridge(bridge)
