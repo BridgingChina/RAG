@@ -72,7 +72,7 @@ def list_history(
     ]
 
     return MobilePaginatedResponse(
-        data=items,
+        data={"items": items},
         meta=MobileMeta(total=total, page=page, page_size=page_size),
     )
 

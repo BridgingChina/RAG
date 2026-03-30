@@ -46,7 +46,7 @@ def list_favorites(
     page_size: int = Query(default=20, ge=1, le=100),
     device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
-) -> MobilePaginatedResponse[list[dict]]:
+) -> MobilePaginatedResponse[dict]:
     """List favorites for a device, with optional type filter."""
     query = db.query(DeviceFavorite).filter(
         DeviceFavorite.device_id == device_id
@@ -85,7 +85,7 @@ def list_favorites(
     ]
 
     return MobilePaginatedResponse(
-        data=data,
+        data={"items": data},
         meta=MobileMeta(total=total, page=page, page_size=page_size),
     )
 

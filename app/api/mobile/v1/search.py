@@ -104,7 +104,7 @@ def search(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-) -> MobilePaginatedResponse[list[SearchResultItem]]:
+) -> MobilePaginatedResponse[dict]:
     """Unified search across bridges and knowledge points."""
     like_pattern = f"%{_escape_like(q)}%"
     offset = (page - 1) * page_size
@@ -116,7 +116,7 @@ def search(
         bridges = bridge_q.order_by(Bridge.name).offset(offset).limit(page_size).all()
         results = [_bridge_to_item(b, q) for b in bridges]
         return MobilePaginatedResponse(
-            data=results,
+            data={"results": [r.model_dump() for r in results], "suggestions": []},
             meta=MobileMeta(total=total, page=page, page_size=page_size),
         )
 
@@ -126,7 +126,7 @@ def search(
         kps = kp_q.order_by(KnowledgePoint.name).offset(offset).limit(page_size).all()
         results = [_kp_to_item(kp, q) for kp in kps]
         return MobilePaginatedResponse(
-            data=results,
+            data={"results": [r.model_dump() for r in results], "suggestions": []},
             meta=MobileMeta(total=total, page=page, page_size=page_size),
         )
 
@@ -158,6 +158,6 @@ def search(
         results.extend(_kp_to_item(kp, q) for kp in kp_items)
 
     return MobilePaginatedResponse(
-        data=results,
+        data={"results": [r.model_dump() for r in results], "suggestions": []},
         meta=MobileMeta(total=total, page=page, page_size=page_size),
     )

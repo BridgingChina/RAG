@@ -73,7 +73,7 @@ def get_today_queue(
     )
 
     cards = [_format_card(fc, rp) for fc, rp in rows]
-    return MobileResponse(data=cards)
+    return MobileResponse(data={"cards": cards, "total_due": len(cards)})
 
 
 @router.get("/cards")
@@ -82,7 +82,7 @@ def list_review_cards(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-) -> MobilePaginatedResponse[list[dict]]:
+) -> MobilePaginatedResponse[dict]:
     """All favorited flashcards with review status, paginated."""
     base = (
         db.query(Flashcard, DeviceReviewProgress)
@@ -108,7 +108,7 @@ def list_review_cards(
 
     cards = [_format_card(fc, rp) for fc, rp in rows]
     return MobilePaginatedResponse(
-        data=cards,
+        data={"cards": cards},
         meta=MobileMeta(total=total, page=page, page_size=page_size),
     )
 

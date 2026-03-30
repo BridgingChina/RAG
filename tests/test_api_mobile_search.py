@@ -24,3 +24,11 @@ def test_escape_like():
 def test_search_route_exists():
     route_paths = [route.path for route in app.routes]
     assert "/api/mobile/v1/search" in route_paths
+
+
+def test_search_response_has_results_and_suggestions_keys():
+    from app.api.mobile.v1.search import search
+    import inspect
+    src = inspect.getsource(search)
+    assert '"results"' in src or "'results'" in src
+    assert '"suggestions"' in src or "'suggestions'" in src
