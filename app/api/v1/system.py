@@ -17,10 +17,9 @@ router = APIRouter(prefix="/system")
 def system_status(db: Session = Depends(get_db)):
     """Return read-only system status and configuration."""
     db_connected = False
-    db_version = None
     schema_version = None
     try:
-        db_version = db.execute(text("SELECT version()")).scalar()
+        db.execute(text("SELECT 1")).scalar()
         db_connected = True
         schema_version = get_current_schema_version(engine)
     except Exception:
@@ -32,7 +31,6 @@ def system_status(db: Session = Depends(get_db)):
         git_date=settings.git_date,
         python_version=f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
         db_connected=db_connected,
-        db_version=db_version,
         schema_version=schema_version,
         vector_dimension=1024,
         index_type="ivfflat",
