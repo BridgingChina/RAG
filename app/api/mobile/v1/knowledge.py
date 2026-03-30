@@ -280,8 +280,22 @@ def get_knowledge_point_flashcards(
 
     flashcards = query.order_by(Flashcard.created_at).all()
 
+    # Batch-resolve bridge names for example_bridge
+    from app.models import Bridge
+    bridge_ids = {fc.back_example_bridge_id for fc in flashcards if fc.back_example_bridge_id}
+    bridge_names: dict = {}
+    if bridge_ids:
+        name_rows = db.query(Bridge.id, Bridge.name).filter(Bridge.id.in_(bridge_ids)).all()
+        bridge_names = {r.id: r.name for r in name_rows}
+
     cards = []
     for fc in flashcards:
+        example_bridge = None
+        if fc.back_example_bridge_id:
+            example_bridge = {
+                "id": str(fc.back_example_bridge_id),
+                "name": bridge_names.get(fc.back_example_bridge_id),
+            }
         cards.append({
             "id": str(fc.id),
             "knowledge_point_id": str(fc.knowledge_point_id),
@@ -290,7 +304,7 @@ def get_knowledge_point_flashcards(
             "back": {
                 "answer": fc.back_answer,
                 "key_features": fc.back_key_features or [],
-                "example_bridge": {"id": str(fc.back_example_bridge_id), "name": None} if fc.back_example_bridge_id else None,
+                "example_bridge": example_bridge,
             },
         })
 

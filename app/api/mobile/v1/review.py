@@ -20,10 +20,14 @@ class ReviewProgressUpdate(BaseModel):
     mastery: Literal["mastered", "needs_review"]
 
 
-def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None) -> dict:
+def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None, bridge_names: dict | None = None) -> dict:
     """Build card dict with front/back structure."""
+    example_bridge = None
+    if fc.back_example_bridge_id:
+        bridge_name = (bridge_names or {}).get(fc.back_example_bridge_id)
+        example_bridge = {"id": str(fc.back_example_bridge_id), "name": bridge_name}
     return {
-        "flashcard_id": str(fc.id),
+        "id": str(fc.id),
         "knowledge_point_id": str(fc.knowledge_point_id),
         "card_type": fc.card_type,
         "front": {
@@ -33,7 +37,7 @@ def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None) -> dict:
         "back": {
             "answer": fc.back_answer,
             "key_features": fc.back_key_features,
-            "example_bridge_id": str(fc.back_example_bridge_id) if fc.back_example_bridge_id else None,
+            "example_bridge": example_bridge,
         },
         "mastery": rp.mastery if rp else None,
         "last_reviewed_at": rp.last_reviewed_at.isoformat() if rp and rp.last_reviewed_at else None,
@@ -72,7 +76,14 @@ def get_today_queue(
         .all()
     )
 
-    cards = [_format_card(fc, rp) for fc, rp in rows]
+    # Batch-resolve bridge names for example_bridge
+    from app.models import Bridge
+    bridge_ids = {fc.back_example_bridge_id for fc, rp in rows if fc.back_example_bridge_id}
+    bridge_names: dict = {}
+    if bridge_ids:
+        name_rows = db.query(Bridge.id, Bridge.name).filter(Bridge.id.in_(bridge_ids)).all()
+        bridge_names = {r.id: r.name for r in name_rows}
+    cards = [_format_card(fc, rp, bridge_names) for fc, rp in rows]
     return MobileResponse(data={"cards": cards, "total_due": len(cards)})
 
 
@@ -106,7 +117,14 @@ def list_review_cards(
         .all()
     )
 
-    cards = [_format_card(fc, rp) for fc, rp in rows]
+    # Batch-resolve bridge names for example_bridge
+    from app.models import Bridge
+    bridge_ids = {fc.back_example_bridge_id for fc, rp in rows if fc.back_example_bridge_id}
+    bridge_names: dict = {}
+    if bridge_ids:
+        name_rows = db.query(Bridge.id, Bridge.name).filter(Bridge.id.in_(bridge_ids)).all()
+        bridge_names = {r.id: r.name for r in name_rows}
+    cards = [_format_card(fc, rp, bridge_names) for fc, rp in rows]
     return MobilePaginatedResponse(
         data={"cards": cards},
         meta=MobileMeta(total=total, page=page, page_size=page_size),
@@ -155,5 +173,5 @@ def update_review_progress(
     return MobileResponse(data={
         "flashcard_id": str(rp.flashcard_id),
         "mastery": rp.mastery,
-        "last_reviewed_at": rp.last_reviewed_at.isoformat() if rp.last_reviewed_at else None,
+        "reviewed_at": rp.last_reviewed_at.isoformat() if rp.last_reviewed_at else None,
     })

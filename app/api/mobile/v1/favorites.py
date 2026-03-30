@@ -64,21 +64,57 @@ def list_favorites(
         .all()
     )
 
-    # Batch-resolve target names
-    names: dict[UUID, str] = {}
-    for target_type, (model, name_col) in _TARGET_MODELS.items():
-        ids = [f.target_id for f in favs if f.target_type == target_type]
-        if ids:
-            rows = db.query(model.id, name_col).filter(model.id.in_(ids)).all()
-            for row_id, row_name in rows:
-                names[row_id] = row_name
+    # Batch-resolve target details (name, summary, thumbnail)
+    details: dict = {}  # target_id -> {name, summary, thumbnail}
+
+    # Bridges
+    bridge_ids = [f.target_id for f in favs if f.target_type == "bridge"]
+    if bridge_ids:
+        rows = db.query(
+            Bridge.id, Bridge.name, Bridge.region, Bridge.era, Bridge.bridge_type,
+        ).filter(Bridge.id.in_(bridge_ids)).all()
+        for r in rows:
+            summary_parts = [p for p in [r.region, f"{r.era}{r.bridge_type}" if r.era and r.bridge_type else r.era or r.bridge_type] if p]
+            details[r.id] = {
+                "name": r.name,
+                "summary": "\uff0c".join(summary_parts) if summary_parts else None,
+                "thumbnail": None,
+            }
+
+    # Knowledge points
+    kp_ids = [f.target_id for f in favs if f.target_type == "knowledge_point"]
+    if kp_ids:
+        rows = db.query(
+            KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.summary,
+        ).filter(KnowledgePoint.id.in_(kp_ids)).all()
+        for r in rows:
+            details[r.id] = {
+                "name": r.name,
+                "summary": (r.summary[:50] + "\u2026") if r.summary and len(r.summary) > 50 else r.summary,
+                "thumbnail": None,
+            }
+
+    # Flashcards
+    fc_ids = [f.target_id for f in favs if f.target_type == "flashcard"]
+    if fc_ids:
+        rows = db.query(
+            Flashcard.id, Flashcard.front_title,
+        ).filter(Flashcard.id.in_(fc_ids)).all()
+        for r in rows:
+            details[r.id] = {
+                "name": r.front_title,
+                "summary": r.front_title,
+                "thumbnail": None,
+            }
 
     data = [
         {
             "id": str(f.id),
             "target_type": f.target_type,
             "target_id": str(f.target_id),
-            "target_name": names.get(f.target_id),
+            "target_name": (details.get(f.target_id) or {}).get("name"),
+            "target_summary": (details.get(f.target_id) or {}).get("summary"),
+            "thumbnail": (details.get(f.target_id) or {}).get("thumbnail"),
             "created_at": f.created_at.isoformat() if f.created_at else None,
         }
         for f in favs

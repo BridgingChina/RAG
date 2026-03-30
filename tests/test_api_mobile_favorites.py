@@ -14,3 +14,11 @@ def test_favorites_list_response_wraps_items():
     import inspect
     src = inspect.getsource(list_favorites)
     assert '"items"' in src or "'items'" in src
+
+
+def test_favorites_list_includes_target_summary_and_thumbnail():
+    from app.api.mobile.v1.favorites import list_favorites
+    import inspect
+    src = inspect.getsource(list_favorites)
+    assert '"target_summary"' in src or "'target_summary'" in src
+    assert '"thumbnail"' in src or "'thumbnail'" in src

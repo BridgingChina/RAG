@@ -22,3 +22,26 @@ def test_review_cards_response_wraps_cards():
     import inspect
     src = inspect.getsource(list_review_cards)
     assert '"cards"' in src or "'cards'" in src
+
+
+def test_format_card_uses_id_not_flashcard_id():
+    from app.api.mobile.v1.review import _format_card
+    import inspect
+    src = inspect.getsource(_format_card)
+    assert '"id"' in src
+    assert '"flashcard_id"' not in src
+
+
+def test_format_card_uses_example_bridge_object():
+    from app.api.mobile.v1.review import _format_card
+    import inspect
+    src = inspect.getsource(_format_card)
+    assert '"example_bridge"' in src or "'example_bridge'" in src
+    assert '"example_bridge_id"' not in src and "'example_bridge_id'" not in src
+
+
+def test_update_progress_uses_reviewed_at():
+    from app.api.mobile.v1.review import update_review_progress
+    import inspect
+    src = inspect.getsource(update_review_progress)
+    assert '"reviewed_at"' in src or "'reviewed_at'" in src
