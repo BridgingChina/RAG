@@ -40,6 +40,11 @@ class KPDetail(BaseModel):
     key_points: list[KeyPointItem] = []
 
 
+class GenerateKeyPointsResponse(BaseModel):
+    generated: int
+    key_points: list[KeyPointItem] = []
+
+
 class KPListItem(BaseModel):
     id: UUID
     name: str
