@@ -65,8 +65,4 @@ app.include_router(mobile_router, prefix="/api/mobile/v1", tags=["mobile"])
 @app.get("/health")
 async def health():
     """Health check endpoint for load balancers."""
-    return {
-        "status": "ok",
-        "commit": settings.git_commit,
-        "build_date": settings.git_date,
-    }
+    return {"status": "ok"}
