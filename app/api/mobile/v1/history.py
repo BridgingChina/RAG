@@ -1,10 +1,11 @@
 """Mobile API: View history endpoints."""
 import uuid
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.api.mobile.v1.dependencies import require_device_id
@@ -15,6 +16,8 @@ from app.models import Bridge, DeviceViewHistory, KnowledgePoint
 router = APIRouter()
 
 VALID_HISTORY_TYPES = {"bridge", "knowledge_point"}
+DEDUP_WINDOW_MINUTES = 5
+MAX_HISTORY_PER_DEVICE = 500
 
 
 class HistoryRecordRequest(BaseModel):
@@ -80,7 +83,7 @@ def record_view(
     device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
-    """Record a view history entry. No dedup — each call creates a new record."""
+    """Record a view history entry with 5-min dedup and 500-record per-device cap."""
     if body.target_type not in VALID_HISTORY_TYPES:
         raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}. Must be one of: {', '.join(sorted(VALID_HISTORY_TYPES))}")
 
@@ -93,14 +96,56 @@ def record_view(
     if model_cls and not db.query(model_cls.id).filter(model_cls.id == body.target_id).first():
         raise HTTPException(404, detail=f"{body.target_type} not found")
 
-    record = DeviceViewHistory(
-        device_id=device_id,
-        target_type=body.target_type,
-        target_id=body.target_id,
+    # Dedup: if same target viewed within DEDUP_WINDOW_MINUTES, update viewed_at
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=DEDUP_WINDOW_MINUTES)
+    existing = (
+        db.query(DeviceViewHistory)
+        .filter(
+            DeviceViewHistory.device_id == device_id,
+            DeviceViewHistory.target_type == body.target_type,
+            DeviceViewHistory.target_id == body.target_id,
+            DeviceViewHistory.viewed_at >= cutoff,
+        )
+        .order_by(desc(DeviceViewHistory.viewed_at))
+        .first()
     )
-    db.add(record)
-    db.commit()
-    db.refresh(record)
+
+    if existing:
+        existing.viewed_at = func.now()
+        db.commit()
+        db.refresh(existing)
+        record = existing
+    else:
+        record = DeviceViewHistory(
+            device_id=device_id,
+            target_type=body.target_type,
+            target_id=body.target_id,
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        # Enforce per-device limit
+        total = (
+            db.query(func.count(DeviceViewHistory.id))
+            .filter(DeviceViewHistory.device_id == device_id)
+            .scalar()
+        )
+        if total and total > MAX_HISTORY_PER_DEVICE:
+            # Delete oldest records exceeding the cap
+            oldest_ids = (
+                db.query(DeviceViewHistory.id)
+                .filter(DeviceViewHistory.device_id == device_id)
+                .order_by(desc(DeviceViewHistory.viewed_at))
+                .offset(MAX_HISTORY_PER_DEVICE)
+                .all()
+            )
+            if oldest_ids:
+                ids_to_delete = [r[0] for r in oldest_ids]
+                db.query(DeviceViewHistory).filter(
+                    DeviceViewHistory.id.in_(ids_to_delete)
+                ).delete(synchronize_session=False)
+                db.commit()
 
     return MobileResponse(data={
         "id": str(record.id),
