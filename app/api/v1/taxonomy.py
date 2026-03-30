@@ -251,14 +251,31 @@ def delete_taxonomy_node(
     invalidate_taxonomy_cache()
 
 
-@router.post("/batch-update", response_model=TaxonomyBatchUpdateResult)
+@router.post(
+    "/batch-update",
+    response_model=TaxonomyBatchUpdateResult,
+    summary="Batch-update chunks' taxonomy tags",
+    description=(
+        "Reassign taxonomy labels (lvl1/lvl2/lvl3) on the specified chunks. "
+        "Despite living under /taxonomy, this endpoint modifies **chunks**, "
+        "not taxonomy_nodes. "
+        "Deprecated name — a future version will move this to "
+        "POST /chunks/batch-taxonomy-update."
+    ),
+    deprecated=True,
+)
 def batch_update_chunks(
     body: TaxonomyBatchUpdate,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> TaxonomyBatchUpdateResult:
-    """Batch update taxonomy labels on multiple chunks."""
+    """Batch-update taxonomy labels (lvl1/lvl2/lvl3) on multiple chunks.
+
+    NOTE: This endpoint updates **chunk** rows, not taxonomy_nodes.
+    The /taxonomy prefix is misleading; a future version will relocate
+    this to POST /chunks/batch-taxonomy-update.
+    """
     if not body.chunk_ids:
         raise HTTPException(status_code=422, detail="chunk_ids must not be empty")
 
