@@ -77,7 +77,13 @@ class ZhipuProvider(LLMProvider):
             )
             resp.raise_for_status()
             data = resp.json()
+            choices = data.get("choices") or []
+            if not choices:
+                raise ValueError("Empty response from LLM provider")
+            content = choices[0].get("message", {}).get("content", "")
+            if not content:
+                raise ValueError("Empty content from LLM provider")
             return ChatResponse(
-                content=data["choices"][0]["message"]["content"],
+                content=content,
                 usage=data.get("usage", {}),
             )

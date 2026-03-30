@@ -22,5 +22,5 @@ class Bridge(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         Index("ix_bridges_geo", "latitude", "longitude",
-              postgresql_where=text("latitude IS NOT NULL")),
+              postgresql_where=text("latitude IS NOT NULL AND longitude IS NOT NULL")),
     )

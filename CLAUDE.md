@@ -75,7 +75,7 @@ python3 scripts/create_user.py --username admin --password <password>
 
 ## Environment Setup
 
-Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production.
+Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production. `CORS_ORIGINS` accepts a JSON list of allowed origins (default: `["http://localhost:3000", "http://localhost:5173"]`); set to `["https://your-domain.com"]` in production.
 
 ## Database Schema Management
 
@@ -216,7 +216,6 @@ title: 资料标题
 - R2 bucket 必须配置 CORS（AllowedOrigins = 前端域名，AllowedMethods = PUT/GET，AllowedHeaders = Content-Type）— 否则浏览器 presigned URL 上传会被 CORS 拦截
 - FastAPI BackgroundTasks 中的 async 函数必须用 `async def` + `await` — 不能用 `asyncio.run()`（会在已有事件循环中崩溃）
 - 智谱文件解析 API `download_link` 模式下 `content=None` — 解析结果在 zip 包（`result.md` + `images/`）里，不在 `content` 字段中。`text` 模式有 1MB 上限
-- `test_health_endpoint` 已知失败 — health 端点加了 `commit`/`build_date` 但测试断言未更新（来自 `66af062`）
 - 类型迁移（如 int→UUID）时注意"边缘文件" — `schemas/stats.py` 等非主路径 schema、前端组件的 `useState<number>` 局部状态不在主依赖链上，IDE/tsc 未必能检出
 - `migrate_db.py` 增量迁移脚本 — `MIGRATIONS` dict 按版本号索引迁移函数，`docker-entrypoint.sh` 启动时自动执行
 - Ingest task 软删除：`status="deleted"` 保留任务记录和 R2 文件，`_cleanup_task_data` 清理 chunks/bridge_links/source 但不删 R2 — retry/delete/batch-delete 共用
@@ -230,6 +229,7 @@ title: 资料标题
 - `device_favorites` 使用 UNIQUE(device_id, target_type, target_id) — 重复添加收藏会触发 IntegrityError，需捕获返回 409
 - `review/today` 端点的复习规则：mastery IS NULL OR needs_review OR (mastered 且 last_reviewed_at 超 3 天)
 - `generate-key-points` 端点的 chunk 检索策略：先 lvl3 匹配，不足 3 条时退化到 lvl2
+- `_download_and_store_parsed_assets` 有 SSRF 防护 — `download_url` 必须是 `https` 且 hostname 在白名单内（`open.bigmodel.cn`, `cdn.bigmodel.cn`）。如果智谱新增 CDN 域名需更新 `ALLOWED_ZHIPU_HOSTS`
 - `db.rollback()` inside a helper method rolls back the **entire** transaction — use `db.begin_nested()` (savepoint) when catching `IntegrityError` mid-transaction to avoid nuking the caller's work
 - `Bridge.name` has a unique constraint — `create_bridge` API returns 409 on duplicate, `BridgeLinker` uses savepoint + query-on-conflict
 

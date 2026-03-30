@@ -5,8 +5,10 @@ across the async multi-stage ingest pipeline.
 """
 import io
 import mimetypes
+import posixpath
 import uuid
 import zipfile
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -70,7 +72,14 @@ class IngestTaskService:
             self.db.commit()
         except Exception:
             self.db.rollback()
-        logger.error(f"IngestTask {task.id} failed: {error}")
+            logger.exception(
+                "IngestTask %s: failed to persist status='failed' to DB "
+                "(original error: %s)",
+                task.id,
+                error[:200],
+            )
+            return
+        logger.error("IngestTask %s failed: %s", task.id, error)
 
     def _audit(self, task: IngestTask, action: str, detail: dict | None = None) -> None:
         """Log an audit event for this task."""
@@ -161,6 +170,11 @@ class IngestTaskService:
         self, task: IngestTask, download_url: str
     ) -> str:
         """Download zip from Zhipu, archive to R2, extract markdown and images."""
+        ALLOWED_ZHIPU_HOSTS = {"open.bigmodel.cn", "cdn.bigmodel.cn"}
+        parsed = urlparse(download_url)
+        if parsed.scheme != "https" or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
+            raise ValueError(f"Untrusted download_url host: {parsed.hostname}")
+
         logger.info("IngestTask %d: downloading zip from Zhipu", task.id)
         async with httpx.AsyncClient() as client:
             resp = await client.get(download_url, timeout=120.0)
@@ -185,12 +199,17 @@ class IngestTaskService:
             parsed_md = zf.read(md_files[0]).decode("utf-8")
 
             for name in zf.namelist():
-                if "/" in name and not name.endswith("/"):
-                    dirname = name.split("/")[0]
+                # Sanitize zip entry path to prevent Zip Slip attacks
+                safe_name = posixpath.normpath(name)
+                if safe_name.startswith("..") or safe_name.startswith("/"):
+                    logger.warning("IngestTask %s: skipping suspicious zip entry: %s", task.id, name)
+                    continue
+                if "/" in safe_name and not safe_name.endswith("/"):
+                    dirname = safe_name.split("/")[0]
                     if dirname == "images":
-                        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+                        content_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
                         self.r2.upload(
-                            f"parsed/{task.id}/{name}",
+                            f"parsed/{task.id}/{safe_name}",
                             zf.read(name),
                             content_type,
                         )
@@ -292,8 +311,14 @@ class IngestTaskService:
                         surrounding_chunks=surrounding,
                     )
                     contextual_text = (ctx.contextual_text or "").strip()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "Context enrichment failed for chunk %d/%d (task %s): %s",
+                        i + 1,
+                        len(chunks),
+                        task.id,
+                        e,
+                    )
 
                 search_text = chunk.content
                 if contextual_text:

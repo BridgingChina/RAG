@@ -45,10 +45,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Bridge RAG", version="1.0.0", lifespan=lifespan)
 
-# CORS middleware for local development
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,8 +65,4 @@ app.include_router(mobile_router, prefix="/api/mobile/v1", tags=["mobile"])
 @app.get("/health")
 async def health():
     """Health check endpoint for load balancers."""
-    return {
-        "status": "ok",
-        "commit": settings.git_commit,
-        "build_date": settings.git_date,
-    }
+    return {"status": "ok"}

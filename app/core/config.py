@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Zhipu file parser settings
     zhipu_parser_tool_type: str = "expert"  # lite / expert / prime
 
+    # CORS settings
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
     # Build info (injected via Docker build args)
     git_commit: str = "dev"
     git_date: str = ""
