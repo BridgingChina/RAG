@@ -10,7 +10,14 @@ from app.models import User
 from app.services.auth_service import hash_password
 
 
+MIN_PASSWORD_LENGTH = 12
+
+
 def create_user(username: str, password: str, display_name: str | None = None) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        print(f"Error: Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+        sys.exit(1)
+
     db: Session = SessionLocal()
     try:
         existing = db.query(User).filter(User.username == username).first()
