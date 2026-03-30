@@ -1,6 +1,9 @@
+import re
 from pathlib import Path
 
 import jieba
+
+_TSQUERY_OPERATOR_RE = re.compile(r'[&|!<>():]')
 
 
 def default_user_dict_path() -> str:
@@ -21,7 +24,8 @@ class Tokenizer:
     def to_tsquery(self, text: str) -> str:
         """Convert text to PostgreSQL tsquery format (AND joined)."""
         words = [w.strip() for w in self.tokenize(text) if len(w.strip()) > 1]
-        return " & ".join(words)
+        safe_words = [w for w in (_TSQUERY_OPERATOR_RE.sub('', w) for w in words) if w]
+        return " & ".join(safe_words)
 
     def to_tsvector_text(self, text: str) -> str:
         """Convert text to space-separated words for tsvector storage."""
