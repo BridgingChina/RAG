@@ -1,7 +1,7 @@
 """API v1 schemas package - re-exports all schema types for backward compatibility."""
 
 # Common schemas
-from .common import PageParams, PaginatedResponse
+from .common import PaginatedResponse
 
 # Audit schemas
 from .audit import AuditLogItem
@@ -96,7 +96,6 @@ __all__ = [
     # Audit
     "AuditLogItem",
     # Common
-    "PageParams",
     "PaginatedResponse",
     # Auth
     "ChangePasswordRequest",
