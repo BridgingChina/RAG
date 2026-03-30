@@ -16,6 +16,7 @@ import {
   Landmark,
   FileText,
   FolderTree,
+  BookOpen,
   Upload,
   MessageSquare,
   Settings,
@@ -38,6 +39,7 @@ const navGroups = [
       { path: "/bridges", icon: Landmark, label: "桥梁" },
       { path: "/sources", icon: FileText, label: "来源" },
       { path: "/taxonomy", icon: FolderTree, label: "分类目录" },
+      { path: "/knowledge-points", icon: BookOpen, label: "知识点" },
     ],
   },
   {

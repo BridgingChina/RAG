@@ -1,27 +1,303 @@
 """Bridges CRUD API endpoints."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy import desc, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.bridge import (
+    BatchGeocodeRequest,
+    BatchGeocodeResponse,
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
     BridgeMergePreview,
     BridgeMergeRequest,
     BridgeUpdate,
+    CSVImportResponse,
+)
+from app.api.v1.schemas.bridge_image import (
+    BridgeImageResponse,
+    ImageConfirmRequest,
+    ImagePresignRequest,
+    ImagePresignResponse,
+    ImageReorderRequest,
 )
 from app.api.v1.schemas.chunk import ChunkListItem
 from app.api.v1.schemas.common import PaginatedResponse
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, User
 from app.services.audit_service import AuditService
+from app.services.bridge_image_service import BridgeImageService
+from app.services.geocode_service import GeocodeService
+from app.services.r2_storage import R2StorageService
 
 router = APIRouter(prefix="/bridges", tags=["bridges"])
+
+
+def _get_r2() -> R2StorageService:
+    if not R2StorageService.is_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="R2 storage is not configured",
+        )
+    return R2StorageService()
+
+
+def _get_image_service(r2: R2StorageService = Depends(_get_r2)) -> BridgeImageService:
+    return BridgeImageService(r2)
+
+
+def _ensure_bridge(db: Session, bridge_id: UUID) -> Bridge:
+    bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
+    if not bridge:
+        raise HTTPException(status_code=404, detail="Bridge not found")
+    return bridge
+
+
+# ── Bridge image endpoints (must be before /{bridge_id} parametric route) ──
+
+
+@router.post(
+    "/{bridge_id}/images/presign",
+    response_model=ImagePresignResponse,
+    tags=["bridge-images"],
+)
+def presign_image_upload(
+    bridge_id: UUID,
+    body: ImagePresignRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    svc: BridgeImageService = Depends(_get_image_service),
+) -> ImagePresignResponse:
+    """Generate presigned URL for uploading a bridge image to R2."""
+    _ensure_bridge(db, bridge_id)
+    image, upload_url = svc.presign_upload(db, bridge_id, body.file_name, body.content_type)
+
+    AuditService.log(
+        db,
+        action=AuditService.CREATE,
+        resource_type="bridge_image",
+        user_id=current_user.id,
+        resource_id=str(image.id),
+        detail={"bridge_id": str(bridge_id), "r2_key": image.r2_key},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return ImagePresignResponse(
+        image_id=image.id,
+        upload_url=upload_url,
+        r2_key=image.r2_key,
+    )
+
+
+@router.post(
+    "/{bridge_id}/images",
+    response_model=BridgeImageResponse,
+    tags=["bridge-images"],
+)
+def confirm_image_upload(
+    bridge_id: UUID,
+    body: ImageConfirmRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    svc: BridgeImageService = Depends(_get_image_service),
+) -> BridgeImageResponse:
+    """Confirm image upload and optionally set caption/type."""
+    _ensure_bridge(db, bridge_id)
+    try:
+        image = svc.confirm_upload(db, body.image_id, bridge_id, body.caption, body.type)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge_image",
+        user_id=current_user.id,
+        resource_id=str(image.id),
+        detail={"bridge_id": str(bridge_id), "caption": body.caption, "type": body.type},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return BridgeImageResponse(
+        id=image.id,
+        bridge_id=image.bridge_id,
+        url=BridgeImageService.get_public_url(image.r2_key),
+        caption=image.caption,
+        type=image.type,
+        order_index=image.order_index,
+        created_at=image.created_at,
+    )
+
+
+@router.get(
+    "/{bridge_id}/images",
+    response_model=list[BridgeImageResponse],
+    tags=["bridge-images"],
+)
+def list_bridge_images(
+    bridge_id: UUID,
+    db: Session = Depends(get_db),
+    svc: BridgeImageService = Depends(_get_image_service),
+) -> list[BridgeImageResponse]:
+    """List all images for a bridge, ordered by order_index."""
+    _ensure_bridge(db, bridge_id)
+    images = svc.list_images(db, bridge_id)
+    return [
+        BridgeImageResponse(
+            id=img.id,
+            bridge_id=img.bridge_id,
+            url=BridgeImageService.get_public_url(img.r2_key),
+            caption=img.caption,
+            type=img.type,
+            order_index=img.order_index,
+            created_at=img.created_at,
+        )
+        for img in images
+    ]
+
+
+@router.put(
+    "/{bridge_id}/images/reorder",
+    status_code=204,
+    tags=["bridge-images"],
+)
+def reorder_bridge_images(
+    bridge_id: UUID,
+    body: ImageReorderRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    svc: BridgeImageService = Depends(_get_image_service),
+) -> None:
+    """Reorder images for a bridge."""
+    _ensure_bridge(db, bridge_id)
+    svc.reorder(db, bridge_id, body.image_ids)
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge_image",
+        user_id=current_user.id,
+        resource_id=str(bridge_id),
+        detail={"action": "reorder", "image_ids": [str(i) for i in body.image_ids]},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+
+@router.delete(
+    "/{bridge_id}/images/{image_id}",
+    status_code=204,
+    tags=["bridge-images"],
+)
+def delete_bridge_image(
+    bridge_id: UUID,
+    image_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    svc: BridgeImageService = Depends(_get_image_service),
+) -> None:
+    """Delete a bridge image (record + R2 object)."""
+    _ensure_bridge(db, bridge_id)
+
+    AuditService.log(
+        db,
+        action=AuditService.DELETE,
+        resource_type="bridge_image",
+        user_id=current_user.id,
+        resource_id=str(image_id),
+        detail={"bridge_id": str(bridge_id)},
+        ip_address=get_client_ip(request),
+    )
+
+    try:
+        svc.delete(db, image_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    db.commit()
+
+
+# ── Geocode endpoints (must be before /{bridge_id} parametric route) ──
+
+
+@router.post("/batch-geocode", response_model=BatchGeocodeResponse)
+async def batch_geocode(
+    body: BatchGeocodeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BatchGeocodeResponse:
+    """Batch geocode bridges using Amap API. Blocking — awaits all geocoding inline."""
+    svc = GeocodeService()
+    result = await svc.batch_geocode(db, body.bridge_ids)
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        detail={
+            "action": "batch_geocode",
+            "total": result["total"],
+            "success": result["success"],
+            "failed": result["failed"],
+        },
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return BatchGeocodeResponse(
+        total=result["total"],
+        success=result["success"],
+        failed=result["failed"],
+    )
+
+
+@router.post("/import-coordinates", response_model=CSVImportResponse)
+async def import_coordinates(
+    file: UploadFile,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CSVImportResponse:
+    """Import bridge coordinates from a CSV file (columns: name, latitude, longitude)."""
+    content = await file.read()
+    csv_content = content.decode("utf-8-sig")
+
+    svc = GeocodeService()
+    result = svc.import_from_csv(db, csv_content)
+
+    AuditService.log(
+        db,
+        action=AuditService.UPDATE,
+        resource_type="bridge",
+        user_id=current_user.id,
+        detail={
+            "action": "import_coordinates",
+            "matched": result["matched"],
+            "unmatched": result["unmatched"],
+        },
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return CSVImportResponse(
+        matched=result["matched"],
+        unmatched=result["unmatched"],
+    )
+
+
+# ── Bridge CRUD endpoints ──
 
 
 @router.get("", response_model=PaginatedResponse[BridgeListItem])

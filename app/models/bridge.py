@@ -19,6 +19,7 @@ class Bridge(Base, UUIDMixin, TimestampMixin):
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     latitude: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
     longitude: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
+    geocode_source: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     __table_args__ = (
         Index("ix_bridges_geo", "latitude", "longitude",

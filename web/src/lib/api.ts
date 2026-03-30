@@ -4,6 +4,7 @@ import type {
   BatchDeleteResponse,
   BridgeCreateRequest,
   BridgeDetail,
+  BridgeImage,
   BridgeListItem,
   BridgeMergeRequest,
   BridgeUpdateRequest,
@@ -20,6 +21,9 @@ import type {
   IngestResponse,
   IngestTaskCreateRequest,
   IngestTaskItem,
+  KnowledgePointDetail,
+  KnowledgePointListItem,
+  KPBridgeItem,
   LoginRequest,
   LoginResponse,
   PaginatedResponse,
@@ -415,6 +419,30 @@ export function mergeBridge(
   return post<BridgeDetail>(`/bridges/${targetId}/merge`, data)
 }
 
+// --- Bridge Images ---
+
+export function presignBridgeImage(bridgeId: string, data: { file_name: string; content_type: string }) {
+  return post<{ image_id: string; upload_url: string; r2_key: string }>(
+    `/bridges/${bridgeId}/images/presign`, data
+  )
+}
+
+export function confirmBridgeImage(bridgeId: string, data: { image_id: string; caption?: string; type?: string }) {
+  return post<BridgeImage>(`/bridges/${bridgeId}/images`, data)
+}
+
+export function fetchBridgeImages(bridgeId: string) {
+  return get<BridgeImage[]>(`/bridges/${bridgeId}/images`)
+}
+
+export function reorderBridgeImages(bridgeId: string, imageIds: string[]) {
+  return put<void>(`/bridges/${bridgeId}/images/reorder`, { image_ids: imageIds })
+}
+
+export function deleteBridgeImage(bridgeId: string, imageId: string) {
+  return del(`/bridges/${bridgeId}/images/${imageId}`)
+}
+
 // --- Sources ---
 
 export function fetchSources(params?: {
@@ -485,6 +513,119 @@ export function fetchMe(): Promise<UserInfo> {
 
 export function changePassword(data: ChangePasswordRequest): Promise<void> {
   return put<void>("/auth/password", data)
+}
+
+// --- Audit ---
+
+// --- Knowledge Points ---
+
+export function fetchKnowledgePoints(params?: {
+  page?: number
+  page_size?: number
+  taxonomy_node_id?: string
+}): Promise<PaginatedResponse<KnowledgePointListItem>> {
+  return get<PaginatedResponse<KnowledgePointListItem>>("/knowledge-points", params)
+}
+
+export function fetchKnowledgePoint(id: string): Promise<KnowledgePointDetail> {
+  return get<KnowledgePointDetail>(`/knowledge-points/${id}`)
+}
+
+export function createKnowledgePoint(data: {
+  name: string
+  taxonomy_node_id?: string
+  aliases?: string
+  difficulty?: string
+  summary?: string
+}): Promise<KnowledgePointDetail> {
+  return post<KnowledgePointDetail>("/knowledge-points", data)
+}
+
+export function updateKnowledgePoint(
+  id: string,
+  data: Record<string, unknown>,
+): Promise<KnowledgePointDetail> {
+  return put<KnowledgePointDetail>(`/knowledge-points/${id}`, data)
+}
+
+export function deleteKnowledgePoint(id: string): Promise<void> {
+  return del(`/knowledge-points/${id}`)
+}
+
+export function generateKeyPoints(
+  id: string,
+): Promise<{ generated: number }> {
+  return post<{ generated: number }>(`/knowledge-points/${id}/generate-key-points`, {})
+}
+
+export function generateFlashcards(
+  id: string,
+): Promise<{ generated: number; errors: Array<{ kp_id: string; error: string }> }> {
+  return post<{ generated: number; errors: Array<{ kp_id: string; error: string }> }>(
+    `/knowledge-points/${id}/generate-flashcards`,
+    {},
+  )
+}
+
+export function syncKPBridges(
+  id: string,
+  useLlm = false,
+): Promise<KPBridgeItem[]> {
+  return post<KPBridgeItem[]>(
+    `/knowledge-points/${id}/sync-bridges?use_llm=${useLlm}`,
+    {},
+  )
+}
+
+export function fetchKPBridges(
+  id: string,
+): Promise<KPBridgeItem[]> {
+  return get<KPBridgeItem[]>(`/knowledge-points/${id}/bridges`)
+}
+
+export function replaceKPBridges(
+  id: string,
+  items: Array<{ bridge_id: string; relevance_note?: string; order_index?: number }>,
+): Promise<KPBridgeItem[]> {
+  return put<KPBridgeItem[]>(`/knowledge-points/${id}/bridges`, { items })
+}
+
+// --- Batch Operations ---
+
+export function batchGeocode(bridgeIds?: string[]) {
+  return post<{ total: number; success: number; failed: number }>(
+    "/bridges/batch-geocode",
+    { bridge_ids: bridgeIds ?? null },
+  )
+}
+
+export async function importCoordinatesCsv(file: File) {
+  const formData = new FormData()
+  formData.append("file", file)
+  const token = localStorage.getItem("auth-token")
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  const resp = await fetch(`${BASE}/bridges/import-coordinates`, {
+    method: "POST",
+    headers,
+    body: formData,
+  })
+  if (!resp.ok) {
+    if (resp.status === 401) {
+      localStorage.removeItem("auth-token")
+      window.location.href = "/login"
+    }
+    const text = await resp.text()
+    throw new Error(text || `HTTP ${resp.status}`)
+  }
+  return resp.json() as Promise<{ matched: number; unmatched: string[] }>
+}
+
+export function batchGenerateFlashcards(knowledgePointIds: string[]) {
+  return post<{ total_generated: number; errors: Array<{ kp_id: string; error: string }> }>(
+    "/flashcards/batch-generate",
+    { knowledge_point_ids: knowledgePointIds },
+  )
 }
 
 // --- Audit ---

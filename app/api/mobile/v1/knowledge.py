@@ -4,10 +4,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.api.mobile.v1.schemas.common import MobileResponse
+from app.api.mobile.v1.schemas.common import MobileMeta, MobilePaginatedResponse, MobileResponse
 from app.core.database import get_db
-from app.models import TaxonomyNode
+from app.models import Bridge, TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
+from app.models.knowledge_point_bridge import KnowledgePointBridge
 from app.models.flashcard import Flashcard
 from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
 
@@ -130,13 +131,25 @@ def get_knowledge_point(
         .all()
     )
 
+    # Tags: derive from taxonomy line + difficulty
+    tags: list[str] = []
+    if line_info:
+        tags.append(line_info["name"])
+    if kp.difficulty:
+        tags.append(kp.difficulty)
+
+    # Count associated bridges
+    typical_count = db.query(KnowledgePointBridge).filter(
+        KnowledgePointBridge.knowledge_point_id == point_id
+    ).count()
+
     result: dict = {
         "id": str(kp.id),
         "name": kp.name,
         "aliases": kp.aliases.split(",") if kp.aliases else [],
         "line": line_info,
         "category": category_info,
-        "tags": [],
+        "tags": tags,
         "difficulty": kp.difficulty,
     }
 
@@ -146,7 +159,7 @@ def get_knowledge_point(
                 {"id": str(kp_item.id), "summary": kp_item.summary, "order": kp_item.order_index}
                 for kp_item in key_points
             ],
-            "typical_bridges_count": 0,
+            "typical_bridges_count": typical_count,
         }
 
     # Build chunk_id → source mapping for citations
@@ -215,12 +228,39 @@ def get_knowledge_point_bridges(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-) -> MobileResponse[dict]:
-    """TODO (P2): Implement via knowledge_point_bridges association table."""
+) -> MobilePaginatedResponse[dict]:
+    """Get bridges associated with a knowledge point."""
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == point_id).first()
     if not kp:
         raise HTTPException(404, detail="知识点不存在")
-    return MobileResponse(data={"bridges": []})
+
+    base_query = db.query(KnowledgePointBridge).filter(
+        KnowledgePointBridge.knowledge_point_id == point_id
+    )
+    total = base_query.count()
+
+    kp_links = (
+        db.query(KnowledgePointBridge, Bridge)
+        .join(Bridge, KnowledgePointBridge.bridge_id == Bridge.id)
+        .filter(KnowledgePointBridge.knowledge_point_id == point_id)
+        .order_by(KnowledgePointBridge.order_index)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    bridges = [
+        {
+            "id": str(b.id), "name": b.name, "bridge_type": b.bridge_type,
+            "era": b.era, "region": b.region,
+            "latitude": b.latitude, "longitude": b.longitude,
+            "relevance": link.relevance_note,
+        }
+        for link, b in kp_links
+    ]
+    return MobilePaginatedResponse(
+        data={"bridges": bridges},
+        meta=MobileMeta(total=total, page=page, page_size=page_size),
+    )
 
 
 @router.get("/points/{point_id}/flashcards")

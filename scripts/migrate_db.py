@@ -124,10 +124,47 @@ def migrate_v3_to_v4(conn) -> None:
     set_schema_version(engine, 4, "Add users.password_changed_at for JWT invalidation", conn=conn)
 
 
+def migrate_v4_to_v5(conn) -> None:
+    """Add bridge_images + knowledge_point_bridges tables + bridges.geocode_source."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS bridge_images (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            bridge_id UUID NOT NULL REFERENCES bridges(id) ON DELETE CASCADE,
+            r2_key VARCHAR(500) NOT NULL,
+            caption TEXT,
+            type VARCHAR(20),
+            order_index INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT now()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_bridge_images_bridge_id ON bridge_images(bridge_id)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS knowledge_point_bridges (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            knowledge_point_id UUID NOT NULL REFERENCES knowledge_points(id) ON DELETE CASCADE,
+            bridge_id UUID NOT NULL REFERENCES bridges(id) ON DELETE CASCADE,
+            relevance_note TEXT,
+            order_index INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            CONSTRAINT uq_kp_bridge UNIQUE (knowledge_point_id, bridge_id)
+        )
+    """))
+
+    conn.execute(text(
+        "ALTER TABLE bridges ADD COLUMN IF NOT EXISTS geocode_source VARCHAR(20)"
+    ))
+
+    set_schema_version(engine, 5, "Add bridge_images + knowledge_point_bridges + geocode_source", conn=conn)
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
     3: migrate_v3_to_v4,
+    4: migrate_v4_to_v5,
 }
 
 

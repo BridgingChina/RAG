@@ -25,12 +25,15 @@ from .ask import (
 
 # Bridge schemas
 from .bridge import (
+    BatchGeocodeRequest,
+    BatchGeocodeResponse,
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
     BridgeMergePreview,
     BridgeMergeRequest,
     BridgeUpdate,
+    CSVImportResponse,
 )
 
 # Chunk schemas
@@ -49,7 +52,17 @@ from .chunk import (
 )
 
 # Knowledge point schemas
-from .knowledge_point import GenerateKeyPointsResponse, KeyPointItem, KPCreate, KPDetail, KPListItem, KPUpdate
+from .knowledge_point import (
+    GenerateKeyPointsResponse,
+    KPBridgeItem,
+    KPBridgeReplaceItem,
+    KPBridgeReplaceRequest,
+    KPCreate,
+    KPDetail,
+    KPListItem,
+    KPUpdate,
+    KeyPointItem,
+)
 
 # Ingest schemas
 from .ingest import (
@@ -80,6 +93,15 @@ from .stats import (
     DashboardStats,
     Lvl1Distribution,
     RecentIngest,
+)
+
+# Bridge image schemas
+from .bridge_image import (
+    BridgeImageResponse,
+    ImageConfirmRequest,
+    ImagePresignRequest,
+    ImagePresignResponse,
+    ImageReorderRequest,
 )
 
 # Taxonomy schemas
@@ -115,12 +137,15 @@ __all__ = [
     "DebugResponse",
     "EvidenceGroupsResponse",
     # Bridge
+    "BatchGeocodeRequest",
+    "BatchGeocodeResponse",
     "BridgeCreate",
     "BridgeDetail",
     "BridgeListItem",
     "BridgeMergePreview",
     "BridgeMergeRequest",
     "BridgeUpdate",
+    "CSVImportResponse",
     # Chunk
     "BridgeLinkInput",
     "ChunkBatchRequest",
@@ -134,6 +159,9 @@ __all__ = [
     "ChunkUpdate",
     "ReindexResponse",
     # Knowledge point
+    "KPBridgeItem",
+    "KPBridgeReplaceItem",
+    "KPBridgeReplaceRequest",
     "KPCreate",
     "KPDetail",
     "KPListItem",
@@ -159,6 +187,12 @@ __all__ = [
     "DashboardStats",
     "Lvl1Distribution",
     "RecentIngest",
+    # Bridge image
+    "BridgeImageResponse",
+    "ImageConfirmRequest",
+    "ImagePresignRequest",
+    "ImagePresignResponse",
+    "ImageReorderRequest",
     # Taxonomy
     "TaxonomyBatchUpdate",
     "TaxonomyBatchUpdateResult",

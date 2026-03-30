@@ -10,16 +10,20 @@ from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.schemas.knowledge_point import (
     GenerateKeyPointsResponse,
-    KeyPointItem,
+    KPBridgeItem,
+    KPBridgeReplaceRequest,
     KPCreate,
     KPDetail,
     KPListItem,
     KPUpdate,
+    KeyPointItem,
 )
 from app.core.database import get_db
-from app.models import Chunk, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode, User
+from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode, User
 from app.providers import ChatMessage, ZhipuProvider
 from app.services.audit_service import AuditService
+from app.services.flashcard_generator import FlashcardBatchGenerator
+from app.services.kp_bridge_service import KnowledgePointBridgeService
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +116,179 @@ def create_knowledge_point(
     db.refresh(kp)
 
     return _build_detail(kp, [])
+
+
+@router.post("/{kp_id}/sync-bridges", response_model=list[KPBridgeItem])
+async def sync_bridges(
+    kp_id: UUID,
+    request: Request,
+    use_llm: bool = Query(default=False, description="Generate relevance notes via LLM"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[KPBridgeItem]:
+    """Auto-derive bridge associations from chunk taxonomy tags."""
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+
+    svc = KnowledgePointBridgeService()
+    provider = ZhipuProvider() if use_llm else None
+
+    try:
+        created = await svc.sync_from_chunks(db, kp_id, provider=provider)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    AuditService.log(
+        db,
+        action="sync_bridges",
+        resource_type="knowledge_point",
+        user_id=current_user.id,
+        resource_id=str(kp_id),
+        detail={"synced": len(created), "use_llm": use_llm},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    # Refresh to get generated IDs, then build response with bridge names
+    for record in created:
+        db.refresh(record)
+
+    # Fetch bridge names
+    bridge_ids = [r.bridge_id for r in created]
+    bridges = db.query(Bridge).filter(Bridge.id.in_(bridge_ids)).all() if bridge_ids else []
+    name_map = {b.id: b.name for b in bridges}
+
+    return [
+        KPBridgeItem(
+            id=r.id,
+            bridge_id=r.bridge_id,
+            bridge_name=name_map.get(r.bridge_id, ""),
+            relevance_note=r.relevance_note,
+            order_index=r.order_index,
+        )
+        for r in created
+    ]
+
+
+@router.get("/{kp_id}/bridges", response_model=list[KPBridgeItem])
+def list_kp_bridges(
+    kp_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[KPBridgeItem]:
+    """List associated bridges with relevance notes."""
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+
+    svc = KnowledgePointBridgeService()
+    items = svc.list_bridges(db, kp_id)
+
+    return [KPBridgeItem(**item) for item in items]
+
+
+@router.put("/{kp_id}/bridges", response_model=list[KPBridgeItem])
+def replace_kp_bridges(
+    kp_id: UUID,
+    body: KPBridgeReplaceRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[KPBridgeItem]:
+    """Replace all bridge associations."""
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+
+    svc = KnowledgePointBridgeService()
+    items_data = [item.model_dump() for item in body.items]
+    created = svc.replace_all(db, kp_id, items_data)
+
+    AuditService.log(
+        db,
+        action="replace_bridges",
+        resource_type="knowledge_point",
+        user_id=current_user.id,
+        resource_id=str(kp_id),
+        detail={"count": len(created)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    for record in created:
+        db.refresh(record)
+
+    # Fetch bridge names
+    bridge_ids = [r.bridge_id for r in created]
+    bridges = db.query(Bridge).filter(Bridge.id.in_(bridge_ids)).all() if bridge_ids else []
+    name_map = {b.id: b.name for b in bridges}
+
+    return [
+        KPBridgeItem(
+            id=r.id,
+            bridge_id=r.bridge_id,
+            bridge_name=name_map.get(r.bridge_id, ""),
+            relevance_note=r.relevance_note,
+            order_index=r.order_index,
+        )
+        for r in created
+    ]
+
+
+@router.post("/{kp_id}/generate-flashcards")
+async def generate_flashcards(
+    kp_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate flashcards for a knowledge point using LLM."""
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+
+    generator = FlashcardBatchGenerator()
+    provider = ZhipuProvider()
+
+    try:
+        cards = await generator.generate_for_kp(db, kp_id, provider)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("LLM call failed for KP %s flashcards: %s", kp_id, e)
+        raise HTTPException(status_code=502, detail="LLM service unavailable. Please try again later.")
+
+    AuditService.log(
+        db,
+        action="generate_flashcards",
+        resource_type="knowledge_point",
+        user_id=current_user.id,
+        resource_id=str(kp_id),
+        detail={"generated": len(cards)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    # Refresh to get generated IDs
+    for card in cards:
+        db.refresh(card)
+
+    return {
+        "generated": len(cards),
+        "cards": [
+            {
+                "id": str(card.id),
+                "knowledge_point_id": str(card.knowledge_point_id),
+                "card_type": card.card_type,
+                "front_title": card.front_title,
+                "front_hint": card.front_hint,
+                "back_answer": card.back_answer,
+                "back_key_features": card.back_key_features,
+                "back_example_bridge_id": str(card.back_example_bridge_id) if card.back_example_bridge_id else None,
+            }
+            for card in cards
+        ],
+    }
 
 
 @router.get("/{kp_id}", response_model=KPDetail)
