@@ -1,5 +1,6 @@
 """Bridge image management service — presign upload, CRUD, reorder via R2."""
 
+import logging
 import os
 import uuid
 
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.bridge_image import BridgeImage
 from app.services.r2_storage import R2StorageService
+
+logger = logging.getLogger(__name__)
 
 
 class BridgeImageService:
@@ -55,13 +58,17 @@ class BridgeImageService:
         self,
         db: Session,
         image_id: uuid.UUID,
+        bridge_id: uuid.UUID,
         caption: str | None = None,
         image_type: str | None = None,
     ) -> BridgeImage:
         """Update caption/type after successful upload. Returns updated record."""
-        image = db.query(BridgeImage).filter(BridgeImage.id == image_id).first()
+        image = db.query(BridgeImage).filter(
+            BridgeImage.id == image_id,
+            BridgeImage.bridge_id == bridge_id,
+        ).first()
         if not image:
-            raise ValueError(f"BridgeImage {image_id} not found")
+            raise ValueError(f"BridgeImage {image_id} not found for bridge {bridge_id}")
         if caption is not None:
             image.caption = caption
         if image_type is not None:
@@ -99,7 +106,10 @@ class BridgeImageService:
         try:
             self.r2.delete_prefix(r2_key)  # works for single key too
         except Exception:
-            pass  # R2 cleanup failure shouldn't block DB deletion
+            logger.warning(
+                "Failed to delete R2 object %s, orphaned storage may remain",
+                r2_key, exc_info=True,
+            )
         db.delete(image)
         db.flush()
         return r2_key

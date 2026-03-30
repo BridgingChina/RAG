@@ -300,12 +300,14 @@ export interface BridgeDetail {
   created_at: string
 }
 
+export type ImageType = "photo" | "illustration" | "map"
+
 export interface BridgeImage {
   id: string
   bridge_id: string
   url: string
   caption: string | null
-  type: string | null
+  type: ImageType | null
   order_index: number
   created_at: string
 }
