@@ -150,13 +150,25 @@ def remove_favorite(
     db.commit()
 
 
-@router.post("/check")
+@router.post(
+    "/check",
+    summary="Batch check favorite status (read-only)",
+    description=(
+        "This endpoint uses POST because it accepts a JSON request body "
+        "containing a list of targets to check in batch. Despite using POST, "
+        "it is a **read-only** query that does not create or modify any data."
+    ),
+)
 def check_favorites(
     body: FavoriteCheckRequest,
     device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
-    """Batch check which targets are favorited."""
+    """Batch check which targets are favorited.
+
+    Uses POST to allow a JSON request body with multiple targets.
+    This is a read-only operation — no data is created or modified.
+    """
     if not body.targets:
         return MobileResponse(data={})
 
