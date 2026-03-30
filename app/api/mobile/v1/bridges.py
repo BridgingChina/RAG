@@ -1,6 +1,9 @@
 """Mobile API: Bridge endpoints."""
+import logging
 import math
 from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
@@ -251,10 +254,14 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse
         .order_by(BridgeImage.order_index)
         .all()
     )
-    image_list = [
-        {"url": BridgeImageService.get_public_url(img.r2_key), "caption": img.caption, "type": img.type}
-        for img in images_rows
-    ]
+    image_list = []
+    for img in images_rows:
+        try:
+            url = BridgeImageService.get_public_url(img.r2_key)
+        except Exception:
+            logger.warning("Failed to generate URL for image %s", img.id, exc_info=True)
+            continue
+        image_list.append({"url": url, "caption": img.caption, "type": img.type})
 
     # Related knowledge points via association table
     kp_links = (
