@@ -111,7 +111,7 @@ def confirm_image_upload(
     """Confirm image upload and optionally set caption/type."""
     _ensure_bridge(db, bridge_id)
     try:
-        image = svc.confirm_upload(db, body.image_id, body.caption, body.type)
+        image = svc.confirm_upload(db, body.image_id, bridge_id, body.caption, body.type)
     except ValueError:
         raise HTTPException(status_code=404, detail="Image not found")
 
@@ -237,9 +237,9 @@ async def batch_geocode(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> BatchGeocodeResponse:
-    """Batch geocode bridges using Amap API. Synchronous — returns results directly."""
+    """Batch geocode bridges using Amap API. Blocking — awaits all geocoding inline."""
     svc = GeocodeService()
-    result = await svc.batch_geocode(body.bridge_ids)
+    result = await svc.batch_geocode(db, body.bridge_ids)
 
     AuditService.log(
         db,

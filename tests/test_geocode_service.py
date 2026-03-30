@@ -72,10 +72,10 @@ async def test_amap_geocode_returns_none_on_empty(svc):
 
 
 @pytest.mark.asyncio
-async def test_amap_geocode_skips_if_no_api_key(svc_no_key):
-    """Should return None immediately if no API key is configured."""
-    result = await svc_no_key._amap_geocode("北京")
-    assert result is None
+async def test_amap_geocode_raises_if_no_api_key(svc_no_key):
+    """Should raise ValueError if no API key is configured."""
+    with pytest.raises(ValueError, match="AMAP_API_KEY"):
+        await svc_no_key._amap_geocode("北京")
 
 
 def test_import_csv_matches_by_name():
@@ -140,4 +140,4 @@ def test_import_csv_matches_by_name():
     assert bridge2.longitude == 116.217
     assert bridge2.geocode_source == "csv"
 
-    mock_db.commit.assert_called_once()
+    mock_db.flush.assert_called_once()
