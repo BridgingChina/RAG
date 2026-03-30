@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.schemas.knowledge_point import (
+    GenerateKeyPointsResponse,
     KeyPointItem,
     KPCreate,
     KPDetail,
@@ -190,7 +191,7 @@ def delete_knowledge_point(
     db.commit()
 
 
-@router.post("/{kp_id}/generate-key-points")
+@router.post("/{kp_id}/generate-key-points", response_model=GenerateKeyPointsResponse)
 async def generate_key_points(
     kp_id: UUID,
     request: Request,
