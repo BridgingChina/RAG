@@ -5,6 +5,7 @@ across the async multi-stage ingest pipeline.
 """
 import io
 import mimetypes
+import posixpath
 import uuid
 import zipfile
 
@@ -185,12 +186,17 @@ class IngestTaskService:
             parsed_md = zf.read(md_files[0]).decode("utf-8")
 
             for name in zf.namelist():
-                if "/" in name and not name.endswith("/"):
-                    dirname = name.split("/")[0]
+                # Sanitize zip entry path to prevent Zip Slip attacks
+                safe_name = posixpath.normpath(name)
+                if safe_name.startswith("..") or safe_name.startswith("/"):
+                    logger.warning("IngestTask %s: skipping suspicious zip entry: %s", task.id, name)
+                    continue
+                if "/" in safe_name and not safe_name.endswith("/"):
+                    dirname = safe_name.split("/")[0]
                     if dirname == "images":
-                        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+                        content_type = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
                         self.r2.upload(
-                            f"parsed/{task.id}/{name}",
+                            f"parsed/{task.id}/{safe_name}",
                             zf.read(name),
                             content_type,
                         )
