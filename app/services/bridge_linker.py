@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Callable, Literal
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Bridge
@@ -345,11 +346,18 @@ class BridgeLinker:
         for name in normalized:
             bridge = self._bridge_alias_map.get(name)
             if bridge is None and allow_create:
-                bridge = Bridge(name=name)
-                db.add(bridge)
-                db.flush()
-                created.append(name)
-                self._register_bridge(bridge)
+                try:
+                    nested = db.begin_nested()
+                    bridge = Bridge(name=name)
+                    db.add(bridge)
+                    db.flush()
+                    created.append(name)
+                    self._register_bridge(bridge)
+                except IntegrityError:
+                    nested.rollback()
+                    bridge = db.query(Bridge).filter(Bridge.name == name).first()
+                    if bridge is not None:
+                        self._register_bridge(bridge)
             if bridge is None:
                 continue
 

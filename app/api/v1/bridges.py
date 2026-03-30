@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
@@ -126,10 +127,19 @@ def create_bridge(
     current_user: User = Depends(get_current_user),
 ) -> BridgeDetail:
     """Create a new bridge."""
+    # Check for duplicate name
+    existing = db.query(Bridge).filter(Bridge.name == body.name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Bridge with name '{body.name}' already exists")
+
     # Create the bridge
     bridge = Bridge(**body.model_dump())
     db.add(bridge)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"Bridge with name '{body.name}' already exists")
     db.refresh(bridge)
 
     AuditService.log(
