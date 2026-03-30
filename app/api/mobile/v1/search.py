@@ -1,4 +1,5 @@
 """Mobile API: Unified search endpoint."""
+import html
 import re
 
 from fastapi import APIRouter, Depends, Query
@@ -18,8 +19,10 @@ router = APIRouter()
 
 def _highlight(text: str, keyword: str) -> str:
     """Wrap keyword matches in <em> tags (case-insensitive)."""
-    pattern = re.compile(re.escape(keyword), re.IGNORECASE)
-    return pattern.sub(lambda m: f"<em>{m.group()}</em>", text)
+    escaped = html.escape(text)
+    escaped_kw = html.escape(keyword)
+    pattern = re.compile(re.escape(escaped_kw), re.IGNORECASE)
+    return pattern.sub(lambda m: f"<em>{m.group()}</em>", escaped)
 
 
 def _build_bridge_query(db: Session, like_pattern: str, bridge_type: str | None, era: str | None, region: str | None):
