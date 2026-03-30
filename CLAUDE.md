@@ -75,7 +75,7 @@ python3 scripts/create_user.py --username admin --password <password>
 
 ## Environment Setup
 
-Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production.
+Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production. `CORS_ORIGINS` accepts a JSON list of allowed origins (default: `["http://localhost:3000", "http://localhost:5173"]`); set to `["https://your-domain.com"]` in production.
 
 ## Database Schema Management
 
@@ -230,6 +230,7 @@ title: 资料标题
 - `device_favorites` 使用 UNIQUE(device_id, target_type, target_id) — 重复添加收藏会触发 IntegrityError，需捕获返回 409
 - `review/today` 端点的复习规则：mastery IS NULL OR needs_review OR (mastered 且 last_reviewed_at 超 3 天)
 - `generate-key-points` 端点的 chunk 检索策略：先 lvl3 匹配，不足 3 条时退化到 lvl2
+- `_download_and_store_parsed_assets` 有 SSRF 防护 — `download_url` 必须是 `https` 且 hostname 在白名单内（`open.bigmodel.cn`, `cdn.bigmodel.cn`）。如果智谱新增 CDN 域名需更新 `ALLOWED_ZHIPU_HOSTS`
 
 ## Worktrees
 
