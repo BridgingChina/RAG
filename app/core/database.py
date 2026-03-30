@@ -7,7 +7,13 @@ from app.core.config import settings
 from app.core.constants import EMBEDDING_DIM
 from app.core.logging import logger
 
-engine = create_engine(settings.database_url)
+engine = create_engine(
+    settings.database_url,
+    pool_size=5,
+    max_overflow=5,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
