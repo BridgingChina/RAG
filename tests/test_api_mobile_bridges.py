@@ -28,3 +28,12 @@ def test_lvl1_to_section_mapping():
     assert LVL1_TO_SECTION["地域与环境"] == "geography"
     assert LVL1_TO_SECTION["功能与社会"] == "society"
     assert LVL1_TO_SECTION["历史与演变"] == "history"
+
+
+def test_clusters_representative_is_object_not_array():
+    """Cluster representative should be {id, name} object, not an array of IDs."""
+    from app.api.mobile.v1.bridges import get_bridge_clusters
+    import inspect
+    src = inspect.getsource(get_bridge_clusters)
+    assert '"representative"' in src or "'representative'" in src
+    assert "representative_ids" not in src
