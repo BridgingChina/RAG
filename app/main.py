@@ -50,6 +50,9 @@ app = FastAPI(title="Bridge RAG", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+from app.api.mobile.v1.error_handlers import register_mobile_error_handlers
+register_mobile_error_handlers(app)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
