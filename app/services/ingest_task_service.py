@@ -7,6 +7,7 @@ import io
 import mimetypes
 import uuid
 import zipfile
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -161,6 +162,11 @@ class IngestTaskService:
         self, task: IngestTask, download_url: str
     ) -> str:
         """Download zip from Zhipu, archive to R2, extract markdown and images."""
+        ALLOWED_ZHIPU_HOSTS = {"open.bigmodel.cn", "cdn.bigmodel.cn"}
+        parsed = urlparse(download_url)
+        if parsed.scheme != "https" or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
+            raise ValueError(f"Untrusted download_url host: {parsed.hostname}")
+
         logger.info("IngestTask %d: downloading zip from Zhipu", task.id)
         async with httpx.AsyncClient() as client:
             resp = await client.get(download_url, timeout=120.0)
