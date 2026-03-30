@@ -72,7 +72,14 @@ class IngestTaskService:
             self.db.commit()
         except Exception:
             self.db.rollback()
-        logger.error(f"IngestTask {task.id} failed: {error}")
+            logger.exception(
+                "IngestTask %s: failed to persist status='failed' to DB "
+                "(original error: %s)",
+                task.id,
+                error[:200],
+            )
+            return
+        logger.error("IngestTask %s failed: %s", task.id, error)
 
     def _audit(self, task: IngestTask, action: str, detail: dict | None = None) -> None:
         """Log an audit event for this task."""
