@@ -1,8 +1,9 @@
 """User model for authentication."""
 
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDMixin, TimestampMixin
@@ -15,3 +16,6 @@ class User(Base, UUIDMixin, TimestampMixin):
     hashed_password: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    password_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )

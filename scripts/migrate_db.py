@@ -116,9 +116,18 @@ def migrate_v2_to_v3(conn) -> None:
     set_schema_version(engine, 3, "Add flashcards + device tables", conn=conn)
 
 
+def migrate_v3_to_v4(conn) -> None:
+    """Add password_changed_at column to users table."""
+    conn.execute(text(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ"
+    ))
+    set_schema_version(engine, 4, "Add users.password_changed_at for JWT invalidation", conn=conn)
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
+    3: migrate_v3_to_v4,
 }
 
 

@@ -1,5 +1,7 @@
 """Authentication API endpoints."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -91,6 +93,7 @@ def change_password(
             detail="Current password is incorrect",
         )
     current_user.hashed_password = hash_password(body.new_password)
+    current_user.password_changed_at = datetime.now(timezone.utc)
     AuditService.log(
         db,
         action=AuditService.CHANGE_PASSWORD,

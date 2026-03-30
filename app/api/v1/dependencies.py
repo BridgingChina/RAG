@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models import User
-from app.services.auth_service import decode_access_token
+from app.services.auth_service import decode_access_token, is_token_valid_for_user
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -39,6 +39,11 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
+        )
+    if not is_token_valid_for_user(payload, user.password_changed_at):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalidated by password change — please log in again",
         )
     return user
 
