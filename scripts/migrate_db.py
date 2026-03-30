@@ -140,6 +140,15 @@ def main() -> None:
 
     click.echo(f"Migrating from v{current} to v{LATEST_SCHEMA_VERSION}...")
     with engine.begin() as conn:
+        # Acquire advisory lock to prevent concurrent migrations (same lock ID as init_database)
+        conn.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": 606059278})
+
+        # Re-check version after acquiring lock (another process may have just migrated)
+        current = get_current_schema_version(engine, conn=conn) or current
+        if current >= LATEST_SCHEMA_VERSION:
+            click.echo(f"Schema already at v{current} after acquiring lock. No migration needed.")
+            return
+
         for v in range(current, LATEST_SCHEMA_VERSION):
             migrate_fn = MIGRATIONS.get(v)
             if migrate_fn is None:
