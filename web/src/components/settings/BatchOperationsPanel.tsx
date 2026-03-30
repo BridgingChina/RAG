@@ -103,7 +103,7 @@ function FlashcardSection() {
     <section className="space-y-3">
       <h3 className="text-sm font-semibold">批量生成闪卡</h3>
       <p className="text-sm text-muted-foreground">
-        为所有知识点批量生成闪卡（已有闪卡的知识点将跳过）
+        为所有知识点批量生成闪卡（已有闪卡将被重新生成）
       </p>
       <Button size="sm" disabled={loading} onClick={run}>
         {loading ? "生成中..." : "为全部知识点生成"}
@@ -131,7 +131,7 @@ function FlashcardSection() {
 
 function KPBridgeSyncSection() {
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ total: number; synced: number } | null>(null)
+  const [result, setResult] = useState<{ total: number; synced: number; failed: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   async function run() {
@@ -157,11 +157,16 @@ function KPBridgeSyncSection() {
       }
 
       let totalSynced = 0
+      let totalFailed = 0
       for (const id of allIds) {
-        const res = await syncKPBridges(id)
-        totalSynced += res.length
+        try {
+          const res = await syncKPBridges(id)
+          totalSynced += res.length
+        } catch {
+          totalFailed++
+        }
       }
-      setResult({ total: allIds.length, synced: totalSynced })
+      setResult({ total: allIds.length, synced: totalSynced, failed: totalFailed })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -179,9 +184,16 @@ function KPBridgeSyncSection() {
         {loading ? "同步中..." : "批量同步桥梁关联"}
       </Button>
       {result && (
-        <p className="text-sm text-green-700">
-          处理 {result.total} 个知识点，新增 {result.synced} 条关联
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm text-green-700">
+            处理 {result.total} 个知识点，新增 {result.synced} 条关联
+          </p>
+          {result.failed > 0 && (
+            <p className="text-sm text-amber-600">
+              {result.failed} 个知识点同步失败
+            </p>
+          )}
+        </div>
       )}
       {error && <p className="text-sm text-red-600">错误: {error}</p>}
     </section>
