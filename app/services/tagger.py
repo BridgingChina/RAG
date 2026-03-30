@@ -1,9 +1,12 @@
 import json
+import logging
 import re
 from dataclasses import dataclass
 
 from app.core.constants import get_taxonomy_lvl1, get_taxonomy_lvl2, get_taxonomy_lvl3, load_taxonomy
 from app.providers import ChatMessage, LLMProvider
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -115,9 +118,7 @@ class MetadataTagger:
                         lvl3 = None
 
             return TagResult(lvl1=lvl1, lvl2=lvl2, lvl3=lvl3, bridge_id=bridge_name)
-        except (json.JSONDecodeError, AttributeError):
-            pass
         except Exception:
-            pass
+            logger.warning("Failed to parse tagger response: %s", content, exc_info=True)
 
         return TagResult(lvl1=None, lvl2=None, lvl3=None, bridge_id=None)
