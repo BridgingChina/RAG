@@ -9,7 +9,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 class Bridge(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "bridges"
 
-    name: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255), unique=True)
     aliases: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     region: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     era: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
