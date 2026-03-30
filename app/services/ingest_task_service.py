@@ -304,8 +304,14 @@ class IngestTaskService:
                         surrounding_chunks=surrounding,
                     )
                     contextual_text = (ctx.contextual_text or "").strip()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(
+                        "Context enrichment failed for chunk %d/%d (task %s): %s",
+                        i + 1,
+                        len(chunks),
+                        task.id,
+                        e,
+                    )
 
                 search_text = chunk.content
                 if contextual_text:
