@@ -9,12 +9,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.api.mobile.v1.schemas.qa import QARequest
 from app.core.database import get_db
+from app.core.rate_limit import limiter
 from app.models import TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
 from app.providers import ZhipuProvider
@@ -30,7 +29,6 @@ from app.services.tokenizer import Tokenizer, default_user_dict_path
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-limiter = Limiter(key_func=get_remote_address)
 
 
 def _sse_event(event: str, data: dict) -> str:
