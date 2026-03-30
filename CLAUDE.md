@@ -111,6 +111,7 @@ The system uses automatic schema versioning:
 - `app/services/generator.py` — 基于证据生成回答，输出引用和置信度
 - `app/services/chunk_editor.py` — Chunk 手动校对服务：content 编辑（重算 search_text/tsv）、bridge_links 替换、split/merge、批量 reindex。编辑后设 `needs_reindex=True`
 - `app/services/reindex_cron.py` — 每日 03:00 后台 cron，自动重建 stale chunks 的 search_text + tsv（不含 embedding）
+- `app/core/rate_limit.py` — Shared slowapi `Limiter` singleton (60 req/min/IP default). Import `limiter` to add `@limiter.limit()` on endpoints. `/health` is exempt
 
 **桥梁详情聚合：** 四章节（structure/geography/society/history）从 chunks 实时聚合（无独立表），通过 `LVL1_TO_SECTION` 映射 lvl1 → section key。L0 = section_title 或 content 截断，L1 = 完整 content + citations。
 
@@ -233,6 +234,8 @@ title: 资料标题
 - `db.rollback()` inside a helper method rolls back the **entire** transaction — use `db.begin_nested()` (savepoint) when catching `IntegrityError` mid-transaction to avoid nuking the caller's work
 - `Bridge.name` has a unique constraint — `create_bridge` API returns 409 on duplicate, `BridgeLinker` uses savepoint + query-on-conflict
 - Login rate limiter (`app/api/v1/auth.py`) is in-memory + process-local — state resets on restart, not shared across `uvicorn --workers N`. Uses `time.monotonic()` + `threading.Lock`. Tests must clear `_failed_attempts` dict in setup/teardown to avoid cross-test pollution
+- slowapi `Limiter` must be a single shared instance (`app/core/rate_limit.py`) — creating a second `Limiter` in endpoint modules won't share state with `app.state.limiter`
+- `/health` is `@limiter.exempt` — do not remove, or load balancer probes will get 429'd
 
 ## Worktrees
 
