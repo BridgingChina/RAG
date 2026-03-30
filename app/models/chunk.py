@@ -45,10 +45,10 @@ class Chunk(Base, UUIDMixin, CreatedAtMixin):
         Index("ix_chunks_binding_status", "bridge_binding_status"),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
         Index(
-            "ix_chunks_embedding_ivfflat",
+            "ix_chunks_embedding_hnsw",
             "embedding",
-            postgresql_using="ivfflat",
-            postgresql_with={"lists": 100},
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )

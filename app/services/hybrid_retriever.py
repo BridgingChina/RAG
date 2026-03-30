@@ -406,6 +406,7 @@ class HybridRetriever:
         """
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
         try:
+            db.execute(text("SET LOCAL hnsw.ef_search = 40"))
             sql = "SELECT id FROM chunks WHERE needs_reindex = false"
             params: dict[str, object] = {"embedding": embedding_str, "limit": limit}
             bind_params: list[object] = []
