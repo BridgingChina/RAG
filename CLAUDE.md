@@ -230,6 +230,8 @@ title: 资料标题
 - `device_favorites` 使用 UNIQUE(device_id, target_type, target_id) — 重复添加收藏会触发 IntegrityError，需捕获返回 409
 - `review/today` 端点的复习规则：mastery IS NULL OR needs_review OR (mastered 且 last_reviewed_at 超 3 天)
 - `generate-key-points` 端点的 chunk 检索策略：先 lvl3 匹配，不足 3 条时退化到 lvl2
+- `db.rollback()` inside a helper method rolls back the **entire** transaction — use `db.begin_nested()` (savepoint) when catching `IntegrityError` mid-transaction to avoid nuking the caller's work
+- `Bridge.name` has a unique constraint — `create_bridge` API returns 409 on duplicate, `BridgeLinker` uses savepoint + query-on-conflict
 
 ## Worktrees
 
