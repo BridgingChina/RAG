@@ -10,6 +10,7 @@ from app.api.v1.schemas.bridge import (
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
+    BridgeMergePreview,
     BridgeMergeRequest,
     BridgeUpdate,
 )
@@ -309,17 +310,20 @@ def get_bridge_chunks(
     )
 
 
-@router.post("/{target_id}/merge", response_model=BridgeDetail)
+@router.post("/{target_id}/merge", response_model=BridgeDetail | BridgeMergePreview)
 def merge_bridges(
     target_id: UUID,
     body: BridgeMergeRequest,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> BridgeDetail:
+    dry_run: bool = Query(False),
+) -> BridgeDetail | BridgeMergePreview:
     """Merge source bridge into target bridge.
 
-    Migrates all chunks, links, and aliases from source to target, then deletes source.
+    When dry_run=true, returns a preview of what would happen without executing.
+    When dry_run=false (default), migrates all chunks, links, and aliases from
+    source to target, then deletes source.
     """
     if body.source_bridge_id == target_id:
         raise HTTPException(status_code=422, detail="Cannot merge a bridge into itself")
@@ -331,6 +335,53 @@ def merge_bridges(
     source = db.query(Bridge).filter(Bridge.id == body.source_bridge_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source bridge not found")
+
+    # Compute aliases that would be added (needed for both dry_run and actual merge)
+    source_aliases = [s.strip() for s in (source.aliases or "").split(",") if s.strip()]
+    source_aliases.append(source.name)
+    target_aliases = [s.strip() for s in (target.aliases or "").split(",") if s.strip()]
+    new_aliases = [a for a in source_aliases if a not in target_aliases]
+
+    if dry_run:
+        # Count chunks that would move
+        chunks_to_move = (
+            db.query(func.count(Chunk.id))
+            .filter(Chunk.bridge_id == source.id)
+            .scalar()
+        )
+
+        # Count links that would move (excluding duplicates)
+        existing_link_chunks = {
+            row[0]
+            for row in db.query(ChunkBridgeLink.chunk_id)
+            .filter(ChunkBridgeLink.bridge_id == target.id)
+            .all()
+        }
+        source_link_count = (
+            db.query(func.count(ChunkBridgeLink.id))
+            .filter(ChunkBridgeLink.bridge_id == source.id)
+            .scalar()
+        )
+        duplicate_links = (
+            db.query(func.count(ChunkBridgeLink.id))
+            .filter(
+                ChunkBridgeLink.bridge_id == source.id,
+                ChunkBridgeLink.chunk_id.in_(existing_link_chunks),
+            )
+            .scalar()
+            if existing_link_chunks
+            else 0
+        )
+
+        return BridgeMergePreview(
+            source_bridge_id=source.id,
+            source_bridge_name=source.name,
+            target_bridge_id=target.id,
+            target_bridge_name=target.name,
+            chunks_to_move=chunks_to_move,
+            links_to_move=source_link_count - duplicate_links,
+            aliases_to_add=new_aliases,
+        )
 
     # 1. Migrate primary chunks (bridge_id FK)
     db.query(Chunk).filter(Chunk.bridge_id == source.id).update(
@@ -356,9 +407,6 @@ def merge_bridges(
             link.bridge_id = target.id
 
     # 3. Merge aliases (dedupe, preserve order)
-    source_aliases = [s.strip() for s in (source.aliases or "").split(",") if s.strip()]
-    source_aliases.append(source.name)
-    target_aliases = [s.strip() for s in (target.aliases or "").split(",") if s.strip()]
     merged = list(dict.fromkeys(target_aliases + source_aliases))
     target.aliases = ", ".join(merged) if merged else None
 

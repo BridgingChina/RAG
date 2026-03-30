@@ -28,6 +28,7 @@ from .bridge import (
     BridgeCreate,
     BridgeDetail,
     BridgeListItem,
+    BridgeMergePreview,
     BridgeMergeRequest,
     BridgeUpdate,
 )
@@ -117,6 +118,7 @@ __all__ = [
     "BridgeCreate",
     "BridgeDetail",
     "BridgeListItem",
+    "BridgeMergePreview",
     "BridgeMergeRequest",
     "BridgeUpdate",
     # Chunk

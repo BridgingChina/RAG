@@ -63,3 +63,13 @@ class BridgeUpdate(BaseModel):
 
 class BridgeMergeRequest(BaseModel):
     source_bridge_id: UUID
+
+
+class BridgeMergePreview(BaseModel):
+    source_bridge_id: UUID
+    source_bridge_name: str
+    target_bridge_id: UUID
+    target_bridge_name: str
+    chunks_to_move: int
+    links_to_move: int
+    aliases_to_add: list[str]
