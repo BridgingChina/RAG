@@ -121,11 +121,7 @@ class FlashcardBatchGenerator:
         if not isinstance(cards_data, list):
             raise ValueError("LLM returned malformed cards data")
 
-        # 5. Delete existing flashcards for this KP, then create new ones
-        db.query(Flashcard).filter(
-            Flashcard.knowledge_point_id == knowledge_point_id
-        ).delete(synchronize_session=False)
-
+        # 5. Parse cards first, then replace existing only if we have valid new ones
         created_cards: list[Flashcard] = []
         for item in cards_data:
             if not isinstance(item, dict):
@@ -154,8 +150,18 @@ class FlashcardBatchGenerator:
                 back_key_features=item.get("back_key_features"),
                 back_example_bridge_id=example_bridge_id,
             )
-            db.add(card)
             created_cards.append(card)
+
+        if not created_cards:
+            raise ValueError("LLM generated zero valid cards, keeping existing flashcards")
+
+        # Delete existing only after confirming we have replacements
+        db.query(Flashcard).filter(
+            Flashcard.knowledge_point_id == knowledge_point_id
+        ).delete(synchronize_session=False)
+
+        for card in created_cards:
+            db.add(card)
 
         return created_cards
 
