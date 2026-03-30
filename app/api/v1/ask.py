@@ -23,6 +23,7 @@ from app.models import Bridge
 from app.providers import ZhipuProvider
 from app.services import Generator
 from app.services.facet_extractor import FacetExtractor
+from app.services.generator import Confidence, GenerationResult
 from app.services.hybrid_retriever import HybridRetriever, HybridRetrievalResult
 from app.services.tokenizer import Tokenizer, default_user_dict_path
 
@@ -142,8 +143,6 @@ def ask(
             logger.exception("LLM generation failed for question: %s", request.question[:200])
             degraded.append("generation")
             # Return a structured degraded response instead of 500
-            from app.services.generator import GenerationResult, Confidence
-
             result = GenerationResult(
                 summary="抱歉，生成回答时出现错误，请稍后重试。",
                 details="",
