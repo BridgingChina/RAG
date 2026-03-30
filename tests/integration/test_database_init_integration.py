@@ -218,8 +218,8 @@ def test_chunk_embedding_dimension_matches_constant(test_engine):
 
 
 @pytest.mark.integration
-def test_ivfflat_index_exists(test_engine):
-    """Test that the IVFFLAT index on chunks.embedding was created."""
+def test_hnsw_index_exists(test_engine):
+    """Test that the HNSW index on chunks.embedding was created."""
     from app.core import database
     original_engine = database.engine
     database.engine = test_engine
@@ -228,7 +228,7 @@ def test_ivfflat_index_exists(test_engine):
         # Initialize database
         init_database()
 
-        # Enable pgvector extension (required for IVFFLAT)
+        # Enable pgvector extension (required for HNSW)
         with test_engine.connect() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
@@ -237,18 +237,18 @@ def test_ivfflat_index_exists(test_engine):
         Base.metadata.drop_all(test_engine)
         Base.metadata.create_all(test_engine)
 
-        # Query pg_indexes to check for IVFFLAT index
+        # Query pg_indexes to check for HNSW index
         with test_engine.connect() as conn:
             result = conn.execute(
                 text(
                     "SELECT indexname, indexdef FROM pg_indexes "
-                    "WHERE tablename = 'chunks' AND indexname = 'ix_chunks_embedding_ivfflat'"
+                    "WHERE tablename = 'chunks' AND indexname = 'ix_chunks_embedding_hnsw'"
                 )
             )
             index_row = result.fetchone()
 
-            assert index_row is not None, "IVFFLAT index not found"
-            assert "ivfflat" in index_row[1].lower(), "Index is not using IVFFLAT method"
+            assert index_row is not None, "HNSW index not found"
+            assert "hnsw" in index_row[1].lower(), "Index is not using HNSW method"
             assert "vector_cosine_ops" in index_row[1].lower(), "Index is not using cosine distance"
     finally:
         database.engine = original_engine

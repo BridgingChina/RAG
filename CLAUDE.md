@@ -125,7 +125,7 @@ The system uses automatic schema versioning:
 
 **Data Model:**（所有表使用 UUID v4 主键，通过 `UUIDMixin` 统一管理）
 
-- `chunks` — 核心检索单元，1024 维向量（IVFFLAT 索引，IVFFLAT 和 HNSW 均有 2000 维上限）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
+- `chunks` — 核心检索单元，1024 维向量（HNSW 索引，m=16, ef_construction=64, ef_search=40）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
 - `bridges` — 桥梁档案（bridge_type/material/era/region/function/latitude/longitude）
 - `chunk_bridge_links` — chunks ↔ bridges 多对多关联表
 - `taxonomy_nodes` — 三级目录结构
