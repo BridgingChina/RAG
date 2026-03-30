@@ -232,6 +232,7 @@ title: 资料标题
 - `_download_and_store_parsed_assets` 有 SSRF 防护 — `download_url` 必须是 `https` 且 hostname 在白名单内（`open.bigmodel.cn`, `cdn.bigmodel.cn`）。如果智谱新增 CDN 域名需更新 `ALLOWED_ZHIPU_HOSTS`
 - `db.rollback()` inside a helper method rolls back the **entire** transaction — use `db.begin_nested()` (savepoint) when catching `IntegrityError` mid-transaction to avoid nuking the caller's work
 - `Bridge.name` has a unique constraint — `create_bridge` API returns 409 on duplicate, `BridgeLinker` uses savepoint + query-on-conflict
+- Login rate limiter (`app/api/v1/auth.py`) is in-memory + process-local — state resets on restart, not shared across `uvicorn --workers N`. Uses `time.monotonic()` + `threading.Lock`. Tests must clear `_failed_attempts` dict in setup/teardown to avoid cross-test pollution
 
 ## Worktrees
 

@@ -1,5 +1,7 @@
 """Authentication API endpoints."""
 
+import time
+import threading
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -23,18 +25,73 @@ from app.services.auth_service import (
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# ---------------------------------------------------------------------------
+# In-memory login rate limiter
+# ---------------------------------------------------------------------------
+_MAX_ATTEMPTS = 5
+_WINDOW_SECONDS = 15 * 60  # 15 minutes
+
+# {ip: [timestamp, ...]}  – only failed attempt timestamps within the window
+_failed_attempts: dict[str, list[float]] = {}
+_lock = threading.Lock()
+
+
+def _cleanup_and_check(ip: str) -> bool:
+    """Remove stale entries and return True if the IP is currently locked out."""
+    now = time.monotonic()
+    cutoff = now - _WINDOW_SECONDS
+
+    with _lock:
+        # Prune expired entries across all IPs (cheap amortised cleanup)
+        stale_ips = [k for k, v in _failed_attempts.items() if v[-1] < cutoff]
+        for k in stale_ips:
+            del _failed_attempts[k]
+
+        attempts = _failed_attempts.get(ip)
+        if attempts is None:
+            return False
+
+        # Drop timestamps outside the window
+        _failed_attempts[ip] = [t for t in attempts if t >= cutoff]
+        if not _failed_attempts[ip]:
+            del _failed_attempts[ip]
+            return False
+
+        return len(_failed_attempts[ip]) >= _MAX_ATTEMPTS
+
+
+def _record_failure(ip: str) -> None:
+    now = time.monotonic()
+    with _lock:
+        _failed_attempts.setdefault(ip, []).append(now)
+
+
+def _reset(ip: str) -> None:
+    with _lock:
+        _failed_attempts.pop(ip, None)
+
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Authenticate and return access token."""
+    client_ip = get_client_ip(request)
+
+    # Check rate limit before processing
+    if _cleanup_and_check(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. Please try again later.",
+        )
+
     user = db.query(User).filter(User.username == body.username).first()
     if user is None or not verify_password(body.password, user.hashed_password):
+        _record_failure(client_ip)
         AuditService.log(
             db,
             action=AuditService.LOGIN_FAILURE,
             resource_type="auth",
             detail={"username": body.username[:64]},
-            ip_address=get_client_ip(request),
+            ip_address=client_ip,
         )
         db.commit()
         raise HTTPException(
@@ -46,13 +103,15 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
         )
+    # Successful login — clear rate limit for this IP
+    _reset(client_ip)
     token = create_access_token(user_id=user.id, username=user.username)
     AuditService.log(
         db,
         action=AuditService.LOGIN,
         resource_type="auth",
         user_id=user.id,
-        ip_address=get_client_ip(request),
+        ip_address=client_ip,
     )
     db.commit()
     return LoginResponse(
