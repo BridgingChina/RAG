@@ -70,7 +70,6 @@ def test_login_rate_limit_returns_429():
     ip = "testclient"
     with auth_module._lock:
         auth_module._failed_attempts.clear()
-    import time
     for _ in range(5):
         auth_module._record_failure(ip)
 
