@@ -8,6 +8,7 @@ import mimetypes
 import posixpath
 import uuid
 import zipfile
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -46,8 +47,6 @@ def cleanup_stale_uploading_tasks(db: Session) -> int:
 
     Returns the number of tasks cleaned up.
     """
-    from datetime import datetime, timedelta, timezone
-
     cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_UPLOADING_HOURS)
     stale_tasks = (
         db.query(IngestTask)

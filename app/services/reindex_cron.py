@@ -26,9 +26,7 @@ async def uploading_cleanup_loop(interval_minutes: int = 30):
         try:
             db = SessionLocal()
             try:
-                cleaned = cleanup_stale_uploading_tasks(db)
-                if cleaned:
-                    logger.info("Uploading cleanup: marked %d stale tasks as failed", cleaned)
+                cleanup_stale_uploading_tasks(db)
             finally:
                 db.close()
         except Exception:
