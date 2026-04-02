@@ -50,6 +50,11 @@ def migrate_v1_to_v2(conn) -> None:
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS ix_kpkp_kp ON knowledge_point_key_points(knowledge_point_id)"
     ))
+    # Defensive: if table was created by an earlier code version without this column
+    conn.execute(text(
+        "ALTER TABLE knowledge_point_key_points "
+        "ADD COLUMN IF NOT EXISTS related_term_ids UUID[]"
+    ))
     set_schema_version(engine, 2, "Add knowledge_points + knowledge_point_key_points", conn=conn)
 
 
