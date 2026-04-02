@@ -62,9 +62,6 @@ export function FileUploadZone({ onTaskCreated, onError }: FileUploadZoneProps) 
 
       // 3. Notify backend
       const task = await createIngestTask({
-        file_name: file.name,
-        file_type: fileType,
-        file_size: file.size,
         r2_key: presign.r2_key,
       })
 

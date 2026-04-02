@@ -109,9 +109,6 @@ export interface PresignResponse {
 }
 
 export interface IngestTaskCreateRequest {
-  file_name: string
-  file_type: string
-  file_size: number
   r2_key: string
 }
 
