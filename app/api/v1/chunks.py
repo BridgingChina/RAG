@@ -122,25 +122,24 @@ def list_chunks(
 @router.get("/{chunk_id}", response_model=ChunkDetail)
 def get_chunk(chunk_id: UUID, db: Session = Depends(get_db)) -> ChunkDetail:
     """Get detailed information about a specific chunk."""
-    # Fetch the chunk
-    chunk = db.query(Chunk).filter(Chunk.id == chunk_id).first()
-    if not chunk:
+    # Single query: fetch chunk + bridge name + source title via JOINs
+    row = (
+        db.query(
+            Chunk,
+            Bridge.name.label("bridge_name"),
+            Source.title.label("source_title"),
+        )
+        .outerjoin(Bridge, Chunk.bridge_id == Bridge.id)
+        .outerjoin(Source, Chunk.source_id == Source.id)
+        .filter(Chunk.id == chunk_id)
+        .first()
+    )
+    if not row:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    # Fetch bridge name if bridge_id is set
-    bridge_name = None
-    if chunk.bridge_id:
-        bridge = db.query(Bridge).filter(Bridge.id == chunk.bridge_id).first()
-        if bridge:
-            bridge_name = bridge.name
+    chunk, bridge_name, source_title = row
 
-    # Fetch source title
-    source_title = None
-    source = db.query(Source).filter(Source.id == chunk.source_id).first()
-    if source:
-        source_title = source.title
-
-    # Fetch bridge links with bridge names
+    # Second query: fetch bridge links with bridge names (single round-trip)
     bridge_link_results = (
         db.query(ChunkBridgeLink, Bridge.name)
         .outerjoin(Bridge, ChunkBridgeLink.bridge_id == Bridge.id)
@@ -148,18 +147,17 @@ def get_chunk(chunk_id: UUID, db: Session = Depends(get_db)) -> ChunkDetail:
         .all()
     )
 
-    bridge_links = []
-    for link, name in bridge_link_results:
-        bridge_links.append(
-            ChunkBridgeLinkDetail(
-                id=link.id,
-                bridge_id=link.bridge_id,
-                bridge_name=name,
-                role=link.role,
-                confidence=link.confidence,
-                method=link.method,
-            )
+    bridge_links = [
+        ChunkBridgeLinkDetail(
+            id=link.id,
+            bridge_id=link.bridge_id,
+            bridge_name=name,
+            role=link.role,
+            confidence=link.confidence,
+            method=link.method,
         )
+        for link, name in bridge_link_results
+    ]
 
     return ChunkDetail(
         id=chunk.id,
