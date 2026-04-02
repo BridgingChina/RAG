@@ -4,10 +4,10 @@ from typing import Optional
 from sqlalchemy import DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base, UUIDMixin, CreatedAtMixin
+from app.models.base import Base, UUIDMixin, TimestampMixin
 
 
-class Source(Base, UUIDMixin, CreatedAtMixin):
+class Source(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "sources"
 
     type: Mapped[str] = mapped_column(String(20))

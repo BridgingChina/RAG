@@ -17,7 +17,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 8
 
 
 def get_db():
