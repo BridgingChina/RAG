@@ -186,9 +186,14 @@ def merge_chunks(
     if len(chunk_ids) < 2:
         raise ValueError("At least 2 chunk_ids required for merge")
 
+    chunk_map = {
+        c.id: c
+        for c in db.query(Chunk).filter(Chunk.id.in_(chunk_ids)).all()
+    }
+    # Validate all exist and preserve caller's ordering
     chunks = []
     for cid in chunk_ids:
-        c = db.query(Chunk).filter(Chunk.id == cid).first()
+        c = chunk_map.get(cid)
         if c is None:
             raise ValueError(f"Chunk {cid} not found")
         chunks.append(c)
