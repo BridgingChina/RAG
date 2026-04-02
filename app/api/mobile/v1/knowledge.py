@@ -15,7 +15,7 @@ from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
 router = APIRouter()
 
 
-@router.get("/tree")
+@router.get("/tree", response_model=MobileResponse[dict])
 def get_knowledge_tree(
     depth: int | None = Query(default=None, ge=0, le=3),
     db: Session = Depends(get_db),
@@ -94,7 +94,7 @@ def get_knowledge_tree(
     return MobileResponse(data={"lines": lines})
 
 
-@router.get("/points/{point_id}")
+@router.get("/points/{point_id}", response_model=MobileResponse[dict])
 def get_knowledge_point(
     point_id: UUID,
     level: str = Query(default="all", pattern="^(L0|L1|L2|all)$"),
@@ -222,7 +222,7 @@ def get_knowledge_point(
     return MobileResponse(data=result)
 
 
-@router.get("/points/{point_id}/bridges")
+@router.get("/points/{point_id}/bridges", response_model=MobilePaginatedResponse[dict])
 def get_knowledge_point_bridges(
     point_id: UUID,
     page: int = Query(default=1, ge=1),
@@ -263,7 +263,7 @@ def get_knowledge_point_bridges(
     )
 
 
-@router.get("/points/{point_id}/flashcards")
+@router.get("/points/{point_id}/flashcards", response_model=MobileResponse[dict])
 def get_knowledge_point_flashcards(
     point_id: UUID,
     card_type: str = Query(default="all", pattern="^(all|concept|identification)$"),

@@ -25,7 +25,7 @@ class HistoryRecordRequest(BaseModel):
     target_id: UUID
 
 
-@router.get("")
+@router.get("", response_model=MobilePaginatedResponse[dict])
 def list_history(
     device_id: uuid.UUID = Depends(require_device_id),
     page: int = Query(default=1, ge=1),
@@ -77,7 +77,7 @@ def list_history(
     )
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=MobileResponse[dict])
 def record_view(
     body: HistoryRecordRequest,
     device_id: uuid.UUID = Depends(require_device_id),

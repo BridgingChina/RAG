@@ -44,7 +44,7 @@ def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None, bridge_names: d
     }
 
 
-@router.get("/today")
+@router.get("/today", response_model=MobilePaginatedResponse[dict])
 def get_today_queue(
     device_id: uuid.UUID = Depends(require_device_id),
     page: int = Query(default=1, ge=1),
@@ -99,7 +99,7 @@ def get_today_queue(
     )
 
 
-@router.get("/cards")
+@router.get("/cards", response_model=MobilePaginatedResponse[dict])
 def list_review_cards(
     device_id: uuid.UUID = Depends(require_device_id),
     page: int = Query(default=1, ge=1),
@@ -143,7 +143,7 @@ def list_review_cards(
     )
 
 
-@router.put("/progress/{flashcard_id}")
+@router.put("/progress/{flashcard_id}", response_model=MobileResponse[dict])
 def update_review_progress(
     flashcard_id: UUID,
     body: ReviewProgressUpdate,
