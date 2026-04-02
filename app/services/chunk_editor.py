@@ -1,5 +1,4 @@
 """Service for chunk editing operations (content update, split, merge, reindex)."""
-import asyncio
 import uuid
 from datetime import datetime
 from functools import lru_cache
@@ -233,7 +232,7 @@ def merge_chunks(
     return primary
 
 
-def reindex_source_chunks(
+async def reindex_source_chunks(
     *,
     db: Session,
     source_id: uuid.UUID,
@@ -247,10 +246,6 @@ def reindex_source_chunks(
       Phase 1 — Update search_text + tsv for each chunk (per-chunk savepoints).
       Phase 2 — Batch-embed all successful chunks in one provider.embed() call,
                 then assign embeddings back (per-chunk savepoints).
-
-    NOTE: When provider is not None, this function calls asyncio.run() internally.
-    It must only be called from a synchronous context (e.g. sync FastAPI endpoints
-    running in a threadpool). Calling from an async context will raise RuntimeError.
     """
     query = db.query(Chunk).filter(Chunk.source_id == source_id)
     if not force:
@@ -291,7 +286,7 @@ def reindex_source_chunks(
     if provider is not None and phase1_ok:
         texts = [c.search_text for c in phase1_ok]
         try:
-            embeddings = asyncio.run(provider.embed(texts))
+            embeddings = await provider.embed(texts)
         except Exception:
             logger.warning(
                 "Batch embed failed for source %s (%d chunks), marking all as needs_reindex",
