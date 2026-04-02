@@ -188,7 +188,7 @@ def create_ingest_task(
         )
 
     task.status = "syncing"
-    db.commit()
+    db.flush()
 
     AuditService.log(
         db,
@@ -317,7 +317,7 @@ def confirm_ingest_task(
         )
 
     task.status = "indexing"
-    db.commit()
+    db.flush()
 
     AuditService.log(
         db,
@@ -385,7 +385,7 @@ def retry_ingest_task(
     task.chunk_count = None
     task.parsed_content = None
     task.image_count = 0
-    db.commit()
+    db.flush()
 
     AuditService.log(
         db,

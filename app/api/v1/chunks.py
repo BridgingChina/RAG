@@ -275,8 +275,7 @@ def update_chunk(
     for key, value in update_data.items():
         setattr(chunk, key, value)
 
-    db.commit()
-    db.refresh(chunk)
+    db.flush()
 
     AuditService.log(
         db,
@@ -287,6 +286,7 @@ def update_chunk(
         ip_address=get_client_ip(request),
     )
     db.commit()
+    db.refresh(chunk)
 
     # Return full detail using the get endpoint
     return get_chunk(chunk_id, db)

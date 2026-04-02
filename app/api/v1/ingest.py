@@ -290,7 +290,7 @@ def ingest(
             ),
             mappings,
         )
-        db.commit()
+        db.flush()
 
         AuditService.log(
             db,
