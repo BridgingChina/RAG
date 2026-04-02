@@ -31,6 +31,7 @@ from app.api.v1.pagination import paginate
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, User
 from app.services.audit_service import AuditService
+from app.services.bridge_resolver import invalidate_bridge_cache
 from app.services.bridge_image_service import BridgeImageService
 from app.services.geocode_service import GeocodeService
 from app.services.r2_storage import R2StorageService
@@ -412,6 +413,7 @@ def create_bridge(
     )
     db.commit()
     db.refresh(bridge)
+    invalidate_bridge_cache()
 
     # Return detail with chunk_count = 0 for new bridge
     return BridgeDetail(
@@ -464,6 +466,7 @@ def update_bridge(
     )
     db.commit()
     db.refresh(bridge)
+    invalidate_bridge_cache()
 
     # Return full detail using the get endpoint
     return get_bridge(bridge_id, db)
@@ -508,6 +511,7 @@ def delete_bridge(
     # Delete the bridge
     db.delete(bridge)
     db.commit()
+    invalidate_bridge_cache()
 
 
 @router.get("/{bridge_id}/chunks", response_model=PaginatedResponse[ChunkListItem])
@@ -679,6 +683,7 @@ def merge_bridges(
         ip_address=get_client_ip(request),
     )
     db.commit()
+    invalidate_bridge_cache()
 
     # Return updated target
     return get_bridge(target_id, db)
