@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +17,7 @@ class ChunkBridgeLink(Base, UUIDMixin, CreatedAtMixin):
     method: Mapped[str] = mapped_column(String(20), nullable=False)
 
     __table_args__ = (
+        UniqueConstraint("chunk_id", "bridge_id", name="uq_chunk_bridge_link"),
         Index("ix_chunk_bridge_links_chunk_id", "chunk_id"),
         Index("ix_chunk_bridge_links_bridge_id", "bridge_id"),
         Index("ix_chunk_bridge_links_role_confidence", "role", "confidence"),

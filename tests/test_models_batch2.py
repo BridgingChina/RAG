@@ -42,6 +42,6 @@ def test_all_batch2_models_registered():
     assert DeviceViewHistory.__tablename__ == "device_view_history"
 
 
-def test_schema_version_is_5():
+def test_schema_version_is_6():
     from app.core.database import LATEST_SCHEMA_VERSION
-    assert LATEST_SCHEMA_VERSION == 5
+    assert LATEST_SCHEMA_VERSION == 6
