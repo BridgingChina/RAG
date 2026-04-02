@@ -27,3 +27,14 @@ def test_flashcards_resolve_example_bridge_name():
     import inspect
     src = inspect.getsource(get_knowledge_point_flashcards)
     assert "Bridge.name" in src or "bridge_names" in src
+
+
+def test_knowledge_point_bridges_queries_association_table():
+    """Verify endpoint queries KnowledgePointBridge, not a stub returning []."""
+    from app.api.mobile.v1.knowledge import get_knowledge_point_bridges
+    import inspect
+    src = inspect.getsource(get_knowledge_point_bridges)
+    assert "KnowledgePointBridge" in src
+    assert "knowledge_point_id" in src
+    # Should NOT contain a bare "data=[]"
+    assert "data=[]" not in src

@@ -37,3 +37,14 @@ def test_clusters_representative_is_object_not_array():
     src = inspect.getsource(get_bridge_clusters)
     assert '"representative"' in src or "'representative'" in src
     assert "representative_ids" not in src
+
+
+def test_bridge_knowledge_points_queries_association_table():
+    """Verify endpoint queries KnowledgePointBridge, not a stub returning []."""
+    from app.api.mobile.v1.bridges import get_bridge_knowledge_points
+    import inspect
+    src = inspect.getsource(get_bridge_knowledge_points)
+    assert "KnowledgePointBridge" in src
+    assert "bridge_id" in src
+    # Should NOT contain a bare "return MobileResponse(data=[])"
+    assert "data=[]" not in src
