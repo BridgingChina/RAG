@@ -251,6 +251,7 @@ def reindex_source_chunks(
     failed = []
 
     for chunk in chunks:
+        savepoint = db.begin_nested()
         try:
             # Recompute search_text
             if chunk.contextual_text:
@@ -273,9 +274,13 @@ def reindex_source_chunks(
                 chunk.embedding = embedding_result[0]
 
             chunk.needs_reindex = False
+            savepoint.commit()
             reindexed += 1
         except Exception:
-            logger.exception("Failed to reindex chunk %d", chunk.id)
+            savepoint.rollback()
+            # Ensure chunk stays marked for retry on next reindex run
+            chunk.needs_reindex = True
+            logger.warning("Failed to reindex chunk %s, will retry on next run", chunk.id, exc_info=True)
             failed.append(chunk.id)
 
     db.flush()
