@@ -380,6 +380,7 @@ class IngestTaskService:
             )
 
             task.status = "completed"
+            task.parsed_content = None  # Clear plaintext to reduce exposure (R2 has raw file)
             self.db.commit()
 
             self._audit(task, AuditService.INGEST_INDEX_DONE, {"chunk_count": task.chunk_count})
