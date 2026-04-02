@@ -189,12 +189,29 @@ def migrate_v5_to_v6(conn) -> None:
     set_schema_version(engine, 6, "Add UNIQUE(chunk_id, bridge_id) to chunk_bridge_links", conn=conn)
 
 
+def migrate_v6_to_v7(conn) -> None:
+    """Add missing indexes for needs_reindex, ingest_tasks.status, audit_logs composite."""
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_chunks_needs_reindex "
+        "ON chunks (source_id) WHERE needs_reindex = true"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_ingest_tasks_status ON ingest_tasks (status)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_audit_logs_action_resource "
+        "ON audit_logs (action, resource_type)"
+    ))
+    set_schema_version(engine, 7, "Add missing indexes: needs_reindex, ingest_tasks.status, audit_logs composite", conn=conn)
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
     3: migrate_v3_to_v4,
     4: migrate_v4_to_v5,
     5: migrate_v5_to_v6,
+    6: migrate_v6_to_v7,
 }
 
 
