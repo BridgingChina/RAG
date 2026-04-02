@@ -305,7 +305,7 @@ def get_bridge_knowledge_points(bridge_id: UUID, db: Session = Depends(get_db)) 
         .all()
     )
     knowledge_points = [
-        {"id": str(kp.id), "name": kp.name, "line": None, "relevance": link.relevance_note}
+        {"id": str(kp.id), "name": kp.name, "relevance": link.relevance_note}
         for link, kp in kp_links
     ]
     return MobileResponse(data={"knowledge_points": knowledge_points})
