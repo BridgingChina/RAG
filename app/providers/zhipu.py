@@ -1,8 +1,27 @@
+import logging
+
 import httpx
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core.config import settings
 from app.core.constants import EMBEDDING_DIM
 from app.providers.base import ChatMessage, ChatResponse, LLMProvider
+
+logger = logging.getLogger(__name__)
+
+
+def _is_retryable_http_error(exc: BaseException) -> bool:
+    """Return True for 429 (rate limit) and 5xx (server) errors."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        return code == 429 or code >= 500
+    return False
 
 
 class ZhipuProvider(LLMProvider):
@@ -20,6 +39,13 @@ class ZhipuProvider(LLMProvider):
             "Content-Type": "application/json",
         }
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_http_error),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings for the given texts.
 
