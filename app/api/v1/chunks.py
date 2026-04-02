@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, text
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
@@ -74,7 +74,15 @@ def list_chunks(
     if source_id is not None:
         query = query.filter(Chunk.source_id == source_id)
     if q is not None:
-        query = query.filter(Chunk.content.ilike(f"%{q}%"))
+        tokenizer = get_tokenizer()
+        tsquery_str = tokenizer.to_tsquery(q)
+        if tsquery_str:
+            query = query.filter(
+                Chunk.tsv.op("@@")(func.to_tsquery("simple", tsquery_str))
+            )
+        else:
+            # If tokenizer produces no usable tokens, return empty results
+            query = query.filter(text("false"))
 
     # Get total count
     total = query.count()
