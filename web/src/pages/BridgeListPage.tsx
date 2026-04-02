@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Pagination } from "@/components/Pagination"
 import { useApi } from "@/hooks/useApi"
 import { fetchBridges } from "@/lib/api"
 
@@ -71,8 +72,6 @@ export function Component() {
   }
 
   const { items, total_pages } = data
-  const hasNext = total_pages > 0 && page < total_pages
-  const hasPrev = page > 1
 
   return (
     <>
@@ -147,32 +146,7 @@ export function Component() {
               </Table>
             </div>
 
-            {/* Pagination */}
-            {total_pages > 0 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  第 {page} / {total_pages} 页
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(page - 1)}
-                    disabled={!hasPrev}
-                  >
-                    上一页
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage(page + 1)}
-                    disabled={!hasNext}
-                  >
-                    下一页
-                  </Button>
-                </div>
-              </div>
-            )}
+            <Pagination page={page} totalPages={total_pages} onPageChange={setPage} />
           </>
         )}
       </main>
