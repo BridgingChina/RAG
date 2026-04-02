@@ -242,6 +242,7 @@ title: 资料标题
 - Login rate limiter (`app/api/v1/auth.py`) is in-memory + process-local — state resets on restart, not shared across `uvicorn --workers N`. Uses `time.monotonic()` + `threading.Lock`. Tests must clear `_failed_attempts` dict in setup/teardown to avoid cross-test pollution
 - slowapi `Limiter` must be a single shared instance (`app/core/rate_limit.py`) — creating a second `Limiter` in endpoint modules won't share state with `app.state.limiter`
 - `/health` is `@limiter.exempt` — do not remove, or load balancer probes will get 429'd
+- `bridge_resolver.py` caches bridge `(id, name)` pairs for `resolve_bridge_from_question` (TTL 5 min, `threading.Lock`). Bridge write endpoints must call `invalidate_bridge_cache()` after commit
 
 ## Worktrees
 
