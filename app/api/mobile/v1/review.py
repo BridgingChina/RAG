@@ -47,13 +47,15 @@ def _format_card(fc: Flashcard, rp: DeviceReviewProgress | None, bridge_names: d
 @router.get("/today")
 def get_today_queue(
     device_id: uuid.UUID = Depends(require_device_id),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-) -> MobileResponse[list[dict]]:
-    """Today's review queue: favorited flashcards that need review."""
+) -> MobilePaginatedResponse[dict]:
+    """Today's review queue: favorited flashcards that need review, paginated."""
     three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
 
     # Favorites WHERE target_type='flashcard' JOIN flashcards LEFT JOIN review_progress
-    rows = (
+    base = (
         db.query(Flashcard, DeviceReviewProgress)
         .join(DeviceFavorite, (
             (DeviceFavorite.target_id == Flashcard.id)
@@ -72,7 +74,14 @@ def get_today_queue(
                 & (DeviceReviewProgress.last_reviewed_at < three_days_ago)
             )
         )
+    )
+
+    total = base.count()
+    rows = (
+        base
         .order_by(DeviceReviewProgress.last_reviewed_at.asc().nulls_first())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
 
@@ -84,7 +93,10 @@ def get_today_queue(
         name_rows = db.query(Bridge.id, Bridge.name).filter(Bridge.id.in_(bridge_ids)).all()
         bridge_names = {r.id: r.name for r in name_rows}
     cards = [_format_card(fc, rp, bridge_names) for fc, rp in rows]
-    return MobileResponse(data={"cards": cards, "total_due": len(cards)})
+    return MobilePaginatedResponse(
+        data={"cards": cards, "total_due": total},
+        meta=MobileMeta(total=total, page=page, page_size=page_size),
+    )
 
 
 @router.get("/cards")
