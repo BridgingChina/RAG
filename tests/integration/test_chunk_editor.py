@@ -241,7 +241,8 @@ def test_merge_chunks_single_id(db_session, test_source, tokenizer):
         merge_chunks(db=db_session, chunk_ids=[c.id], tokenizer=tokenizer)
 
 
-def test_reindex_stale_chunks(db_session, test_source, tokenizer):
+@pytest.mark.asyncio
+async def test_reindex_stale_chunks(db_session, test_source, tokenizer):
     """Reindex should update needs_reindex chunks and clear the flag."""
     from app.models import Chunk
     from app.services.chunk_editor import reindex_source_chunks
@@ -258,7 +259,7 @@ def test_reindex_stale_chunks(db_session, test_source, tokenizer):
     db_session.flush()
 
     # Reindex without provider (skip embedding recomputation)
-    result = reindex_source_chunks(
+    result = await reindex_source_chunks(
         db=db_session,
         source_id=test_source.id,
         tokenizer=tokenizer,
@@ -272,7 +273,8 @@ def test_reindex_stale_chunks(db_session, test_source, tokenizer):
     assert c.needs_reindex is False
 
 
-def test_reindex_skips_clean_chunks(db_session, test_source, tokenizer):
+@pytest.mark.asyncio
+async def test_reindex_skips_clean_chunks(db_session, test_source, tokenizer):
     """Reindex without force should skip chunks that don't need reindexing."""
     from app.models import Chunk
     from app.services.chunk_editor import reindex_source_chunks
@@ -287,7 +289,7 @@ def test_reindex_skips_clean_chunks(db_session, test_source, tokenizer):
     db_session.add(c)
     db_session.flush()
 
-    result = reindex_source_chunks(
+    result = await reindex_source_chunks(
         db=db_session,
         source_id=test_source.id,
         tokenizer=tokenizer,

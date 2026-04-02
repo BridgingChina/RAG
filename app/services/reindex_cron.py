@@ -43,14 +43,14 @@ async def reindex_cron_loop(hour: int = 3):
 
         logger.info("Reindex cron: starting stale chunk reindex...")
         try:
-            _run_reindex()
+            await _run_reindex()
         except Exception:
             logger.exception("Reindex cron: failed")
         logger.info("Reindex cron: done")
 
 
-def _run_reindex():
-    """Synchronous reindex of all stale chunks across all sources."""
+async def _run_reindex():
+    """Reindex all stale chunks across all sources."""
     from sqlalchemy import distinct
 
     from app.models import Chunk
@@ -68,7 +68,7 @@ def _run_reindex():
 
         total = 0
         for (source_id,) in source_ids:
-            result = reindex_source_chunks(
+            result = await reindex_source_chunks(
                 db=db,
                 source_id=source_id,
                 tokenizer=tokenizer,

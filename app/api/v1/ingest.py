@@ -1,5 +1,4 @@
 """V1 Ingest API endpoint."""
-import asyncio
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -88,7 +87,7 @@ def _extract_bridge_hints(frontmatter: dict, request_candidates: list[str] | Non
 # /api/v1/ingest-tasks pipeline, which supports R2 upload, Zhipu file parsing,
 # and multi-stage task tracking. Use /ingest-tasks for all new integrations.
 @router.post("/ingest", response_model=IngestResponse, deprecated=True)
-def ingest(
+async def ingest(
     body: IngestRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -111,206 +110,203 @@ def ingest(
     - title: Document title
     - source_type: Override for source type (default from request)
     """
-    async def _run():
-        # Parse markdown
-        doc = parse_markdown(body.content)
+    # Parse markdown
+    doc = parse_markdown(body.content)
 
-        # Extract metadata from front matter
-        title = doc.frontmatter.get("title", "导入资料")
-        source_type = doc.frontmatter.get("source_type", body.source_type)
-        bridge_hints = _extract_bridge_hints(doc.frontmatter, body.bridge_candidates)
+    # Extract metadata from front matter
+    title = doc.frontmatter.get("title", "导入资料")
+    source_type = doc.frontmatter.get("source_type", body.source_type)
+    bridge_hints = _extract_bridge_hints(doc.frontmatter, body.bridge_candidates)
 
-        # Validate sections have content
-        has_content = any(s.content.strip() for s in doc.sections)
-        if not has_content:
-            raise HTTPException(
-                status_code=400,
-                detail="No content found in document",
-            )
-
-        # Initialize services
-        context_enricher = ContextEnricher(provider=provider)
-        chunker = SemanticChunker(
-            provider=provider,
-            min_chunk_size=200,
-            max_chunk_size=500,
-            similarity_threshold=0.5,
+    # Validate sections have content
+    has_content = any(s.content.strip() for s in doc.sections)
+    if not has_content:
+        raise HTTPException(
+            status_code=400,
+            detail="No content found in document",
         )
-        tagger = MetadataTagger(provider=provider, taxonomy_lvl2=_get_taxonomy_lvl2_map())
-        bridge_linker = BridgeLinker(
-            provider=provider,
+
+    # Initialize services
+    context_enricher = ContextEnricher(provider=provider)
+    chunker = SemanticChunker(
+        provider=provider,
+        min_chunk_size=200,
+        max_chunk_size=500,
+        similarity_threshold=0.5,
+    )
+    tagger = MetadataTagger(provider=provider, taxonomy_lvl2=_get_taxonomy_lvl2_map())
+    bridge_linker = BridgeLinker(
+        provider=provider,
+        min_primary_confidence=body.min_primary_confidence,
+        enable_auto_bridge_detection=body.enable_auto_bridge_detection,
+    )
+
+    # Chunk the text
+    chunk_results = await chunker.chunk(doc.sections)
+
+    if not chunk_results:
+        raise HTTPException(
+            status_code=400,
+            detail="Failed to chunk document - no chunks generated",
+        )
+
+    # Create source
+    source = Source(type=source_type, title=title)
+    db.add(source)
+    db.flush()
+
+    # Process each chunk
+    chunk_summaries: list[IngestedChunkSummary] = []
+    chunk_rows: list[Chunk] = []
+    primary_bridge_names: set[str] = set()
+    auto_created_bridges: set[str] = set()
+    ambiguous_chunk_count = 0
+
+    for i, chunk_result in enumerate(chunk_results):
+        # Context enrichment (best-effort)
+        contextual_text = ""
+        try:
+            surrounding_chunks = None
+            if i > 0:
+                surrounding_chunks = [chunk_results[i - 1].content]
+            context_result = await context_enricher.enrich(
+                content=chunk_result.content,
+                source_title=title,
+                section_title=chunk_result.section_title,
+                page_range=None,
+                surrounding_chunks=surrounding_chunks,
+            )
+            contextual_text = (context_result.contextual_text or "").strip()
+        except Exception:
+            pass  # Fall back to no contextual text
+
+        search_text = chunk_result.content
+        if contextual_text:
+            search_text = f"{contextual_text}\n\n{chunk_result.content}"
+
+        # Tag with metadata
+        tag_result = await tagger.tag(chunk_result.content)
+
+        # Link bridges at chunk level
+        bridge_link_result = await bridge_linker.link_chunk(
+            db=db,
+            content=chunk_result.content,
+            hint_bridge_names=bridge_hints,
+            bridge_candidates=body.bridge_candidates,
             min_primary_confidence=body.min_primary_confidence,
             enable_auto_bridge_detection=body.enable_auto_bridge_detection,
         )
+        auto_created_bridges.update(bridge_link_result.auto_created_bridge_names)
+        if bridge_link_result.binding_status == "ambiguous":
+            ambiguous_chunk_count += 1
+        if bridge_link_result.primary_bridge_name:
+            primary_bridge_names.add(bridge_link_result.primary_bridge_name)
 
-        # Chunk the text
-        chunk_results = await chunker.chunk(doc.sections)
+        primary_link = next(
+            (link for link in bridge_link_result.links if link.role == "primary"),
+            None,
+        )
+        chunk_bridge_id = primary_link.bridge_id if primary_link else None
 
-        if not chunk_results:
+        # Get embedding
+        embeddings = await provider.embed([search_text])
+        if not embeddings:
             raise HTTPException(
-                status_code=400,
-                detail="Failed to chunk document - no chunks generated",
+                status_code=502,
+                detail="Embedding provider returned no embeddings",
             )
 
-        # Create source
-        source = Source(type=source_type, title=title)
-        db.add(source)
+        chunk_embedding_raw = embeddings[0]
+        if not isinstance(chunk_embedding_raw, (list, tuple)):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Invalid embedding type: expected list[float], got {type(chunk_embedding_raw).__name__}",
+            )
+
+        chunk_embedding = list(chunk_embedding_raw)
+        if len(chunk_embedding) != EMBEDDING_DIM:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Invalid embedding dimension: expected {EMBEDDING_DIM}, got {len(chunk_embedding)}",
+            )
+
+        # Create chunk
+        chunk = Chunk(
+            source_id=source.id,
+            content=chunk_result.content,
+            section_title=chunk_result.section_title,
+            contextual_text=contextual_text,
+            search_text=search_text,
+            lvl1=tag_result.lvl1,
+            lvl2=tag_result.lvl2,
+            lvl3=tag_result.lvl3,
+            bridge_id=chunk_bridge_id,
+            bridge_binding_status=bridge_link_result.binding_status,
+            embedding=chunk_embedding,
+        )
+        db.add(chunk)
         db.flush()
 
-        # Process each chunk
-        chunk_summaries: list[IngestedChunkSummary] = []
-        chunk_rows: list[Chunk] = []
-        primary_bridge_names: set[str] = set()
-        auto_created_bridges: set[str] = set()
-        ambiguous_chunk_count = 0
-
-        for i, chunk_result in enumerate(chunk_results):
-            # Context enrichment (best-effort)
-            contextual_text = ""
-            try:
-                surrounding_chunks = None
-                if i > 0:
-                    surrounding_chunks = [chunk_results[i - 1].content]
-                context_result = await context_enricher.enrich(
-                    content=chunk_result.content,
-                    source_title=title,
-                    section_title=chunk_result.section_title,
-                    page_range=None,
-                    surrounding_chunks=surrounding_chunks,
+        for link in bridge_link_result.links:
+            db.add(
+                ChunkBridgeLink(
+                    chunk_id=chunk.id,
+                    bridge_id=link.bridge_id,
+                    role=link.role,
+                    confidence=link.confidence,
+                    method=link.method,
                 )
-                contextual_text = (context_result.contextual_text or "").strip()
-            except Exception:
-                pass  # Fall back to no contextual text
-
-            search_text = chunk_result.content
-            if contextual_text:
-                search_text = f"{contextual_text}\n\n{chunk_result.content}"
-
-            # Tag with metadata
-            tag_result = await tagger.tag(chunk_result.content)
-
-            # Link bridges at chunk level
-            bridge_link_result = await bridge_linker.link_chunk(
-                db=db,
-                content=chunk_result.content,
-                hint_bridge_names=bridge_hints,
-                bridge_candidates=body.bridge_candidates,
-                min_primary_confidence=body.min_primary_confidence,
-                enable_auto_bridge_detection=body.enable_auto_bridge_detection,
             )
-            auto_created_bridges.update(bridge_link_result.auto_created_bridge_names)
-            if bridge_link_result.binding_status == "ambiguous":
-                ambiguous_chunk_count += 1
-            if bridge_link_result.primary_bridge_name:
-                primary_bridge_names.add(bridge_link_result.primary_bridge_name)
+        chunk_rows.append(chunk)
 
-            primary_link = next(
-                (link for link in bridge_link_result.links if link.role == "primary"),
-                None,
-            )
-            chunk_bridge_id = primary_link.bridge_id if primary_link else None
-
-            # Get embedding
-            embeddings = await provider.embed([search_text])
-            if not embeddings:
-                raise HTTPException(
-                    status_code=502,
-                    detail="Embedding provider returned no embeddings",
-                )
-
-            chunk_embedding_raw = embeddings[0]
-            if not isinstance(chunk_embedding_raw, (list, tuple)):
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Invalid embedding type: expected list[float], got {type(chunk_embedding_raw).__name__}",
-                )
-
-            chunk_embedding = list(chunk_embedding_raw)
-            if len(chunk_embedding) != EMBEDDING_DIM:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Invalid embedding dimension: expected {EMBEDDING_DIM}, got {len(chunk_embedding)}",
-                )
-
-            # Create chunk
-            chunk = Chunk(
-                source_id=source.id,
-                content=chunk_result.content,
-                section_title=chunk_result.section_title,
-                contextual_text=contextual_text,
-                search_text=search_text,
+        # Build summary
+        preview = chunk_result.content[:100]
+        if len(chunk_result.content) > 100:
+            preview += "..."
+        chunk_summaries.append(
+            IngestedChunkSummary(
+                content_preview=preview,
                 lvl1=tag_result.lvl1,
                 lvl2=tag_result.lvl2,
-                lvl3=tag_result.lvl3,
-                bridge_id=chunk_bridge_id,
-                bridge_binding_status=bridge_link_result.binding_status,
-                embedding=chunk_embedding,
+                binding_status=bridge_link_result.binding_status,
+                primary_bridge_name=bridge_link_result.primary_bridge_name,
+                secondary_bridge_names=bridge_link_result.secondary_bridge_names,
             )
-            db.add(chunk)
-            db.flush()
-
-            for link in bridge_link_result.links:
-                db.add(
-                    ChunkBridgeLink(
-                        chunk_id=chunk.id,
-                        bridge_id=link.bridge_id,
-                        role=link.role,
-                        confidence=link.confidence,
-                        method=link.method,
-                    )
-                )
-            chunk_rows.append(chunk)
-
-            # Build summary
-            preview = chunk_result.content[:100]
-            if len(chunk_result.content) > 100:
-                preview += "..."
-            chunk_summaries.append(
-                IngestedChunkSummary(
-                    content_preview=preview,
-                    lvl1=tag_result.lvl1,
-                    lvl2=tag_result.lvl2,
-                    binding_status=bridge_link_result.binding_status,
-                    primary_bridge_name=bridge_link_result.primary_bridge_name,
-                    secondary_bridge_names=bridge_link_result.secondary_bridge_names,
-                )
-            )
-
-        # Populate tsvector for FTS
-        mappings = [
-            {
-                "id": chunk.id,
-                "tsv_text": tokenizer.to_tsvector_text(chunk.search_text or chunk.content),
-            }
-            for chunk in chunk_rows
-        ]
-        db.execute(
-            sql_text(
-                "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"
-            ),
-            mappings,
-        )
-        db.flush()
-
-        AuditService.log(
-            db,
-            action=AuditService.INGEST,
-            resource_type="source",
-            user_id=current_user.id,
-            resource_id=str(source.id),
-            detail={"title": title, "chunk_count": len(chunk_rows)},
-            ip_address=get_client_ip(request),
-        )
-        db.commit()
-
-        return IngestResponse(
-            source_id=source.id,
-            title=title,
-            primary_bridge_names=sorted(primary_bridge_names),
-            ambiguous_chunk_count=ambiguous_chunk_count,
-            auto_created_bridges=sorted(auto_created_bridges),
-            chunk_count=len(chunk_rows),
-            chunks=chunk_summaries,
         )
 
-    return asyncio.run(_run())
+    # Populate tsvector for FTS
+    mappings = [
+        {
+            "id": chunk.id,
+            "tsv_text": tokenizer.to_tsvector_text(chunk.search_text or chunk.content),
+        }
+        for chunk in chunk_rows
+    ]
+    db.execute(
+        sql_text(
+            "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) WHERE id = :id"
+        ),
+        mappings,
+    )
+    db.flush()
+
+    AuditService.log(
+        db,
+        action=AuditService.INGEST,
+        resource_type="source",
+        user_id=current_user.id,
+        resource_id=str(source.id),
+        detail={"title": title, "chunk_count": len(chunk_rows)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return IngestResponse(
+        source_id=source.id,
+        title=title,
+        primary_bridge_names=sorted(primary_bridge_names),
+        ambiguous_chunk_count=ambiguous_chunk_count,
+        auto_created_bridges=sorted(auto_created_bridges),
+        chunk_count=len(chunk_rows),
+        chunks=chunk_summaries,
+    )

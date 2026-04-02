@@ -81,7 +81,7 @@ def get_source(source_id: UUID, db: Session = Depends(get_db)) -> SourceDetail:
 
 
 @router.post("/{source_id}/reindex", response_model=ReindexResponse)
-def reindex_source(
+async def reindex_source(
     source_id: UUID,
     request: Request,
     force: bool = False,
@@ -99,7 +99,7 @@ def reindex_source(
     tokenizer = get_tokenizer()
     provider = ZhipuProvider()
 
-    result = reindex_source_chunks(
+    result = await reindex_source_chunks(
         db=db,
         source_id=source_id,
         tokenizer=tokenizer,
