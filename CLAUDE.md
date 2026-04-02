@@ -110,7 +110,7 @@ The system uses automatic schema versioning:
 - `app/services/ranker.py` — RRF 算法 + `apply_diversity()` 多样性约束（analogy 通道限每桥 1 条）
 - `app/services/generator.py` — 基于证据生成回答，输出引用和置信度
 - `app/services/chunk_editor.py` — Chunk 手动校对服务：content 编辑（重算 search_text/tsv）、bridge_links 替换、split/merge、批量 reindex。编辑后设 `needs_reindex=True`
-- `app/services/reindex_cron.py` — 每日 03:00 后台 cron，自动重建 stale chunks 的 search_text + tsv（不含 embedding）
+- `app/services/reindex_cron.py` — 后台 cron 任务：每日 03:00 重建 stale chunks 的 search_text + tsv（不含 embedding）；每 30 分钟清理超时 uploading 任务（`uploading_cleanup_loop`）
 - `app/core/rate_limit.py` — Shared slowapi `Limiter` singleton (60 req/min/IP default). Import `limiter` to add `@limiter.limit()` on endpoints. `/health` is exempt
 
 **桥梁详情聚合：** 四章节（structure/geography/society/history）从 chunks 实时聚合（无独立表），通过 `LVL1_TO_SECTION` 映射 lvl1 → section key。L0 = section_title 或 content 截断，L1 = 完整 content + citations。
