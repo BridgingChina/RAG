@@ -18,9 +18,6 @@ class PresignResponse(BaseModel):
 
 
 class IngestTaskCreate(BaseModel):
-    file_name: str
-    file_type: str
-    file_size: int
     r2_key: str
 
 
