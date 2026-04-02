@@ -18,6 +18,7 @@ from app.api.v1.schemas.chunk import (
     ChunkUpdate,
 )
 from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.pagination import paginate
 from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
@@ -84,47 +85,25 @@ def list_chunks(
             # If tokenizer produces no usable tokens, return empty results
             query = query.filter(text("false"))
 
-    # Get total count
-    total = query.count()
-
-    # Apply pagination
-    offset = (page - 1) * page_size
-    results = query.order_by(desc(Chunk.id)).offset(offset).limit(page_size).all()
-
-    # Build response items
-    items = []
-    for row in results:
-        # Generate content preview
+    def _to_chunk_list_item(row):
         content = row.content
         content_preview = content[:80] + "..." if len(content) > 80 else content
-
-        items.append(
-            ChunkListItem(
-                id=row.id,
-                content_preview=content_preview,
-                bridge_id=row.bridge_id,
-                bridge_name=row.bridge_name,
-                lvl1=row.lvl1,
-                lvl2=row.lvl2,
-                binding_status=row.bridge_binding_status,
-                source_id=row.source_id,
-                source_title=row.source_title,
-                created_at=row.created_at,
-                needs_reindex=row.needs_reindex,
-                updated_at=row.updated_at,
-            )
+        return ChunkListItem(
+            id=row.id,
+            content_preview=content_preview,
+            bridge_id=row.bridge_id,
+            bridge_name=row.bridge_name,
+            lvl1=row.lvl1,
+            lvl2=row.lvl2,
+            binding_status=row.bridge_binding_status,
+            source_id=row.source_id,
+            source_title=row.source_title,
+            created_at=row.created_at,
+            needs_reindex=row.needs_reindex,
+            updated_at=row.updated_at,
         )
 
-    # Calculate total pages
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
-
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-    )
+    return paginate(query.order_by(desc(Chunk.id)), page, page_size, _to_chunk_list_item)
 
 
 @router.get("/{chunk_id}", response_model=ChunkDetail)

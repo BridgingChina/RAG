@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.chunk import ReindexResponse
 from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.pagination import paginate
 from app.api.v1.schemas.source import SourceDetail, SourceListItem
 from app.core.database import get_db
 from app.models import Chunk, Source, User
@@ -43,30 +44,18 @@ def list_sources(
     if type is not None:
         query = query.filter(Source.type == type)
 
-    total = query.count()
-    offset = (page - 1) * page_size
-    results = query.order_by(desc(Source.created_at)).offset(offset).limit(page_size).all()
-
-    items = [
-        SourceListItem(
+    return paginate(
+        query.order_by(desc(Source.created_at)),
+        page,
+        page_size,
+        lambda row: SourceListItem(
             id=row.id,
             type=row.type,
             title=row.title,
             url=row.url,
             chunk_count=row.chunk_count,
             created_at=row.created_at,
-        )
-        for row in results
-    ]
-
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
-
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
+        ),
     )
 
 
