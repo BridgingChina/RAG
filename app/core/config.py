@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Auth settings
     secret_key: str = "change-me-in-production"
-    access_token_expire_hours: int = 24
+    access_token_expire_hours: int = 4
 
     # R2 storage settings
     r2_account_id: str = ""
