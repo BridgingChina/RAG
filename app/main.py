@@ -53,6 +53,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 from app.api.mobile.v1.error_handlers import register_mobile_error_handlers
 register_mobile_error_handlers(app)
 
+# Mobile cache middleware (must be added before CORS so it runs after CORS in the response chain)
+from app.core.cache_middleware import MobileCacheMiddleware
+app.add_middleware(MobileCacheMiddleware)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
