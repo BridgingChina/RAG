@@ -20,6 +20,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "slowapi>=0.1.9",
     "python-multipart>=0.0.6",
+    "tenacity>=8.2.0",
 ]
 
 [project.optional-dependencies]
