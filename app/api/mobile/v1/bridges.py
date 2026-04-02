@@ -29,7 +29,7 @@ LVL1_TO_SECTION: dict[str, str] = {
 }
 
 
-@router.get("")
+@router.get("", response_model=MobilePaginatedResponse[dict])
 def list_bridges(
     bridge_type: str | None = None,
     era: str | None = None,
@@ -111,7 +111,7 @@ def list_bridges(
     )
 
 
-@router.get("/clusters")
+@router.get("/clusters", response_model=MobileResponse[dict])
 def get_bridge_clusters(
     bounds_ne_lat: float = Query(...),
     bounds_ne_lng: float = Query(...),
@@ -187,7 +187,7 @@ def get_bridge_clusters(
     return MobileResponse(data={"clusters": clusters, "points": points})
 
 
-@router.get("/{bridge_id}")
+@router.get("/{bridge_id}", response_model=MobileResponse[dict])
 def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse[dict]:
     """Get bridge detail with sections aggregated from chunks."""
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
@@ -290,7 +290,7 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse
     return MobileResponse(data=detail.model_dump())
 
 
-@router.get("/{bridge_id}/knowledge-points")
+@router.get("/{bridge_id}/knowledge-points", response_model=MobileResponse[dict])
 def get_bridge_knowledge_points(bridge_id: UUID, db: Session = Depends(get_db)) -> MobileResponse[dict]:
     """Get knowledge points associated with a bridge."""
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()

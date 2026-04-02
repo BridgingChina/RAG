@@ -39,7 +39,7 @@ class FavoriteCheckRequest(BaseModel):
     targets: list[FavoriteCheckTarget]
 
 
-@router.get("")
+@router.get("", response_model=MobilePaginatedResponse[dict])
 def list_favorites(
     type: str | None = None,
     page: int = Query(default=1, ge=1),
@@ -126,7 +126,7 @@ def list_favorites(
     )
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, response_model=MobileResponse[dict])
 def add_favorite(
     body: FavoriteAddRequest,
     device_id: uuid.UUID = Depends(require_device_id),
@@ -188,6 +188,7 @@ def remove_favorite(
 
 @router.post(
     "/check",
+    response_model=MobileResponse[dict],
     summary="Batch check favorite status (read-only)",
     description=(
         "This endpoint uses POST because it accepts a JSON request body "

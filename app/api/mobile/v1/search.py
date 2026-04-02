@@ -92,7 +92,7 @@ def _kp_to_item(kp: KnowledgePoint, q: str) -> SearchResultItem:
     )
 
 
-@router.get("/search")
+@router.get("/search", response_model=MobilePaginatedResponse[dict])
 def search(
     q: str = Query(..., min_length=1),
     type: str = Query(default="all", pattern="^(all|bridge|knowledge_point)$"),

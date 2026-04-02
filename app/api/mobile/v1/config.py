@@ -6,7 +6,7 @@ from app.api.mobile.v1.schemas.common import MobileResponse
 router = APIRouter()
 
 
-@router.get("/config")
+@router.get("/config", response_model=MobileResponse[dict])
 def get_config() -> MobileResponse[dict]:
     """Return app configuration for mobile client.
 
