@@ -238,6 +238,11 @@ def reindex_source_chunks(
 ) -> dict:
     """Reindex chunks for a source. Returns {source_id, chunks_reindexed, chunks_failed}.
 
+    Two-phase approach:
+      Phase 1 — Update search_text + tsv for each chunk (per-chunk savepoints).
+      Phase 2 — Batch-embed all successful chunks in one provider.embed() call,
+                then assign embeddings back (per-chunk savepoints).
+
     NOTE: When provider is not None, this function calls asyncio.run() internally.
     It must only be called from a synchronous context (e.g. sync FastAPI endpoints
     running in a threadpool). Calling from an async context will raise RuntimeError.
@@ -247,9 +252,10 @@ def reindex_source_chunks(
         query = query.filter(Chunk.needs_reindex == True)  # noqa: E712
 
     chunks = query.all()
-    reindexed = 0
     failed = []
 
+    # --- Phase 1: update search_text + tsv ---
+    phase1_ok: list[Chunk] = []  # chunks that passed phase 1
     for chunk in chunks:
         savepoint = db.begin_nested()
         try:
@@ -268,20 +274,58 @@ def reindex_source_chunks(
                 {"tsv_text": tsv_text, "id": chunk.id},
             )
 
-            # Recompute embedding if provider available
-            if provider is not None:
-                embedding_result = asyncio.run(provider.embed([chunk.search_text]))
-                chunk.embedding = embedding_result[0]
-
-            chunk.needs_reindex = False
             savepoint.commit()
-            reindexed += 1
+            phase1_ok.append(chunk)
         except Exception:
             savepoint.rollback()
-            # Ensure chunk stays marked for retry on next reindex run
             chunk.needs_reindex = True
-            logger.warning("Failed to reindex chunk %s, will retry on next run", chunk.id, exc_info=True)
+            logger.warning("Failed to reindex chunk %s (phase 1), will retry on next run", chunk.id, exc_info=True)
             failed.append(chunk.id)
+
+    # --- Phase 2: batch embed + assign ---
+    if provider is not None and phase1_ok:
+        texts = [c.search_text for c in phase1_ok]
+        try:
+            embeddings = asyncio.run(provider.embed(texts))
+        except Exception:
+            logger.warning(
+                "Batch embed failed for source %s (%d chunks), marking all as needs_reindex",
+                source_id, len(texts), exc_info=True,
+            )
+            for chunk in phase1_ok:
+                chunk.needs_reindex = True
+            failed.extend(c.id for c in phase1_ok)
+            phase1_ok = []
+            embeddings = []
+
+        # Assign embeddings per-chunk with savepoints
+        still_ok: list[Chunk] = []
+        for chunk, emb in zip(phase1_ok, embeddings):
+            savepoint = db.begin_nested()
+            try:
+                chunk.embedding = emb
+                chunk.needs_reindex = False
+                savepoint.commit()
+                still_ok.append(chunk)
+            except Exception:
+                savepoint.rollback()
+                chunk.needs_reindex = True
+                logger.warning("Failed to assign embedding for chunk %s, will retry on next run", chunk.id, exc_info=True)
+                failed.append(chunk.id)
+        phase1_ok = still_ok
+    else:
+        # No provider — just mark phase1_ok chunks as done
+        for chunk in phase1_ok:
+            savepoint = db.begin_nested()
+            try:
+                chunk.needs_reindex = False
+                savepoint.commit()
+            except Exception:
+                savepoint.rollback()
+                chunk.needs_reindex = True
+                failed.append(chunk.id)
+
+    reindexed = len(phase1_ok)
 
     db.flush()
     return {
