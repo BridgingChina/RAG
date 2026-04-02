@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 7 — Adds missing indexes (needs_reindex partial, ingest_tasks.status, audit_logs composite)
+- Current version: 8 — Adds sources.updated_at column
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`（支持增量迁移，`MIGRATIONS` dict 定义版本间迁移函数）

@@ -205,6 +205,14 @@ def migrate_v6_to_v7(conn) -> None:
     set_schema_version(engine, 7, "Add missing indexes: needs_reindex, ingest_tasks.status, audit_logs composite", conn=conn)
 
 
+def migrate_v7_to_v8(conn) -> None:
+    """Add updated_at column to sources table."""
+    conn.execute(text(
+        "ALTER TABLE sources ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now()"
+    ))
+    set_schema_version(engine, 8, "Add sources.updated_at column", conn=conn)
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -212,6 +220,7 @@ MIGRATIONS = {
     4: migrate_v4_to_v5,
     5: migrate_v5_to_v6,
     6: migrate_v6_to_v7,
+    7: migrate_v7_to_v8,
 }
 
 
