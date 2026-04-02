@@ -150,13 +150,21 @@ def update_review_progress(
     device_id: uuid.UUID = Depends(require_device_id),
     db: Session = Depends(get_db),
 ) -> MobileResponse[dict]:
-    """Upsert review progress for a flashcard."""
+    """Upsert review progress for a flashcard.
+
+    Ownership scoping: the query filters by device_id so a request can only
+    read/modify progress rows belonging to the presented X-Device-Id.
+    See ``dependencies.py`` module docstring for the full threat model.
+    """
     # Verify flashcard exists
     fc = db.get(Flashcard, flashcard_id)
     if not fc:
         raise HTTPException(404, detail="Flashcard not found")
 
-    # Upsert
+    # Ownership-scoped upsert: only match progress rows for THIS device_id.
+    # This prevents device A from overwriting device B's progress even if
+    # device A knows device B's UUID (the row simply won't be found, so a
+    # new row scoped to device A is created instead).
     rp = (
         db.query(DeviceReviewProgress)
         .filter(
