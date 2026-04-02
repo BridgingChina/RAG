@@ -160,11 +160,36 @@ def migrate_v4_to_v5(conn) -> None:
     set_schema_version(engine, 5, "Add bridge_images + knowledge_point_bridges + geocode_source", conn=conn)
 
 
+def migrate_v5_to_v6(conn) -> None:
+    """Add UNIQUE(chunk_id, bridge_id) constraint to chunk_bridge_links."""
+    # Remove duplicate rows first, keeping the one with the highest confidence
+    conn.execute(text("""
+        DELETE FROM chunk_bridge_links
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY chunk_id, bridge_id
+                           ORDER BY confidence DESC, created_at ASC
+                       ) AS rn
+                FROM chunk_bridge_links
+            ) ranked
+            WHERE rn > 1
+        )
+    """))
+    conn.execute(text(
+        "ALTER TABLE chunk_bridge_links "
+        "ADD CONSTRAINT uq_chunk_bridge_link UNIQUE (chunk_id, bridge_id)"
+    ))
+    set_schema_version(engine, 6, "Add UNIQUE(chunk_id, bridge_id) to chunk_bridge_links", conn=conn)
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
     3: migrate_v3_to_v4,
     4: migrate_v4_to_v5,
+    5: migrate_v5_to_v6,
 }
 
 
