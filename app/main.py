@@ -36,9 +36,11 @@ async def lifespan(app: FastAPI):
         raise
 
     import asyncio as _asyncio
-    from app.services.reindex_cron import reindex_cron_loop
+    from app.services.reindex_cron import reindex_cron_loop, uploading_cleanup_loop
     _asyncio.get_event_loop().create_task(reindex_cron_loop())
+    _asyncio.get_event_loop().create_task(uploading_cleanup_loop())
     logger.info("Reindex cron task scheduled")
+    logger.info("Uploading cleanup task scheduled")
 
     yield
 
