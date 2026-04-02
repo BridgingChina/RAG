@@ -413,11 +413,10 @@ def create_bridge(
     bridge = Bridge(**body.model_dump())
     db.add(bridge)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=409, detail=f"Bridge with name '{body.name}' already exists")
-    db.refresh(bridge)
 
     AuditService.log(
         db,
@@ -428,6 +427,7 @@ def create_bridge(
         ip_address=get_client_ip(request),
     )
     db.commit()
+    db.refresh(bridge)
 
     # Return detail with chunk_count = 0 for new bridge
     return BridgeDetail(
@@ -468,8 +468,7 @@ def update_bridge(
     for key, value in update_data.items():
         setattr(bridge, key, value)
 
-    db.commit()
-    db.refresh(bridge)
+    db.flush()
 
     AuditService.log(
         db,
@@ -480,6 +479,7 @@ def update_bridge(
         ip_address=get_client_ip(request),
     )
     db.commit()
+    db.refresh(bridge)
 
     # Return full detail using the get endpoint
     return get_bridge(bridge_id, db)
@@ -698,7 +698,7 @@ def merge_bridges(
 
     # 4. Delete source bridge
     db.delete(source)
-    db.commit()
+    db.flush()
 
     AuditService.log(
         db,

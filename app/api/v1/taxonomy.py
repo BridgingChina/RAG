@@ -150,9 +150,7 @@ def create_taxonomy_node(
         description=body.description,
     )
     db.add(node)
-    db.commit()
-    db.refresh(node)
-    invalidate_taxonomy_cache()
+    db.flush()
 
     AuditService.log(
         db,
@@ -163,6 +161,8 @@ def create_taxonomy_node(
         ip_address=get_client_ip(request),
     )
     db.commit()
+    db.refresh(node)
+    invalidate_taxonomy_cache()
 
     return TaxonomyNodeDetail(
         id=node.id,
@@ -190,9 +190,7 @@ def update_taxonomy_node(
     if body.description is not None:
         node.description = body.description
 
-    db.commit()
-    db.refresh(node)
-    invalidate_taxonomy_cache()
+    db.flush()
 
     AuditService.log(
         db,
@@ -203,6 +201,8 @@ def update_taxonomy_node(
         ip_address=get_client_ip(request),
     )
     db.commit()
+    db.refresh(node)
+    invalidate_taxonomy_cache()
 
     # Count chunks for this node
     chunk_count = _count_chunks_for_node(db, node)
@@ -311,7 +311,7 @@ def batch_update_chunks(
             synchronize_session=False,
         )
     )
-    db.commit()
+    db.flush()
 
     AuditService.log(
         db,
