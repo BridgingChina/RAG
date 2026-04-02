@@ -17,6 +17,14 @@ def test_review_today_response_wraps_cards_and_total_due():
     assert '"total_due"' in src or "'total_due'" in src
 
 
+def test_review_today_has_pagination_params():
+    from app.api.mobile.v1.review import get_today_queue
+    import inspect
+    sig = inspect.signature(get_today_queue)
+    assert "page" in sig.parameters
+    assert "page_size" in sig.parameters
+
+
 def test_review_cards_response_wraps_cards():
     from app.api.mobile.v1.review import list_review_cards
     import inspect
