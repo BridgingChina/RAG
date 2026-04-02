@@ -113,6 +113,7 @@ The system uses automatic schema versioning:
 - `app/services/reindex_cron.py` — 后台 cron 任务：每日 03:00 重建 stale chunks 的 search_text + tsv（不含 embedding）；每 30 分钟清理超时 uploading 任务（`uploading_cleanup_loop`）
 - `app/core/rate_limit.py` — Shared slowapi `Limiter` singleton (60 req/min/IP default). Import `limiter` to add `@limiter.limit()` on endpoints. `/health` is exempt
 - `app/core/cache_middleware.py` — `MobileCacheMiddleware` adds `Cache-Control: public, max-age=300` to public mobile GET endpoints. Excludes device-specific paths (favorites/review/history)
+- `app/api/v1/pagination.py` — `paginate(query, page, page_size, item_mapper)` helper for all list endpoints — do not reimplement pagination boilerplate
 
 **桥梁详情聚合：** 四章节（structure/geography/society/history）从 chunks 实时聚合（无独立表），通过 `LVL1_TO_SECTION` 映射 lvl1 → section key。L0 = section_title 或 content 截断，L1 = 完整 content + citations。
 

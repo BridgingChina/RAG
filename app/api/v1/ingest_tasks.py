@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas import PaginatedResponse
+from app.api.v1.pagination import paginate
 from app.api.v1.schemas.ingest_task import (
     BatchDeleteRequest,
     BatchDeleteResponse,
@@ -227,20 +228,11 @@ def list_ingest_tasks(
     if file_name:
         query = query.filter(IngestTask.file_name.ilike(f"%{file_name}%"))
 
-    total = query.count()
-    tasks = (
-        query.order_by(IngestTask.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
-
-    return PaginatedResponse(
-        items=[IngestTaskListItem(**_task_to_detail(t)) for t in tasks],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=(total + page_size - 1) // page_size,
+    return paginate(
+        query.order_by(IngestTask.id.desc()),
+        page,
+        page_size,
+        lambda t: IngestTaskListItem(**_task_to_detail(t)),
     )
 
 

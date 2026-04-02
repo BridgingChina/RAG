@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.pagination import paginate
 from app.api.v1.schemas.knowledge_point import (
     GenerateKeyPointsResponse,
     KPBridgeItem,
@@ -66,29 +67,17 @@ def list_knowledge_points(
     if taxonomy_node_id is not None:
         query = query.filter(KnowledgePoint.taxonomy_node_id == taxonomy_node_id)
 
-    total = query.count()
-    offset = (page - 1) * page_size
-    results = query.order_by(KnowledgePoint.name).offset(offset).limit(page_size).all()
-
-    items = [
-        KPListItem(
+    return paginate(
+        query.order_by(KnowledgePoint.name),
+        page,
+        page_size,
+        lambda kp: KPListItem(
             id=kp.id,
             name=kp.name,
             taxonomy_node_id=kp.taxonomy_node_id,
             difficulty=kp.difficulty,
             summary=kp.summary,
-        )
-        for kp in results
-    ]
-
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
-
-    return PaginatedResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
+        ),
     )
 
 

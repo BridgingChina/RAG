@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.audit import AuditLogItem
 from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.pagination import paginate
 from app.core.database import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
@@ -50,12 +51,11 @@ def list_audit_logs(
     if end is not None:
         query = query.filter(AuditLog.created_at <= end)
 
-    total = query.count()
-    offset = (page - 1) * page_size
-    results = query.order_by(desc(AuditLog.created_at)).offset(offset).limit(page_size).all()
-
-    items = [
-        AuditLogItem(
+    return paginate(
+        query.order_by(desc(AuditLog.created_at)),
+        page,
+        page_size,
+        lambda row: AuditLogItem(
             id=row.id,
             user_id=row.user_id,
             username=row.username,
@@ -65,11 +65,5 @@ def list_audit_logs(
             detail=row.detail,
             ip_address=row.ip_address,
             created_at=row.created_at,
-        )
-        for row in results
-    ]
-
-    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
-    return PaginatedResponse(
-        items=items, total=total, page=page, page_size=page_size, total_pages=total_pages
+        ),
     )
