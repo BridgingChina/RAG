@@ -116,8 +116,8 @@ async def ask_sse(
             target_bridge_id, taxonomy_filter = _resolve_context(db, body)
 
             if not target_bridge_id and not taxonomy_filter:
-                from app.api.v1.ask import _resolve_bridge_from_question
-                target_bridge_id = _resolve_bridge_from_question(db, body.question)
+                from app.services.bridge_resolver import resolve_bridge_from_question
+                target_bridge_id = resolve_bridge_from_question(db, body.question)
 
             if _is_timed_out():
                 yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
