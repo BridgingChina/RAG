@@ -23,7 +23,7 @@ from app.models.ingest_task import IngestTask
 from app.providers import ZhipuProvider
 from app.providers.file_parser import FileParserProvider
 from app.services.audit_service import AuditService
-from app.services.ingest_task_service import IngestTaskService
+from app.services.ingest_task_service import IngestTaskService, cleanup_stale_uploading_tasks
 from app.services.r2_storage import R2StorageService
 
 router = APIRouter(prefix="/ingest-tasks")
@@ -216,6 +216,9 @@ def list_ingest_tasks(
     current_user: User = Depends(get_current_user),
 ):
     """List ingest tasks with optional filters."""
+    # Opportunistically clean up stale uploading tasks
+    cleanup_stale_uploading_tasks(db)
+
     query = db.query(IngestTask)
 
     if status:

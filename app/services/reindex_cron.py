@@ -1,4 +1,4 @@
-"""Background cron job for reindexing stale chunks."""
+"""Background cron jobs for reindexing stale chunks and cleaning up stale tasks."""
 import asyncio
 from datetime import datetime, timedelta
 
@@ -15,6 +15,24 @@ def _next_run_time(hour: int = 3) -> datetime:
     if target <= now:
         target += timedelta(days=1)
     return target
+
+
+async def uploading_cleanup_loop(interval_minutes: int = 30):
+    """Periodically clean up stale uploading ingest tasks."""
+    from app.services.ingest_task_service import cleanup_stale_uploading_tasks
+
+    while True:
+        await asyncio.sleep(interval_minutes * 60)
+        try:
+            db = SessionLocal()
+            try:
+                cleaned = cleanup_stale_uploading_tasks(db)
+                if cleaned:
+                    logger.info("Uploading cleanup: marked %d stale tasks as failed", cleaned)
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Uploading cleanup: failed")
 
 
 async def reindex_cron_loop(hour: int = 3):

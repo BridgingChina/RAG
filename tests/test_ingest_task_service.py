@@ -1,5 +1,6 @@
 """Unit tests for IngestTaskService (all external services mocked)."""
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,6 +13,8 @@ _UUID3 = uuid.UUID("00000000-0000-0000-0000-000000000003")
 _UUID10 = uuid.UUID("00000000-0000-0000-0000-000000000010")
 _UUID11 = uuid.UUID("00000000-0000-0000-0000-000000000011")
 _UUID12 = uuid.UUID("00000000-0000-0000-0000-000000000012")
+_UUID20 = uuid.UUID("00000000-0000-0000-0000-000000000020")
+_UUID21 = uuid.UUID("00000000-0000-0000-0000-000000000021")
 
 
 @pytest.mark.asyncio
@@ -349,3 +352,57 @@ async def test_parse_pdf_neither_content_nor_download_url_fails():
 
     assert task.status == "failed"
     assert "neither content nor download_url" in task.error_message
+
+
+# --- cleanup_stale_uploading_tasks tests ---
+
+
+def test_cleanup_stale_uploading_marks_old_tasks_failed():
+    """Tasks in 'uploading' status for > 2 hours should be marked failed."""
+    from app.services.ingest_task_service import cleanup_stale_uploading_tasks
+
+    old_task = IngestTask(
+        id=_UUID20,
+        status="uploading",
+        file_name="stale.pdf",
+        file_type="pdf",
+    )
+    old_task.created_at = datetime.now(timezone.utc) - timedelta(hours=3)
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.all.return_value = [old_task]
+    mock_db.commit = MagicMock()
+
+    cleaned = cleanup_stale_uploading_tasks(mock_db)
+
+    assert cleaned == 1
+    assert old_task.status == "failed"
+    assert "not completed" in old_task.error_message
+    mock_db.commit.assert_called_once()
+
+
+def test_cleanup_stale_uploading_skips_recent_tasks():
+    """Tasks in 'uploading' status for < 2 hours should not be touched."""
+    from app.services.ingest_task_service import cleanup_stale_uploading_tasks
+
+    mock_db = MagicMock()
+    # Query returns empty list (no stale tasks)
+    mock_db.query.return_value.filter.return_value.all.return_value = []
+
+    cleaned = cleanup_stale_uploading_tasks(mock_db)
+
+    assert cleaned == 0
+    mock_db.commit.assert_not_called()
+
+
+def test_cleanup_stale_uploading_does_not_touch_other_statuses():
+    """Only 'uploading' tasks should be affected, not syncing/parsing/etc."""
+    from app.services.ingest_task_service import cleanup_stale_uploading_tasks
+
+    mock_db = MagicMock()
+    # The filter will only match uploading tasks; mock returns empty
+    mock_db.query.return_value.filter.return_value.all.return_value = []
+
+    cleaned = cleanup_stale_uploading_tasks(mock_db)
+
+    assert cleaned == 0

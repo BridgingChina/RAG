@@ -37,6 +37,44 @@ def _get_taxonomy_lvl2_map() -> dict[str, list[str]]:
     return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
+STALE_UPLOADING_HOURS = 2
+"""Tasks stuck in 'uploading' status longer than this are marked failed."""
+
+
+def cleanup_stale_uploading_tasks(db: Session) -> int:
+    """Mark uploading tasks older than STALE_UPLOADING_HOURS as failed.
+
+    Returns the number of tasks cleaned up.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=STALE_UPLOADING_HOURS)
+    stale_tasks = (
+        db.query(IngestTask)
+        .filter(
+            IngestTask.status == "uploading",
+            IngestTask.created_at < cutoff,
+        )
+        .all()
+    )
+
+    for task in stale_tasks:
+        task.status = "failed"
+        task.error_message = (
+            f"Upload not completed within {STALE_UPLOADING_HOURS} hours"
+        )
+
+    if stale_tasks:
+        db.commit()
+        logger.info(
+            "Cleaned up %d stale uploading task(s) older than %d hours",
+            len(stale_tasks),
+            STALE_UPLOADING_HOURS,
+        )
+
+    return len(stale_tasks)
+
+
 class IngestTaskService:
     """Orchestrates the multi-stage ingest pipeline."""
 
