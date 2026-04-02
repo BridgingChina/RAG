@@ -280,7 +280,7 @@ def reindex_source_chunks(
             savepoint.rollback()
             # Ensure chunk stays marked for retry on next reindex run
             chunk.needs_reindex = True
-            logger.warning("Failed to reindex chunk %s, will retry on next run", chunk.id)
+            logger.warning("Failed to reindex chunk %s, will retry on next run", chunk.id, exc_info=True)
             failed.append(chunk.id)
 
     db.flush()
