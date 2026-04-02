@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,4 +27,8 @@ class IngestTask(Base, UUIDMixin, TimestampMixin):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_ingest_tasks_status", "status"),
     )

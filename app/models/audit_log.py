@@ -25,4 +25,5 @@ class AuditLog(Base, UUIDMixin, CreatedAtMixin):
     __table_args__ = (
         Index("ix_audit_logs_created_at", "created_at"),
         Index("ix_audit_logs_user_id", "user_id"),
+        Index("ix_audit_logs_action_resource", "action", "resource_type"),
     )

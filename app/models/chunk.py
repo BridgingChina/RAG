@@ -43,6 +43,10 @@ class Chunk(Base, UUIDMixin, CreatedAtMixin):
         Index("ix_chunks_bridge", "bridge_id"),
         Index("ix_chunks_source", "source_id"),
         Index("ix_chunks_binding_status", "bridge_binding_status"),
+        Index(
+            "ix_chunks_needs_reindex", "source_id",
+            postgresql_where=sql_text("needs_reindex = true"),
+        ),
         Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
         Index(
             "ix_chunks_embedding_hnsw",
