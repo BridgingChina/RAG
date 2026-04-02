@@ -81,7 +81,7 @@ Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The data
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 5 — Adds bridge_images + knowledge_point_bridges tables + bridges.geocode_source column
+- Current version: 6 — Adds UNIQUE(chunk_id, bridge_id) constraint to chunk_bridge_links
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`（支持增量迁移，`MIGRATIONS` dict 定义版本间迁移函数）
@@ -128,7 +128,7 @@ The system uses automatic schema versioning:
 
 - `chunks` — 核心检索单元，1024 维向量（HNSW 索引，m=16, ef_construction=64, ef_search=40）、taxonomy 标签（lvl1/lvl2/lvl3）、GIN 索引用于 FTS
 - `bridges` — 桥梁档案（bridge_type/material/era/region/function/latitude/longitude）
-- `chunk_bridge_links` — chunks ↔ bridges 多对多关联表
+- `chunk_bridge_links` — chunks ↔ bridges 多对多关联表，UNIQUE(chunk_id, bridge_id)
 - `taxonomy_nodes` — 三级目录结构
 - `sources` — 来源元信息
 - `users` — 用户账户（username/hashed_password/display_name/is_active）
