@@ -169,9 +169,9 @@ class FlashcardBatchGenerator:
         self, db: Session, knowledge_point_ids: list[UUID]
     ) -> dict:
         """Generate flashcards for multiple KPs. Returns summary."""
-        from app.providers import ZhipuProvider
+        from app.providers import get_provider
 
-        provider = ZhipuProvider()
+        provider = get_provider()
         total_generated = 0
         errors = []
 

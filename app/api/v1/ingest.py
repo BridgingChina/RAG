@@ -14,7 +14,7 @@ from app.api.v1.schemas import (
 from app.core.database import get_db
 from app.models import Chunk, ChunkBridgeLink, Source, User
 from app.services.audit_service import AuditService
-from app.providers import ZhipuProvider
+from app.providers import get_provider
 from app.services.bridge_linker import BridgeLinker
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
@@ -25,17 +25,11 @@ from app.core.constants import EMBEDDING_DIM, load_taxonomy
 
 router = APIRouter()
 
-_provider_cache: dict[object, object] = {}
 _tokenizer_cache: dict[str | None, Tokenizer] = {}
 
 
 def _get_provider():
-    key = ZhipuProvider
-    provider = _provider_cache.get(key)
-    if provider is None:
-        provider = key()
-        _provider_cache[key] = provider
-    return provider
+    return get_provider()
 
 
 def _get_tokenizer() -> Tokenizer:

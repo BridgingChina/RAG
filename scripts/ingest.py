@@ -76,7 +76,8 @@ async def ingest_text(
 ) -> list[IngestedChunk]:
     """Ingest text into the database."""
     # Initialize provider and services
-    provider = ZhipuProvider()
+    from app.providers import get_provider
+    provider = get_provider()
     context_enricher = ContextEnricher(provider=provider)
     tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
     chunker = SemanticChunker(
