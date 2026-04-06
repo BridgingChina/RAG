@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import re
 import sys
@@ -29,7 +30,7 @@ import httpx
 # .env loader (no python-dotenv dependency)
 # ---------------------------------------------------------------------------
 
-def load_dotenv(path: Path = Path(".env")) -> dict[str, str]:
+def load_dotenv(path: Path = Path(__file__).resolve().parent.parent / ".env") -> dict[str, str]:
     """Parse a .env file into a dict. Skips comments and blank lines."""
     env: dict[str, str] = {}
     if not path.exists():
@@ -52,7 +53,6 @@ def load_dotenv(path: Path = Path(".env")) -> dict[str, str]:
 
 def get_env(name: str, dotenv: dict[str, str], default: str | None = None) -> str:
     """Return env var from os.environ, falling back to dotenv, then default."""
-    import os
     val = os.environ.get(name) or dotenv.get(name) or default
     if val is None:
         print(f"Error: {name} not set. Set it in .env or environment.")
@@ -155,7 +155,7 @@ async def generate_manifest(
             return result
         except (json.JSONDecodeError, ValueError) as e:
             if attempt == 0:
-                print(f"  JSON parse failed ({e}), retrying with higher temperature...")
+                print(f"  JSON parse failed ({e}), retrying with lower temperature...")
             else:
                 print(f"  JSON parse failed on retry: {e}")
                 print(f"  Raw response:\n{raw[:500]}")

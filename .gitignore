@@ -32,5 +32,8 @@ htmlcov/
 web/dist/
 web/node_modules/
 
+# Generated test documents
+data/generated/
+
 # Docker
 nginx/logs/
