@@ -26,6 +26,7 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
 
 class ZhipuProvider(LLMProvider):
     BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+    CHAT_BASE_URL: str | None = None  # override to route chat to a different endpoint
     MAX_EMBED_BATCH = 64
 
     def __init__(self):
@@ -91,9 +92,10 @@ class ZhipuProvider(LLMProvider):
             return embeddings
 
     async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
+        base = self.CHAT_BASE_URL or self.BASE_URL
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                f"{self.BASE_URL}/chat/completions",
+                f"{base}/chat/completions",
                 headers=self._headers(),
                 json={
                     "model": self.chat_model,

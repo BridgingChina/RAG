@@ -31,10 +31,6 @@ router = APIRouter()
 _tokenizer_cache: dict[str | None, Tokenizer] = {}
 
 
-def _get_provider():
-    return get_provider()
-
-
 def _get_tokenizer() -> Tokenizer:
     key = default_user_dict_path()
     tokenizer = _tokenizer_cache.get(key)
@@ -48,7 +44,7 @@ def _get_tokenizer() -> Tokenizer:
 async def ask(
     request: AskRequest,
     db: Session = Depends(get_db),
-    provider=Depends(_get_provider),
+    provider=Depends(get_provider),
     tokenizer: Tokenizer = Depends(_get_tokenizer),
 ):
     """Ask a question and get an answer with citations.

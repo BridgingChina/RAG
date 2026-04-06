@@ -28,10 +28,6 @@ router = APIRouter()
 _tokenizer_cache: dict[str | None, Tokenizer] = {}
 
 
-def _get_provider():
-    return get_provider()
-
-
 def _get_tokenizer() -> Tokenizer:
     key = default_user_dict_path()
     tokenizer = _tokenizer_cache.get(key)
@@ -85,7 +81,7 @@ async def ingest(
     body: IngestRequest,
     request: Request,
     db: Session = Depends(get_db),
-    provider=Depends(_get_provider),
+    provider=Depends(get_provider),
     tokenizer: Tokenizer = Depends(_get_tokenizer),
     current_user: User = Depends(get_current_user),
 ):
