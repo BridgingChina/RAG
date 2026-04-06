@@ -21,7 +21,7 @@ from app.api.v1.schemas.knowledge_point import (
 )
 from app.core.database import get_db
 from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode, User
-from app.providers import ChatMessage, ZhipuProvider
+from app.providers import ChatMessage, get_provider
 from app.services.audit_service import AuditService
 from app.services.flashcard_generator import FlashcardBatchGenerator
 from app.services.kp_bridge_service import KnowledgePointBridgeService
@@ -121,7 +121,7 @@ async def sync_bridges(
         raise HTTPException(status_code=404, detail="Knowledge point not found")
 
     svc = KnowledgePointBridgeService()
-    provider = ZhipuProvider() if use_llm else None
+    provider = get_provider() if use_llm else None
 
     try:
         created = await svc.sync_from_chunks(db, kp_id, provider=provider)
@@ -237,7 +237,7 @@ async def generate_flashcards(
         raise HTTPException(status_code=404, detail="Knowledge point not found")
 
     generator = FlashcardBatchGenerator()
-    provider = ZhipuProvider()
+    provider = get_provider()
 
     try:
         cards = await generator.generate_for_kp(db, kp_id, provider)
@@ -420,7 +420,7 @@ async def generate_key_points(
         '{"key_points": [{"summary": "...", "explanation": "...", "citations": [1, 2]}]}'
     )
 
-    provider = ZhipuProvider()
+    provider = get_provider()
     try:
         response = await provider.chat([
             ChatMessage(role="user", content=prompt),

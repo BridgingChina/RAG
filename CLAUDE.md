@@ -75,7 +75,7 @@ python3 scripts/create_user.py --username admin --password <password>
 
 ## Environment Setup
 
-Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production. `CORS_ORIGINS` accepts a JSON list of allowed origins (default: `["http://localhost:3000", "http://localhost:5173"]`); set to `["https://your-domain.com"]` in production.
+Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. `USE_CODING_PLAN` (bool, default false) routes chat calls through the Coding Plan endpoint (`/api/coding/paas/v4`). The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production. `CORS_ORIGINS` accepts a JSON list of allowed origins (default: `["http://localhost:3000", "http://localhost:5173"]`); set to `["https://your-domain.com"]` in production.
 
 ## Database Schema Management
 
@@ -88,7 +88,7 @@ The system uses automatic schema versioning:
 
 ## Architecture
 
-**Tech Stack:** Python 3.11+ + FastAPI, PostgreSQL + pgvector, 智谱 API (embedding-3 + GLM-4)
+**Tech Stack:** Python 3.11+ + FastAPI, PostgreSQL + pgvector, 智谱 API (embedding-3 + GLM-4.7)
 
 **Core Flow:**
 ```
@@ -98,7 +98,7 @@ The system uses automatic schema versioning:
 
 **Key Abstractions:**
 
-- `app/providers/` — LLM Provider 抽象层 (`LLMProvider` ABC)，`embed()` 返回 1024 维向量（智谱 embedding-3，可配置 512/1024/2048），`chat()` 返回 `ChatResponse`
+- `app/providers/` — LLM Provider 抽象层 (`LLMProvider` ABC)，`embed()` 返回 1024 维向量（智谱 embedding-3，可配置 512/1024/2048），`chat()` 返回 `ChatResponse`。**使用 `get_provider()` 工厂函数获取实例**（勿直接 `ZhipuProvider()`）。`ZhipuCodingProvider` 通过 `CHAT_BASE_URL` 走 Coding Plan 端点，`USE_CODING_PLAN=true` 启用
 - `app/services/markdown_parser.py` — Markdown 解析，提取 front matter 和章节结构
 - `app/services/chunker.py` — Heading-aware 语义切块，`chunk(sections: list[Section])` 接收解析后的章节列表。短节合并、长节按 embedding 相似度子分割，保留 `[章节: path]` 前缀
 - `app/services/context_enricher.py` — 为 chunk 生成上下文描述（80-160字），包含来源、主题、指代消歧
@@ -124,7 +124,7 @@ The system uses automatic schema versioning:
 - `config/taxonomy.yaml` — 三级知识分类体系，通过 `app/core/constants.py` 加载（`@lru_cache`）
 - `app/core/taxonomy_loader.py` — DB-backed taxonomy loader（API/admin 使用）。`constants.py` 仅供 `tagger.py` 使用，两者独立
 - `config/facets.yaml` — Facet 枚举值（桥型、材料、年代、区域、功能）
-- `app/core/config.py` — `git_commit`/`git_date` 字段从环境变量读取，Docker build args 注入（`deploy.sh` 设置）
+- `app/core/config.py` — `use_coding_plan` 控制 chat 是否走 Coding Plan 端点；`chat_model` 默认 `glm-4.7`；`git_commit`/`git_date` 字段从环境变量读取，Docker build args 注入（`deploy.sh` 设置）
 
 **Data Model:**（所有表使用 UUID v4 主键，通过 `UUIDMixin` 统一管理）
 

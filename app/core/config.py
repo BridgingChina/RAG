@@ -10,7 +10,8 @@ class Settings(BaseSettings):
 
     # LLM settings
     embedding_model: str = "embedding-3"
-    chat_model: str = "glm-4"
+    chat_model: str = "glm-4.7"
+    use_coding_plan: bool = False
 
     # Retrieval settings
     top_k: int = 5

@@ -21,7 +21,7 @@ from app.api.v1.schemas.ingest_task import (
 from app.core.database import get_db
 from app.models import Chunk, ChunkBridgeLink, Source, User
 from app.models.ingest_task import IngestTask
-from app.providers import ZhipuProvider
+from app.providers import get_provider
 from app.providers.file_parser import FileParserProvider
 from app.services.audit_service import AuditService
 from app.services.ingest_task_service import IngestTaskService
@@ -56,7 +56,7 @@ async def _run_sync_and_parse(task_id: UUID, user_id: UUID | None = None, ip_add
     db = SessionLocal()
     try:
         r2 = R2StorageService()
-        provider = ZhipuProvider()
+        provider = get_provider()
         file_parser = FileParserProvider()
         service = IngestTaskService(
             db=db, r2=r2, provider=provider, file_parser=file_parser,
@@ -74,7 +74,7 @@ async def _run_indexing(task_id: UUID, user_id: UUID | None = None, ip_address: 
     db = SessionLocal()
     try:
         r2 = R2StorageService()
-        provider = ZhipuProvider()
+        provider = get_provider()
         service = IngestTaskService(
             db=db, r2=r2, provider=provider,
             user_id=user_id, ip_address=ip_address,

@@ -17,7 +17,7 @@ from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.models import TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
-from app.providers import ZhipuProvider
+from app.providers import get_provider
 from app.services.facet_extractor import FacetExtractor
 from app.services.generator import Generator
 from app.services.hybrid_retriever import (
@@ -107,7 +107,7 @@ async def ask_sse(
         _mark_event()
 
         try:
-            provider = ZhipuProvider()
+            provider = get_provider()
             tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
             retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
             generator = Generator(provider=provider)

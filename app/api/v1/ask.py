@@ -16,7 +16,7 @@ from app.api.v1.schemas import (
     EvidenceGroupsResponse,
 )
 from app.core.database import get_db
-from app.providers import ZhipuProvider
+from app.providers import get_provider
 from app.services import Generator
 from app.services.bridge_resolver import resolve_bridge_from_question
 from app.services.facet_extractor import FacetExtractor
@@ -28,17 +28,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_provider_cache: dict[object, object] = {}
 _tokenizer_cache: dict[str | None, Tokenizer] = {}
-
-
-def _get_provider():
-    key = ZhipuProvider
-    provider = _provider_cache.get(key)
-    if provider is None:
-        provider = key()
-        _provider_cache[key] = provider
-    return provider
 
 
 def _get_tokenizer() -> Tokenizer:
@@ -54,7 +44,7 @@ def _get_tokenizer() -> Tokenizer:
 async def ask(
     request: AskRequest,
     db: Session = Depends(get_db),
-    provider=Depends(_get_provider),
+    provider=Depends(get_provider),
     tokenizer: Tokenizer = Depends(_get_tokenizer),
 ):
     """Ask a question and get an answer with citations.
