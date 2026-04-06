@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import re
 import sys
 from pathlib import Path
@@ -136,7 +137,7 @@ async def generate_manifest(
     messages = [{"role": "user", "content": prompt}]
 
     for attempt in range(2):
-        temp = 0.7 if attempt == 0 else 0.9
+        temp = 0.7 if attempt == 0 else 0.3
         raw = await chat(client, base_url, api_key, model, messages, temperature=temp, json_mode=True)
         try:
             # Try to extract JSON array — LLM may wrap in markdown or extra text
@@ -168,30 +169,12 @@ async def generate_manifest(
 # ---------------------------------------------------------------------------
 
 DOC_PROMPT = """\
-你是一位桥梁工程与历史研究者。请为以下桥梁撰写一篇详细的 Markdown 格式技术资料文档。
+你是一位桥梁工程专家。请撰写一篇关于"{name}"（{region}，{era}，{bridge_type}）的详细技术文档。
 
-桥梁信息:
-- 名称: {name}
-- 桥型: {bridge_type}
-- 材料: {material}
-- 年代: {era}
-- 地区: {region}
-- 功能: {function}
-- 简介: {summary}
-
-要求:
-1. 文档开头使用 YAML front matter，格式如下:
-   ---
-   bridge: {name}
-   source_type: document
-   title: {name}技术资料
-   ---
-
-2. 使用多级标题(#, ##, ###)组织内容，自由安排章节结构
-3. 内容应涵盖: 基本概况、结构特点、建造历史、地理环境、文化意义等方面
-4. 篇幅约 800-1500 字
-5. 内容尽量基于真实信息，可适当补充合理细节
-6. 不要使用表格，用自然段落描述"""
+要求：
+- 基于真实信息，内容 1000-2000 字
+- 自由组织章节结构，使用 Markdown 标题层级
+- 不限定章节数量和主题，按你认为最合适的方式组织"""
 
 
 async def generate_document(
@@ -203,7 +186,12 @@ async def generate_document(
     semaphore: asyncio.Semaphore,
 ) -> str | None:
     """Generate a Markdown document for one bridge. Returns content or None on failure."""
-    prompt = DOC_PROMPT.format(**bridge)
+    prompt = DOC_PROMPT.format(
+        name=bridge.get("name", ""),
+        region=bridge.get("region", ""),
+        era=bridge.get("era", ""),
+        bridge_type=bridge.get("bridge_type", ""),
+    )
     messages = [{"role": "user", "content": prompt}]
 
     async with semaphore:
@@ -258,13 +246,7 @@ def save_pdf(markdown_content: str, path: Path, font_path: str) -> None:
     pdf.add_font(font_name, "", font_path, uni=True)
     pdf.add_font(font_name, "B", font_path, uni=True)
 
-    # Strip YAML front matter for PDF (it's metadata, not content)
-    content = markdown_content
-    fm_match = re.match(r"^---\s*\n.*?\n---\s*\n", content, re.DOTALL)
-    if fm_match:
-        content = content[fm_match.end():]
-
-    for line in content.split("\n"):
+    for line in markdown_content.split("\n"):
         stripped = line.strip()
         if not stripped:
             pdf.ln(4)
@@ -301,24 +283,20 @@ async def run(args: argparse.Namespace) -> None:
     dotenv = load_dotenv(Path(".env"))
     base_url = get_env("LLM_BASE_URL", dotenv)
     api_key = get_env("LLM_API_KEY", dotenv)
-    model = get_env("LLM_MODEL", dotenv)
+    model = get_env("LLM_MODEL", dotenv, default="gpt-4o-mini")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    pdf_count = round(args.count * args.pdf_ratio)
-    md_count = args.count - pdf_count
-
     # Check CJK font for PDF generation
     font_path: str | None = None
-    if pdf_count > 0:
+    if args.pdf_ratio > 0:
         font_path = find_cjk_font()
         if font_path is None:
-            print("Warning: No CJK font found. PDF files will be saved as .md instead.")
-            md_count = args.count
-            pdf_count = 0
+            print("Warning: No CJK font found. All files will be saved as .md instead.")
+            args.pdf_ratio = 0.0
 
-    print(f"Config: {args.count} docs ({md_count} .md + {pdf_count} .pdf), "
+    print(f"Config: {args.count} docs, pdf_ratio={args.pdf_ratio}, "
           f"concurrency={args.concurrency}, output={output_dir}")
     print(f"LLM: {model} @ {base_url}")
     print()
@@ -329,9 +307,9 @@ async def run(args: argparse.Namespace) -> None:
         bridges = await generate_manifest(client, base_url, api_key, model, args.count)
         print(f"  Generated {len(bridges)} bridge entries")
 
-        # Assign format to each bridge
-        for i, bridge in enumerate(bridges):
-            bridge["format"] = "pdf" if i < pdf_count else "md"
+        # Randomly assign format to each bridge
+        for bridge in bridges:
+            bridge["format"] = "pdf" if random.random() < args.pdf_ratio else "md"
 
         # Save manifest
         manifest_path = output_dir / "manifest.json"
