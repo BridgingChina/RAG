@@ -213,9 +213,8 @@ class IngestTaskService:
             "file-extract.cn-wlcb.ufileos.com",
         }
         parsed = urlparse(download_url)
-        logger.info("SSRF check: scheme=%s hostname=%r url=%s", parsed.scheme, parsed.hostname, download_url[:200])
-        if parsed.scheme != "https" or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
-            raise ValueError(f"Untrusted download_url host: {parsed.hostname}")
+        if parsed.scheme not in ("https", "http") or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
+            raise ValueError(f"Untrusted download_url: scheme={parsed.scheme} host={parsed.hostname}")
 
         logger.info("IngestTask %d: downloading zip from Zhipu", task.id)
         async with httpx.AsyncClient() as client:
