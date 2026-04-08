@@ -90,11 +90,14 @@ async def chat(
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        timeout=120.0,
+        timeout=300.0,
     )
     resp.raise_for_status()
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    content = data["choices"][0]["message"]["content"]
+    # Strip <think>...</think> blocks from reasoning models (e.g. MiniMax M2.7)
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+    return content
 
 
 # ---------------------------------------------------------------------------
@@ -239,12 +242,14 @@ def save_pdf(markdown_content: str, path: Path, font_path: str) -> None:
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_left_margin(15)
+    pdf.set_right_margin(15)
     pdf.add_page()
 
     # Register CJK font
     font_name = "CJK"
-    pdf.add_font(font_name, "", font_path, uni=True)
-    pdf.add_font(font_name, "B", font_path, uni=True)
+    pdf.add_font(font_name, "", font_path)
+    pdf.add_font(font_name, "B", font_path)
 
     for line in markdown_content.split("\n"):
         stripped = line.strip()
@@ -261,7 +266,7 @@ def save_pdf(markdown_content: str, path: Path, font_path: str) -> None:
             size = sizes.get(level, 13)
             pdf.set_font(font_name, "B", size)
             pdf.ln(4)
-            pdf.multi_cell(0, size * 0.6, text)
+            pdf.multi_cell(0, size * 0.7, text)
             pdf.ln(2)
         else:
             pdf.set_font(font_name, "", 11)

@@ -207,7 +207,11 @@ class IngestTaskService:
         self, task: IngestTask, download_url: str
     ) -> str:
         """Download zip from Zhipu, archive to R2, extract markdown and images."""
-        ALLOWED_ZHIPU_HOSTS = {"open.bigmodel.cn", "cdn.bigmodel.cn"}
+        ALLOWED_ZHIPU_HOSTS = {
+            "open.bigmodel.cn",
+            "cdn.bigmodel.cn",
+            "file-extract.cn-wlcb.ufileos.com",
+        }
         parsed = urlparse(download_url)
         if parsed.scheme != "https" or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
             raise ValueError(f"Untrusted download_url host: {parsed.hostname}")
