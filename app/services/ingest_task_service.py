@@ -213,6 +213,7 @@ class IngestTaskService:
             "file-extract.cn-wlcb.ufileos.com",
         }
         parsed = urlparse(download_url)
+        logger.info("SSRF check: scheme=%s hostname=%r url=%s", parsed.scheme, parsed.hostname, download_url[:200])
         if parsed.scheme != "https" or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
             raise ValueError(f"Untrusted download_url host: {parsed.hostname}")
 
