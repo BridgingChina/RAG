@@ -27,7 +27,9 @@ def get_knowledge_tree(
     """
     # 1. Load all taxonomy nodes
     nodes = db.query(TaxonomyNode).order_by(
-        TaxonomyNode.lvl1, TaxonomyNode.lvl2, TaxonomyNode.lvl3
+        TaxonomyNode.lvl1,
+        TaxonomyNode.lvl2.asc().nullsfirst(),
+        TaxonomyNode.lvl3.asc().nullsfirst(),
     ).all()
 
     # 2. Load all knowledge points
