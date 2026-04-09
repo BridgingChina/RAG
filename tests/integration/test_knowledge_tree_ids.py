@@ -70,8 +70,9 @@ def test_tree_nodes_have_unique_ids(db_session):
 def test_tree_includes_knowledge_points_with_own_ids(db_session):
     """Knowledge points under lvl3 nodes must have their own IDs."""
     lvl1_node = TaxonomyNode(lvl1="形制与技术")
+    lvl2_node = TaxonomyNode(lvl1="形制与技术", lvl2="结构体系")
     lvl3_node = TaxonomyNode(lvl1="形制与技术", lvl2="结构体系", lvl3="拱桥结构")
-    db_session.add_all([lvl1_node, lvl3_node])
+    db_session.add_all([lvl1_node, lvl2_node, lvl3_node])
     db_session.flush()
 
     kp = KnowledgePoint(
