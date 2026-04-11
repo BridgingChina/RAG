@@ -18,8 +18,20 @@ def _next_run_time(hour: int = 3) -> datetime:
 
 
 async def uploading_cleanup_loop(interval_minutes: int = 30):
-    """Periodically clean up stale uploading ingest tasks."""
-    from app.services.ingest_task_service import cleanup_stale_uploading_tasks
+    """Periodically clean up stale uploading ingest tasks + stale running tasks.
+
+    Two cleanups in one loop:
+    - ``cleanup_stale_uploading_tasks``: tasks stuck at ``uploading`` (user never
+      completed R2 upload, see ``STALE_UPLOADING_HOURS``).
+    - ``cleanup_stale_running_tasks``: tasks stuck at ``syncing/parsing/indexing``
+      longer than ``settings.ingest_stale_running_minutes`` (dispatched but
+      runner hung or crashed; blocks scheduler capacity — see issue #152).
+    """
+    from app.core.config import settings
+    from app.services.ingest_task_service import (
+        cleanup_stale_running_tasks,
+        cleanup_stale_uploading_tasks,
+    )
 
     while True:
         await asyncio.sleep(interval_minutes * 60)
@@ -27,10 +39,13 @@ async def uploading_cleanup_loop(interval_minutes: int = 30):
             db = SessionLocal()
             try:
                 cleanup_stale_uploading_tasks(db)
+                cleanup_stale_running_tasks(
+                    db, max_age_minutes=settings.ingest_stale_running_minutes
+                )
             finally:
                 db.close()
         except Exception:
-            logger.exception("Uploading cleanup: failed")
+            logger.exception("Uploading/running cleanup: failed")
 
 
 async def reindex_cron_loop(hour: int = 3):

@@ -19,6 +19,18 @@ class Settings(BaseSettings):
     # httpx read timeout (seconds) for embeddings (typically fast).
     embed_read_timeout: float = 60.0
 
+    # Ingest scheduler (issue #152)
+    # Max number of ingest tasks allowed in RUNNING_STATUSES at once.
+    # Default 2 keeps Zhipu burst 429s at bay even when user enqueues
+    # many retries at once.
+    ingest_max_concurrent: int = 2
+    # How often the scheduler polls the queue for work to dispatch.
+    ingest_scheduler_interval_seconds: float = 5.0
+    # Max runtime for a single ingest task before the stale cleanup
+    # helper marks it failed. 60 min = 2x the observed real-world p95
+    # (程阳永济桥 took 32.8 min to completion).
+    ingest_stale_running_minutes: int = 60
+
     # Retrieval settings
     top_k: int = 5
 

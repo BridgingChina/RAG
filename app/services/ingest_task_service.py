@@ -74,6 +74,55 @@ def cleanup_stale_uploading_tasks(db: Session) -> int:
     return len(stale_tasks)
 
 
+# Mirror of ``app.services.ingest_scheduler.RUNNING_STATUSES`` — kept local
+# to avoid importing from the scheduler module (which imports this module).
+# A unit test (``test_running_statuses_match``) guards against drift.
+_RUNNING_STATUSES_FOR_CLEANUP: tuple[str, ...] = ("syncing", "parsing", "indexing")
+
+
+def cleanup_stale_running_tasks(db: Session, max_age_minutes: int = 60) -> int:
+    """Mark tasks stuck in RUNNING_STATUSES longer than ``max_age_minutes``
+    as failed so the ingest scheduler can reclaim their capacity slot.
+
+    A task can get stuck if the dispatched async runner crashed or was
+    killed without writing back ``task.status``. Left alone these tasks
+    block the global concurrency budget and starve queued work. Issue #152.
+
+    ``max_age_minutes`` defaults to 60 — 2x the observed real-world p95
+    (程阳永济桥 took 32.8 min to completion with retries).
+
+    Returns the number of tasks cleaned up.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    stale_tasks = (
+        db.query(IngestTask)
+        .filter(
+            IngestTask.status.in_(_RUNNING_STATUSES_FOR_CLEANUP),
+            IngestTask.updated_at < cutoff,
+        )
+        .all()
+    )
+
+    for task in stale_tasks:
+        previous_status = task.status
+        previous_updated_at = task.updated_at
+        task.status = "failed"
+        task.error_message = (
+            f"Task exceeded max runtime of {max_age_minutes} minutes "
+            f"(stuck in '{previous_status}' since {previous_updated_at.isoformat()})"
+        )
+
+    if stale_tasks:
+        db.commit()
+        logger.info(
+            "Cleaned up %d stale running task(s) older than %d minutes",
+            len(stale_tasks),
+            max_age_minutes,
+        )
+
+    return len(stale_tasks)
+
+
 class IngestTaskService:
     """Orchestrates the multi-stage ingest pipeline."""
 
