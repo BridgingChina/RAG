@@ -25,7 +25,7 @@ from app.api.v1.schemas.ingest_task import (
 )
 from app.core.database import get_db
 from app.models import Chunk, ChunkBridgeLink, Source, User
-from app.models.ingest_task import IngestTask
+from app.models.ingest_task import RUNNING_STATUSES, IngestTask
 from app.providers import get_provider
 from app.providers.file_parser import FileParserProvider
 from app.services.audit_service import AuditService
@@ -35,7 +35,6 @@ from app.services.r2_storage import R2StorageService
 router = APIRouter(prefix="/ingest-tasks")
 
 ALLOWED_FILE_TYPES = {"pdf", "md"}
-RUNNING_STATUSES = {"syncing", "parsing", "indexing"}
 
 
 def _get_r2() -> R2StorageService:
@@ -478,7 +477,7 @@ def delete_ingest_task(
     if task is None:
         raise HTTPException(404, "Task not found")
 
-    if task.status in ("syncing", "parsing", "indexing"):
+    if task.status in RUNNING_STATUSES:
         raise HTTPException(
             400,
             f"Cannot delete task in '{task.status}' state -- wait for completion or failure",

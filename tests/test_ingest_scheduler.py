@@ -11,6 +11,7 @@ Postgres live in ``tests/integration/test_ingest_scheduler_e2e.py``.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,7 +22,9 @@ from app.services.ingest_scheduler import (
     INGEST_SCHEDULER_LOCK_ID,
     QUEUED_STATUSES,
     RUNNING_STATUSES,
+    _on_runner_done,
     _scheduler_tick,
+    ingest_scheduler_loop,
 )
 
 
@@ -298,3 +301,189 @@ async def test_scheduler_tick_rolls_back_on_exception(mock_session_factory):
     session.close.assert_called_once()
     # commit must NOT have been called — we want the lock released by rollback
     session.commit.assert_not_called()
+
+
+# --- Loop resilience (review C3) ---
+
+
+@pytest.mark.asyncio
+async def test_scheduler_loop_survives_tick_failure(monkeypatch):
+    """A single exception in _scheduler_tick must NOT kill the loop.
+
+    Regression against review comment C3: if someone narrows the
+    ``except Exception`` catch clause or moves it, this test fails.
+    """
+    tick_calls = {"n": 0}
+
+    async def flaky_tick():
+        tick_calls["n"] += 1
+        if tick_calls["n"] == 1:
+            raise RuntimeError("first-tick-boom")
+        # On the second call, stop the loop by cancelling ourselves.
+        current = asyncio.current_task()
+        if current is not None:
+            current.cancel()
+        return []
+
+    monkeypatch.setattr(
+        "app.services.ingest_scheduler._scheduler_tick", flaky_tick
+    )
+    monkeypatch.setattr(
+        "app.services.ingest_scheduler.settings.ingest_scheduler_interval_seconds",
+        0.001,
+    )
+
+    task = asyncio.create_task(ingest_scheduler_loop())
+    try:
+        # Give the loop enough real time to call tick at least twice.
+        await asyncio.sleep(0.2)
+    finally:
+        task.cancel()
+        with pytest.raises((asyncio.CancelledError, BaseException)):
+            await task
+
+    assert tick_calls["n"] >= 2, (
+        f"Loop should have survived the first bad tick and retried; "
+        f"got only {tick_calls['n']} call(s)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_scheduler_loop_survives_logger_exception(monkeypatch):
+    """If logger.exception itself raises, the loop must still survive.
+
+    Double-nested try/except inside ingest_scheduler_loop protects
+    against a broken logger backend. Regression against review comment
+    C3 on logger self-failure.
+    """
+    import io
+
+    tick_calls = {"n": 0}
+
+    async def flaky_tick():
+        tick_calls["n"] += 1
+        if tick_calls["n"] == 1:
+            raise RuntimeError("first-tick-boom")
+        current = asyncio.current_task()
+        if current is not None:
+            current.cancel()
+        return []
+
+    def broken_logger_exception(*_args, **_kwargs):
+        raise RuntimeError("logger-backend-broke")
+
+    monkeypatch.setattr(
+        "app.services.ingest_scheduler._scheduler_tick", flaky_tick
+    )
+    monkeypatch.setattr(
+        "app.services.ingest_scheduler.logger.exception",
+        broken_logger_exception,
+    )
+    monkeypatch.setattr(
+        "app.services.ingest_scheduler.settings.ingest_scheduler_interval_seconds",
+        0.001,
+    )
+
+    # Redirect stderr so the last-resort print doesn't clutter test output
+    fake_stderr = io.StringIO()
+    monkeypatch.setattr("sys.stderr", fake_stderr)
+
+    task = asyncio.create_task(ingest_scheduler_loop())
+    try:
+        await asyncio.sleep(0.2)
+    finally:
+        task.cancel()
+        with pytest.raises((asyncio.CancelledError, BaseException)):
+            await task
+
+    assert tick_calls["n"] >= 2, "Loop should survive logger failure"
+
+
+# --- Runner done-callback (review C1 — asyncio create_task handle) ---
+
+
+def test_on_runner_done_marks_failed_out_of_band_on_exception():
+    """If a dispatched runner crashes, the done-callback must call the
+    out-of-band fail-marking helper with a descriptive message."""
+    task_id = uuid.uuid4()
+    mock_task = MagicMock(spec=asyncio.Task)
+    mock_task.cancelled.return_value = False
+    mock_task.exception.return_value = RuntimeError("boom in constructor")
+
+    with patch(
+        "app.services.ingest_scheduler._mark_failed_out_of_band"
+    ) as mock_mark:
+        _on_runner_done(mock_task, "sync", task_id)
+
+    mock_mark.assert_called_once()
+    call_args = mock_mark.call_args
+    assert call_args.args[0] == task_id
+    assert "RuntimeError" in call_args.args[1]
+    assert "boom in constructor" in call_args.args[1]
+
+
+def test_on_runner_done_marks_failed_on_cancel():
+    """A cancelled runner task (not via loop shutdown) should also fail the row."""
+    task_id = uuid.uuid4()
+    mock_task = MagicMock(spec=asyncio.Task)
+    mock_task.cancelled.return_value = True
+
+    with patch(
+        "app.services.ingest_scheduler._mark_failed_out_of_band"
+    ) as mock_mark:
+        _on_runner_done(mock_task, "index", task_id)
+
+    mock_mark.assert_called_once()
+    assert "cancelled" in mock_mark.call_args.args[1].lower()
+
+
+def test_on_runner_done_noop_on_success():
+    """A successfully-completed runner task must NOT touch the DB."""
+    task_id = uuid.uuid4()
+    mock_task = MagicMock(spec=asyncio.Task)
+    mock_task.cancelled.return_value = False
+    mock_task.exception.return_value = None
+
+    with patch(
+        "app.services.ingest_scheduler._mark_failed_out_of_band"
+    ) as mock_mark:
+        _on_runner_done(mock_task, "sync", task_id)
+
+    mock_mark.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_tick_warns_on_unknown_status(mock_session_factory, caplog):
+    """If a task with an unexpected status sneaks through the SELECT filter,
+    the scheduler must log a warning instead of silently dropping it.
+
+    Regression against review comment I5: the ``else`` branch must not
+    be silent — otherwise new queued states added to the filter but not
+    to the dispatch switch would starve forever.
+    """
+    import logging
+
+    rogue_task = _make_task("unexpected_status")
+    session = mock_session_factory(
+        lock_acquired=True, running_count=0, queued_tasks=[rogue_task]
+    )
+
+    with (
+        patch(
+            "app.services.ingest_scheduler.SessionLocal", return_value=session
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        dispatched = await _scheduler_tick()
+
+    assert dispatched == []
+    # The warning must have fired with the rogue status in the message
+    matching = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING
+        and "unexpected_status" in r.getMessage()
+    ]
+    assert matching, (
+        f"Expected a warning about unexpected status, got: "
+        f"{[r.getMessage() for r in caplog.records]}"
+    )

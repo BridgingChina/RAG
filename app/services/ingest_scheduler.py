@@ -43,32 +43,45 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import logger
-from app.models.ingest_task import IngestTask
+from app.models.ingest_task import (
+    QUEUED_STATUSES,
+    RUNNING_STATUSES,
+    IngestTask,
+)
 
-# Distinct from ``database.py``'s init-lock (606059278) and
-# ``migrate_db.py``'s migration-lock (606059278). A different key means
-# the scheduler's lease does not block init or migration.
+# Lock ID 494956380 is distinct from the shared init/migration lock
+# (606059278, used by both ``app/core/database.py::init_database`` and
+# ``scripts/migrate_db.py``) so scheduler ticks never block startup or
+# migration, and vice versa.
 INGEST_SCHEDULER_LOCK_ID = 494956380
 
-# Mirrors ``ingest_tasks.py::RUNNING_STATUSES`` but duplicated here to
-# avoid importing from the API layer (circular import risk via
-# ``_run_sync_and_parse``). Keep in sync manually; the unit test
-# ``test_running_statuses_match`` guards against drift.
-RUNNING_STATUSES: frozenset[str] = frozenset(("syncing", "parsing", "indexing"))
-
-# States the scheduler will pick up and dispatch.
-QUEUED_STATUSES: frozenset[str] = frozenset(("queued", "queued_for_indexing"))
+# Tracks in-flight dispatched tasks so asyncio doesn't garbage-collect
+# them while they're still running (asyncio only keeps weak references
+# to tasks created via ``create_task``). See ``_schedule_runner`` below.
+_dispatched_tasks: set[asyncio.Task] = set()
 
 
 async def ingest_scheduler_loop() -> None:
     """Scheduler main loop — lifespan-level background task.
 
     Wraps :func:`_scheduler_tick` in an infinite loop with exception
-    swallowing so a single bad tick does not kill the loop. If the loop
-    itself dies, the container restart recovers.
+    swallowing so a single bad tick does not kill the loop. ``asyncio.CancelledError``
+    (from lifespan shutdown) propagates normally because it inherits from
+    ``BaseException``, not ``Exception``. The double-nested try/except on
+    ``logger.exception`` is intentional: if the logger backend itself
+    raises (formatter crash, handler network timeout, etc.) we fall
+    through to stderr instead of letting the loop die.
+
+    If this loop coroutine ever dies (as opposed to a single bad tick),
+    ``main.py::_on_scheduler_done`` will log CRITICAL so ops can spot it.
     """
+    import os
+    import sys
+    import traceback
+
     logger.info(
-        "Ingest scheduler started (max_concurrent=%d, interval=%.1fs)",
+        "Ingest scheduler started (pid=%d, max_concurrent=%d, interval=%.1fs)",
+        os.getpid(),
         settings.ingest_max_concurrent,
         settings.ingest_scheduler_interval_seconds,
     )
@@ -76,7 +89,16 @@ async def ingest_scheduler_loop() -> None:
         try:
             await _scheduler_tick()
         except Exception:  # noqa: BLE001 — intentional catch-all
-            logger.exception("Ingest scheduler tick failed")
+            try:
+                logger.exception("Ingest scheduler tick failed")
+            except Exception:
+                # Logger itself broke. Last-resort stderr so the loop
+                # keeps running instead of dying with a broken logger.
+                print(
+                    "INGEST SCHEDULER: tick failed AND logger broke",
+                    file=sys.stderr,
+                )
+                traceback.print_exc(file=sys.stderr)
         await asyncio.sleep(settings.ingest_scheduler_interval_seconds)
 
 
@@ -132,7 +154,17 @@ async def _scheduler_tick() -> list[tuple[str, uuid.UUID]]:
             elif task.status == "queued_for_indexing":
                 task.status = "indexing"
                 dispatch.append(("index", task.id))
-            # else: a race snuck an unexpected status in — skip it
+            else:
+                # QUEUED_STATUSES filter should make this unreachable.
+                # If it fires, a new queued status was added to the
+                # query filter but not to this dispatch switch.
+                logger.warning(
+                    "Ingest scheduler picked task %s with unexpected "
+                    "status %r -- skipping. QUEUED_STATUSES and the "
+                    "dispatch switch are out of sync.",
+                    task.id,
+                    task.status,
+                )
 
         db.commit()  # persists status flips AND releases the advisory lock
     except Exception:
@@ -147,15 +179,114 @@ async def _scheduler_tick() -> list[tuple[str, uuid.UUID]]:
         logger.info(
             "Ingest scheduler dispatching %d task(s): %s",
             len(dispatch),
-            [f"{kind}:{tid}" for kind, tid in dispatch],
+            ", ".join(f"{kind}:{tid}" for kind, tid in dispatch),
         )
-        # Import lazily to avoid a circular import with app/api/v1/ingest_tasks.py
-        from app.api.v1.ingest_tasks import _run_indexing, _run_sync_and_parse
-
         for kind, task_id in dispatch:
-            if kind == "sync":
-                asyncio.create_task(_run_sync_and_parse(task_id))
-            else:
-                asyncio.create_task(_run_indexing(task_id))
+            _schedule_runner(kind, task_id)
 
     return dispatch
+
+
+def _schedule_runner(kind: str, task_id: uuid.UUID) -> asyncio.Task:
+    """Dispatch a runner coroutine with full lifecycle tracking.
+
+    Three things this does that a naked ``asyncio.create_task`` does not:
+
+    1. Adds the handle to ``_dispatched_tasks`` so the event loop keeps
+       a strong reference — prevents asyncio from garbage-collecting an
+       in-flight task under GC pressure.
+    2. Attaches a done-callback that, if the runner raised an unhandled
+       exception, logs it AND marks the task ``failed`` out-of-band via
+       a fresh session. Without this, constructor errors in the runner
+       (e.g. ``R2StorageService()`` raising ``NoRegionError``) would
+       leak through the runner's own ``try/except`` and the task would
+       sit in ``syncing``/``indexing`` until ``cleanup_stale_running_tasks``
+       reaper runs 60 minutes later.
+    3. Lazy-imports ``_run_sync_and_parse`` / ``_run_indexing`` inside
+       this function to avoid a circular import with
+       ``app/api/v1/ingest_tasks.py``.
+    """
+    from app.api.v1.ingest_tasks import _run_indexing, _run_sync_and_parse
+
+    if kind == "sync":
+        coro = _run_sync_and_parse(task_id)
+    elif kind == "index":
+        coro = _run_indexing(task_id)
+    else:
+        raise ValueError(f"Unknown runner kind: {kind!r}")
+
+    task = asyncio.create_task(coro, name=f"ingest-{kind}-{task_id}")
+    _dispatched_tasks.add(task)
+    task.add_done_callback(_dispatched_tasks.discard)
+    task.add_done_callback(lambda t: _on_runner_done(t, kind, task_id))
+    return task
+
+
+def _on_runner_done(
+    task: asyncio.Task,
+    kind: str,
+    task_id: uuid.UUID,
+) -> None:
+    """Done-callback for dispatched runners.
+
+    Runners own their own try/except to call ``IngestTaskService._fail``
+    for expected errors. This callback catches everything else: bare
+    cancellation, constructor-phase exceptions that bypass the runner's
+    try block, lazy-import failures. On any such case it marks the task
+    ``failed`` via a fresh session so the capacity slot is released.
+    """
+    if task.cancelled():
+        logger.error(
+            "Ingest runner cancelled mid-flight: kind=%s task_id=%s",
+            kind,
+            task_id,
+        )
+        _mark_failed_out_of_band(task_id, f"Runner cancelled ({kind})")
+        return
+
+    exc = task.exception()
+    if exc is None:
+        return  # normal completion — runner wrote its own final status
+
+    logger.error(
+        "Ingest runner crashed with unhandled exception: kind=%s task_id=%s",
+        kind,
+        task_id,
+        exc_info=exc,
+    )
+    _mark_failed_out_of_band(
+        task_id,
+        f"Runner crashed before its own error handler could catch "
+        f"({kind}): {type(exc).__name__}: {exc}",
+    )
+
+
+def _mark_failed_out_of_band(task_id: uuid.UUID, error_message: str) -> None:
+    """Mark a task ``failed`` using a fresh session, no-op on any error.
+
+    Used from the runner done-callback after the normal ``_fail`` path
+    has been bypassed. The 60-minute stale reaper is the backstop if
+    this too fails for any reason.
+    """
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(
+                text(
+                    "UPDATE ingest_tasks "
+                    "SET status = 'failed', "
+                    "    error_message = :msg, "
+                    "    updated_at = now() "
+                    "WHERE id = :id"
+                ),
+                {"msg": error_message[:1000], "id": task_id},
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        logger.exception(
+            "Out-of-band fail-marking ALSO failed for task %s; "
+            "stale reaper is the backstop",
+            task_id,
+        )

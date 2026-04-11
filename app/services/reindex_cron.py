@@ -20,9 +20,13 @@ def _next_run_time(hour: int = 3) -> datetime:
 async def uploading_cleanup_loop(interval_minutes: int = 30):
     """Periodically clean up stale uploading ingest tasks + stale running tasks.
 
-    Two cleanups in one loop:
-    - ``cleanup_stale_uploading_tasks``: tasks stuck at ``uploading`` (user never
-      completed R2 upload, see ``STALE_UPLOADING_HOURS``).
+    Two cleanups in one loop, each with its own Session and try/except so
+    a failure in one does not poison the other (which would otherwise
+    happen via a rolled-back Session being reused — see PR #153 silent
+    failure review I2):
+
+    - ``cleanup_stale_uploading_tasks``: tasks stuck at ``uploading`` (user
+      never completed R2 upload, see ``STALE_UPLOADING_HOURS``).
     - ``cleanup_stale_running_tasks``: tasks stuck at ``syncing/parsing/indexing``
       longer than ``settings.ingest_stale_running_minutes`` (dispatched but
       runner hung or crashed; blocks scheduler capacity — see issue #152).
@@ -35,17 +39,31 @@ async def uploading_cleanup_loop(interval_minutes: int = 30):
 
     while True:
         await asyncio.sleep(interval_minutes * 60)
+
+        # Uploading cleanup — own session, own exception scope.
         try:
             db = SessionLocal()
             try:
                 cleanup_stale_uploading_tasks(db)
+            finally:
+                db.close()
+        except Exception:
+            logger.exception(
+                "Uploading cleanup failed; running cleanup still attempted"
+            )
+
+        # Running cleanup — independent from the uploading one above.
+        try:
+            db = SessionLocal()
+            try:
                 cleanup_stale_running_tasks(
-                    db, max_age_minutes=settings.ingest_stale_running_minutes
+                    db,
+                    max_age_minutes=settings.ingest_stale_running_minutes,
                 )
             finally:
                 db.close()
         except Exception:
-            logger.exception("Uploading/running cleanup: failed")
+            logger.exception("Running cleanup failed")
 
 
 async def reindex_cron_loop(hour: int = 3):
