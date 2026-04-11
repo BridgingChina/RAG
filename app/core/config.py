@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     embedding_model: str = "embedding-3"
     chat_model: str = "glm-4.7"
     use_coding_plan: bool = False
+    # httpx read timeout (seconds) for chat completions. glm-4.7 with long
+    # tagging/enrichment prompts can take well over 60s; the previous
+    # hard-coded 60s was the dominant retry-budget killer.
+    chat_read_timeout: float = 180.0
+    # httpx read timeout (seconds) for embeddings (typically fast).
+    embed_read_timeout: float = 60.0
 
     # Retrieval settings
     top_k: int = 5
