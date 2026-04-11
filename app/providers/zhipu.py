@@ -24,8 +24,13 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
     2. 5xx server errors (upstream overload, partial outage).
     3. httpx transport errors -- ConnectError, ConnectTimeout, ReadTimeout,
        WriteTimeout, PoolTimeout, RemoteProtocolError, ReadError. These are
-       the dominant failure mode during batch ingest (long GLM prompts often
-       exceed the 60s read timeout and never get an HTTP status back).
+       common during batch ingest when the upstream LB bounces or a connection
+       drops mid-stream.
+
+    Note: retrying ReadTimeout alone is not enough if every call hits the same
+    timeout ceiling -- the ``timeout`` passed to ``httpx.AsyncClient`` must
+    actually be large enough for the slowest real response. See
+    ``settings.chat_read_timeout`` / ``embed_read_timeout``.
     """
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
@@ -33,6 +38,30 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True
     return False
+
+
+def _chat_timeout() -> httpx.Timeout:
+    """httpx timeout for chat completions.
+
+    Only ``read`` needs the long ceiling -- connect / write / pool are fast
+    and keeping them short surfaces real network issues quickly instead of
+    hiding them behind a blanket timeout.
+    """
+    return httpx.Timeout(
+        connect=10.0,
+        read=settings.chat_read_timeout,
+        write=10.0,
+        pool=10.0,
+    )
+
+
+def _embed_timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        connect=10.0,
+        read=settings.embed_read_timeout,
+        write=10.0,
+        pool=10.0,
+    )
 
 
 class ZhipuProvider(LLMProvider):
@@ -82,7 +111,7 @@ class ZhipuProvider(LLMProvider):
                         "input": batch,
                         "dimensions": EMBEDDING_DIM,
                     },
-                    timeout=30.0,
+                    timeout=_embed_timeout(),
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -119,7 +148,7 @@ class ZhipuProvider(LLMProvider):
                     "model": self.chat_model,
                     "messages": [{"role": m.role, "content": m.content} for m in messages],
                 },
-                timeout=60.0,
+                timeout=_chat_timeout(),
             )
             resp.raise_for_status()
             data = resp.json()
