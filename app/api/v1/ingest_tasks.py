@@ -101,20 +101,30 @@ def _task_to_detail(task: IngestTask) -> dict:
 
 
 def _cleanup_task_data(db: Session, task: IngestTask) -> None:
-    """Clean up chunks, bridge links, and source associated with a task."""
+    """Clean up chunks, bridge links, and source associated with a task.
+
+    Order matters: must clear ``task.source_id`` and flush BEFORE deleting
+    the source row. Otherwise Postgres IMMEDIATE FK check sees ``ingest_tasks``
+    still referencing the source (via the task's own dirty-but-unflushed column)
+    and raises ForeignKeyViolation on ``ingest_tasks_source_id_fkey``.
+    """
     if task.source_id:
+        source_id = task.source_id
         db.query(ChunkBridgeLink).filter(
             ChunkBridgeLink.chunk_id.in_(
-                db.query(Chunk.id).filter(Chunk.source_id == task.source_id)
+                db.query(Chunk.id).filter(Chunk.source_id == source_id)
             )
         ).delete(synchronize_session=False)
-        db.query(Chunk).filter(Chunk.source_id == task.source_id).delete(
+        db.query(Chunk).filter(Chunk.source_id == source_id).delete(
             synchronize_session=False
         )
-        db.query(Source).filter(Source.id == task.source_id).delete(
-            synchronize_session=False
-        )
+        # Detach task from source and flush the UPDATE to the DB
+        # before deleting the source itself.
         task.source_id = None
+        db.flush()
+        db.query(Source).filter(Source.id == source_id).delete(
+            synchronize_session=False
+        )
 
 
 # IMPORTANT: literal routes MUST come before parametric routes

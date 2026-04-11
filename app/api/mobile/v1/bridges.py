@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.orm import Session
 
 from app.api.mobile.v1.schemas.bridge import BridgeSections, BridgeSectionLevel, MobileBridgeDetail, MobileBridgeListItem
@@ -138,7 +139,10 @@ def get_bridge_clusters(
         func.count().label("cnt"),
         func.avg(Bridge.latitude).label("center_lat"),
         func.avg(Bridge.longitude).label("center_lng"),
-        func.min(Bridge.id).label("rep_id"),
+        # Postgres has no min() for UUID. Use array_agg(...)[1] to pick
+        # a representative id per grid cell; typed ARRAY(UUID) so the
+        # indexed access returns a UUID scalar consumable downstream.
+        func.array_agg(Bridge.id, type_=pg.ARRAY(pg.UUID(as_uuid=True)))[1].label("rep_id"),
     ).filter(
         Bridge.latitude.isnot(None),
         Bridge.latitude.between(bounds_sw_lat, bounds_ne_lat),

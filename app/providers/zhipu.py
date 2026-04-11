@@ -91,6 +91,13 @@ class ZhipuProvider(LLMProvider):
 
             return embeddings
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_http_error),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
     async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
         base = self.CHAT_BASE_URL or self.BASE_URL
         async with httpx.AsyncClient() as client:
