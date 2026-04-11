@@ -67,10 +67,58 @@ def test_clusters_endpoint_returns_200_with_uuid_bridges(client, db_session):
     assert "clusters" in data
     assert "points" in data
 
-    # Both bridges exist in bounds -- whether they cluster or show as points
-    # depends on grid_size at zoom=4, but either way the SQL must execute.
+    # Both bridges exist in bounds and land in different grid cells at
+    # zoom=4 (grid_size=11.25); they surface as two points, not a cluster.
     total = len(data["clusters"]) + len(data["points"])
-    assert total >= 1
+    assert total == 2, f"expected both bridges, got {data}"
+    # Every point/cluster must have a non-null representative id
+    all_reps = [p["id"] for p in data["points"]] + [
+        c["representative"]["id"] for c in data["clusters"] if c.get("representative")
+    ]
+    assert None not in all_reps
+    assert set(all_reps) == {str(b1.id), str(b2.id)}
+
+
+def test_clusters_endpoint_aggregates_multiple_bridges_in_same_cell(client, db_session):
+    """cnt>1 branch: multiple bridges in one grid cell yield ONE cluster.
+
+    This is the branch the original test never exercised — ``array_agg[1]``
+    is only meaningful when the group has >1 rows. At zoom=4, grid_size
+    is 180/16 = 11.25°; both bridges below fall into bucket (2, 9).
+    """
+    _reset_bridges(db_session)
+    b1 = Bridge(
+        name="桥A", bridge_type="石拱桥",
+        latitude=30.1, longitude=110.1, era="宋", region="华中",
+    )
+    b2 = Bridge(
+        name="桥B", bridge_type="石拱桥",
+        latitude=30.5, longitude=110.8, era="宋", region="华中",
+    )
+    db_session.add_all([b1, b2])
+    db_session.flush()
+
+    response = client.get(
+        "/api/mobile/v1/bridges/clusters",
+        params={
+            "bounds_sw_lat": 20,
+            "bounds_sw_lng": 100,
+            "bounds_ne_lat": 40,
+            "bounds_ne_lng": 120,
+            "zoom": 4,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    # Both bridges in the same cell -> exactly one cluster, count=2
+    assert len(data["clusters"]) == 1
+    assert data["clusters"][0]["count"] == 2
+    # representative.id must be one of the two bridge UUIDs
+    rep = data["clusters"][0]["representative"]
+    assert rep is not None
+    assert rep["id"] in {str(b1.id), str(b2.id)}
+    assert rep["name"] in {"桥A", "桥B"}
 
 
 def test_clusters_endpoint_returns_representative_id(client, db_session):

@@ -99,13 +99,31 @@ class IngestTaskService:
             raise ValueError(f"IngestTask {task_id} not found")
         return task
 
-    def _fail(self, task: IngestTask, error: str) -> None:
+    @staticmethod
+    def _format_exception(exc: BaseException) -> str:
+        """Build a non-empty, typed error message for ``task.error_message``.
+
+        ``str(httpx.ReadTimeout())`` and some other httpx exceptions return
+        an empty string — writing that to ``task.error_message`` leaves
+        the admin UI showing a blank failure reason. Always prefix with
+        the exception class name so the message is never empty.
+        """
+        body = str(exc).strip()
+        cls = type(exc).__name__
+        return f"{cls}: {body}" if body else cls
+
+    def _fail(self, task: IngestTask, error: str | BaseException) -> None:
+        error_msg = (
+            self._format_exception(error)
+            if isinstance(error, BaseException)
+            else (error or "Unknown error")
+        )
         try:
             task.status = "failed"
-            task.error_message = error
+            task.error_message = error_msg
             self.db.commit()
 
-            self._audit(task, AuditService.INGEST_FAILED, {"error": error[:500]})
+            self._audit(task, AuditService.INGEST_FAILED, {"error": error_msg[:500]})
             self.db.commit()
         except Exception:
             self.db.rollback()
@@ -113,10 +131,10 @@ class IngestTaskService:
                 "IngestTask %s: failed to persist status='failed' to DB "
                 "(original error: %s)",
                 task.id,
-                error[:200],
+                error_msg[:200],
             )
             return
-        logger.error("IngestTask %s failed: %s", task.id, error)
+        logger.error("IngestTask %s failed: %s", task.id, error_msg)
 
     def _audit(self, task: IngestTask, action: str, detail: dict | None = None) -> None:
         """Log an audit event for this task."""
@@ -164,7 +182,7 @@ class IngestTaskService:
             self.db.commit()
 
         except Exception as e:
-            self._fail(task, str(e))
+            self._fail(task, e)
 
     async def _parse_pdf(self, task: IngestTask, file_bytes: bytes) -> None:
         """Submit PDF to Zhipu and poll for result."""
@@ -428,4 +446,4 @@ class IngestTaskService:
             self.db.commit()
 
         except Exception as e:
-            self._fail(task, str(e))
+            self._fail(task, e)

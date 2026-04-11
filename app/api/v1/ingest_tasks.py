@@ -1,14 +1,19 @@
 """Ingest tasks API endpoints -- async multi-stage ingest pipeline."""
+import logging
 import re
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.api.v1.schemas.ingest_task import (
+    BatchDeleteFailure,
     BatchDeleteRequest,
     BatchDeleteResponse,
     DownloadUrlResponse,
@@ -100,31 +105,68 @@ def _task_to_detail(task: IngestTask) -> dict:
     }
 
 
-def _cleanup_task_data(db: Session, task: IngestTask) -> None:
-    """Clean up chunks, bridge links, and source associated with a task.
+class CleanupError(Exception):
+    """Raised when _cleanup_task_data cannot complete atomically.
 
-    Order matters: must clear ``task.source_id`` and flush BEFORE deleting
-    the source row. Otherwise Postgres IMMEDIATE FK check sees ``ingest_tasks``
-    still referencing the source (via the task's own dirty-but-unflushed column)
-    and raises ForeignKeyViolation on ``ingest_tasks_source_id_fkey``.
+    Wraps the underlying ``SQLAlchemyError`` with task/source context so
+    callers can surface an actionable message instead of a bare 500.
     """
-    if task.source_id:
-        source_id = task.source_id
-        db.query(ChunkBridgeLink).filter(
-            ChunkBridgeLink.chunk_id.in_(
-                db.query(Chunk.id).filter(Chunk.source_id == source_id)
+
+    def __init__(self, task_id: UUID, source_id: UUID | None, cause: Exception):
+        self.task_id = task_id
+        self.source_id = source_id
+        self.cause = cause
+        super().__init__(
+            f"cleanup failed for task {task_id} (source {source_id}): {cause}"
+        )
+
+
+def _cleanup_task_data(db: Session, task: IngestTask) -> None:
+    """Detach ``task`` from its source and delete the source + chunks + links.
+
+    Order matters: the task row in ``ingest_tasks`` on disk still holds the
+    committed ``source_id``, so a naive ``DELETE FROM sources`` fails the
+    (non-deferrable) ``ingest_tasks_source_id_fkey`` foreign key check.
+    We must UPDATE ``ingest_tasks.source_id = NULL`` and flush it before the
+    Source delete hits the DB.
+
+    Runs inside a ``db.begin_nested()`` savepoint so that any failure
+    (flush error, DELETE conflict, deadlock) rolls back ONLY this unit of work
+    and surfaces a typed :class:`CleanupError` instead of leaving the outer
+    transaction in a half-state with inconsistent in-memory object fields.
+    Callers are expected to catch ``CleanupError`` and translate to an HTTP
+    error without committing.
+    """
+    if not task.source_id:
+        return
+
+    source_id = task.source_id
+    original_source_id = source_id  # for rollback of the ORM attribute
+    try:
+        with db.begin_nested():
+            db.query(ChunkBridgeLink).filter(
+                ChunkBridgeLink.chunk_id.in_(
+                    db.query(Chunk.id).filter(Chunk.source_id == source_id)
+                )
+            ).delete(synchronize_session=False)
+            db.query(Chunk).filter(Chunk.source_id == source_id).delete(
+                synchronize_session=False
             )
-        ).delete(synchronize_session=False)
-        db.query(Chunk).filter(Chunk.source_id == source_id).delete(
-            synchronize_session=False
+            # Detach task from source and flush the UPDATE to the DB
+            # before deleting the source itself.
+            task.source_id = None
+            db.flush()
+            db.query(Source).filter(Source.id == source_id).delete(
+                synchronize_session=False
+            )
+    except SQLAlchemyError as exc:
+        # Restore the ORM attribute so in-memory state matches the DB
+        # after the savepoint rollback.
+        task.source_id = original_source_id
+        logger.exception(
+            "cleanup failed task=%s source=%s", task.id, source_id
         )
-        # Detach task from source and flush the UPDATE to the DB
-        # before deleting the source itself.
-        task.source_id = None
-        db.flush()
-        db.query(Source).filter(Source.id == source_id).delete(
-            synchronize_session=False
-        )
+        raise CleanupError(task.id, source_id, exc) from exc
 
 
 # IMPORTANT: literal routes MUST come before parametric routes
@@ -253,9 +295,16 @@ def batch_delete_ingest_tasks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Soft-delete multiple ingest tasks."""
+    """Soft-delete multiple ingest tasks.
+
+    Each task is cleaned inside ``_cleanup_task_data``'s own savepoint, so
+    a failure on one task no longer nukes the rest of the batch. Tasks that
+    cleanup fails on are reported via the ``failed`` field with a human
+    reason; ``skipped`` is reserved for "not found" / "still running".
+    """
     deleted: list[UUID] = []
     skipped: list[UUID] = []
+    failed: list[BatchDeleteFailure] = []
 
     for tid in body.task_ids:
         task = db.get(IngestTask, tid)
@@ -266,7 +315,12 @@ def batch_delete_ingest_tasks(
             skipped.append(tid)
             continue
 
-        _cleanup_task_data(db, task)
+        try:
+            _cleanup_task_data(db, task)
+        except CleanupError as exc:
+            failed.append(BatchDeleteFailure(task_id=tid, reason=str(exc.cause)))
+            continue
+
         task.status = "deleted"
 
         AuditService.log(
@@ -281,7 +335,7 @@ def batch_delete_ingest_tasks(
         deleted.append(tid)
 
     db.commit()
-    return BatchDeleteResponse(deleted=deleted, skipped=skipped)
+    return BatchDeleteResponse(deleted=deleted, skipped=skipped, failed=failed)
 
 
 # Parametric routes below literal routes
@@ -380,7 +434,10 @@ def retry_ingest_task(
             f"Cannot retry task in '{task.status}' state -- only failed or deleted tasks can be retried",
         )
 
-    _cleanup_task_data(db, task)
+    try:
+        _cleanup_task_data(db, task)
+    except CleanupError as exc:
+        raise HTTPException(500, str(exc)) from exc
 
     task.status = "syncing"
     task.error_message = None
@@ -423,7 +480,10 @@ def delete_ingest_task(
             f"Cannot delete task in '{task.status}' state -- wait for completion or failure",
         )
 
-    _cleanup_task_data(db, task)
+    try:
+        _cleanup_task_data(db, task)
+    except CleanupError as exc:
+        raise HTTPException(500, str(exc)) from exc
 
     task.status = "deleted"
 

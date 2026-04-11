@@ -1,14 +1,36 @@
 import httpx
 import pytest
+from tenacity import wait_none
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.constants import EMBEDDING_DIM
 from app.providers import ChatMessage, ZhipuProvider
+from app.providers.zhipu_coding import ZhipuCodingProvider
 
 
 @pytest.fixture
 def provider():
     return ZhipuProvider()
+
+
+@pytest.fixture
+def fast_retry_provider(provider):
+    """Disable tenacity backoff on provider.chat / provider.embed.
+
+    ``monkeypatch(tenacity.nap.sleep)`` is a no-op for async retries
+    (the async path dispatches via ``tenacity.asyncio._portable_async_sleep``).
+    Replacing ``.retry.wait`` with ``wait_none()`` works regardless of sync
+    vs async because it's consulted by both Retrying and AsyncRetrying.
+    """
+    original_chat_wait = provider.chat.retry.wait
+    original_embed_wait = provider.embed.retry.wait
+    provider.chat.retry.wait = wait_none()
+    provider.embed.retry.wait = wait_none()
+    try:
+        yield provider
+    finally:
+        provider.chat.retry.wait = original_chat_wait
+        provider.embed.retry.wait = original_embed_wait
 
 
 def test_provider_has_required_methods(provider):
@@ -91,103 +113,174 @@ def _make_chat_success_response() -> MagicMock:
     return resp
 
 
-@pytest.mark.asyncio
-async def test_chat_retries_on_429_then_succeeds(provider, monkeypatch):
-    """chat() should retry on 429 and succeed on a later attempt."""
-    # Speed up retries: override tenacity sleep to a no-op
-    import tenacity
-    monkeypatch.setattr(tenacity.nap, "sleep", lambda _s: None)
+def _failing_http_response(status_code: int) -> MagicMock:
+    err = _make_http_error(status_code)
+    failing = MagicMock()
+    failing.raise_for_status = MagicMock(side_effect=err)
+    return failing
 
+
+# --- Sanity: the decorator is actually there (prevent silent removal) ---
+
+
+def test_chat_has_retry_decorator():
+    """Lock the invariant: chat() must remain @retry-decorated."""
+    assert hasattr(ZhipuProvider.chat, "retry"), "chat() must be @retry-decorated"
+    assert ZhipuProvider.chat.retry.stop.max_attempt_number == 3
+
+
+def test_embed_has_retry_decorator():
+    assert hasattr(ZhipuProvider.embed, "retry"), "embed() must be @retry-decorated"
+    assert ZhipuProvider.embed.retry.stop.max_attempt_number == 3
+
+
+def test_coding_provider_inherits_chat_retry():
+    """ZhipuCodingProvider inherits chat unchanged, so it inherits the @retry decorator too."""
+    # The decorated function object is shared via inheritance
+    assert ZhipuCodingProvider.chat is ZhipuProvider.chat
+    assert hasattr(ZhipuCodingProvider.chat, "retry")
+
+
+# --- Retry on HTTPStatusError ---
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_on_429_then_succeeds(fast_retry_provider):
+    """chat() should retry on 429 and succeed on a later attempt."""
     call_count = {"n": 0}
 
     def side_effect(*_args, **_kwargs):
         call_count["n"] += 1
         if call_count["n"] < 3:
-            err = _make_http_error(429)
-            failing = MagicMock()
-            failing.raise_for_status = MagicMock(side_effect=err)
-            return failing
+            return _failing_http_response(429)
         return _make_chat_success_response()
 
     with patch("httpx.AsyncClient") as mock_client:
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
 
-        result = await provider.chat([ChatMessage(role="user", content="hi")])
+        result = await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
 
     assert result.content == "ok"
     assert call_count["n"] == 3  # 2 failures + 1 success
 
 
 @pytest.mark.asyncio
-async def test_chat_retries_on_500_then_succeeds(provider, monkeypatch):
+async def test_chat_retries_on_500_then_succeeds(fast_retry_provider):
     """chat() should retry on 5xx errors."""
-    import tenacity
-    monkeypatch.setattr(tenacity.nap, "sleep", lambda _s: None)
-
     call_count = {"n": 0}
 
     def side_effect(*_args, **_kwargs):
         call_count["n"] += 1
         if call_count["n"] < 2:
-            err = _make_http_error(503)
-            failing = MagicMock()
-            failing.raise_for_status = MagicMock(side_effect=err)
-            return failing
+            return _failing_http_response(503)
         return _make_chat_success_response()
 
     with patch("httpx.AsyncClient") as mock_client:
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
 
-        result = await provider.chat([ChatMessage(role="user", content="hi")])
+        result = await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
 
     assert result.content == "ok"
     assert call_count["n"] == 2
 
 
 @pytest.mark.asyncio
-async def test_chat_gives_up_after_max_attempts(provider, monkeypatch):
+async def test_chat_gives_up_after_max_attempts(fast_retry_provider):
     """chat() should stop retrying after stop_after_attempt(3) and reraise."""
-    import tenacity
-    monkeypatch.setattr(tenacity.nap, "sleep", lambda _s: None)
-
     call_count = {"n": 0}
+    max_attempts = fast_retry_provider.chat.retry.stop.max_attempt_number
 
     def side_effect(*_args, **_kwargs):
         call_count["n"] += 1
-        err = _make_http_error(429)
-        failing = MagicMock()
-        failing.raise_for_status = MagicMock(side_effect=err)
-        return failing
+        return _failing_http_response(429)
 
     with patch("httpx.AsyncClient") as mock_client:
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
 
         with pytest.raises(httpx.HTTPStatusError) as excinfo:
-            await provider.chat([ChatMessage(role="user", content="hi")])
+            await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
 
     assert excinfo.value.response.status_code == 429
-    assert call_count["n"] == 3  # stop_after_attempt(3)
+    assert call_count["n"] == max_attempts
 
 
 @pytest.mark.asyncio
-async def test_chat_does_not_retry_on_4xx_non_429(provider, monkeypatch):
-    """chat() should NOT retry on 400/401/404 (non-retryable client errors)."""
-    import tenacity
-    monkeypatch.setattr(tenacity.nap, "sleep", lambda _s: None)
-
+@pytest.mark.parametrize("status_code", [400, 401, 403, 404, 422])
+async def test_chat_does_not_retry_on_non_retryable_4xx(fast_retry_provider, status_code):
+    """chat() must not retry on non-429 4xx responses -- they will never self-heal."""
     call_count = {"n": 0}
 
     def side_effect(*_args, **_kwargs):
         call_count["n"] += 1
-        err = _make_http_error(401)
-        failing = MagicMock()
-        failing.raise_for_status = MagicMock(side_effect=err)
-        return failing
+        return _failing_http_response(status_code)
 
     with patch("httpx.AsyncClient") as mock_client:
         mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
 
         with pytest.raises(httpx.HTTPStatusError):
-            await provider.chat([ChatMessage(role="user", content="hi")])
+            await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
 
-    assert call_count["n"] == 1  # no retry on 401
+    assert call_count["n"] == 1
+
+
+# --- Retry on transport errors (issue #148 Bug #1 — the dominant real failure mode) ---
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_on_read_timeout(fast_retry_provider):
+    """ReadTimeout is the dominant failure mode for long GLM prompts. Must retry."""
+    call_count = {"n": 0}
+
+    def side_effect(*_args, **_kwargs):
+        call_count["n"] += 1
+        if call_count["n"] < 2:
+            raise httpx.ReadTimeout("gateway timed out")
+        return _make_chat_success_response()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
+
+        result = await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
+
+    assert result.content == "ok"
+    assert call_count["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_on_connect_error(fast_retry_provider):
+    """ConnectError (DNS / TCP handshake) must retry."""
+    call_count = {"n": 0}
+
+    def side_effect(*_args, **_kwargs):
+        call_count["n"] += 1
+        if call_count["n"] < 2:
+            raise httpx.ConnectError("name resolution failed")
+        return _make_chat_success_response()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
+
+        result = await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
+
+    assert result.content == "ok"
+    assert call_count["n"] == 2
+
+
+@pytest.mark.asyncio
+async def test_chat_retries_on_pool_timeout(fast_retry_provider):
+    """PoolTimeout (httpx pool exhausted) must retry."""
+    call_count = {"n": 0}
+    max_attempts = fast_retry_provider.chat.retry.stop.max_attempt_number
+
+    def side_effect(*_args, **_kwargs):
+        call_count["n"] += 1
+        raise httpx.PoolTimeout("pool exhausted")
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=side_effect)
+
+        with pytest.raises(httpx.PoolTimeout):
+            await fast_retry_provider.chat([ChatMessage(role="user", content="hi")])
+
+    # Exhaust all attempts -- proves transport errors use the same budget
+    assert call_count["n"] == max_attempts
