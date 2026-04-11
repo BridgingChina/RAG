@@ -74,9 +74,11 @@ export interface IngestResponse {
 
 export type IngestTaskStatus =
   | "uploading"
+  | "queued"              // issue #152 — waiting for scheduler to run sync_and_parse
   | "syncing"
   | "parsing"
   | "chunked"
+  | "queued_for_indexing" // issue #152 — waiting for scheduler to run indexing
   | "indexing"
   | "completed"
   | "failed"
