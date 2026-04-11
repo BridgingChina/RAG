@@ -122,16 +122,19 @@ def _failing_http_response(status_code: int) -> MagicMock:
 
 # --- Sanity: the decorator is actually there (prevent silent removal) ---
 
+# Keep in sync with the tenacity @retry decorator on ZhipuProvider.chat/embed.
+EXPECTED_MAX_ATTEMPTS = 5
+
 
 def test_chat_has_retry_decorator():
     """Lock the invariant: chat() must remain @retry-decorated."""
     assert hasattr(ZhipuProvider.chat, "retry"), "chat() must be @retry-decorated"
-    assert ZhipuProvider.chat.retry.stop.max_attempt_number == 3
+    assert ZhipuProvider.chat.retry.stop.max_attempt_number == EXPECTED_MAX_ATTEMPTS
 
 
 def test_embed_has_retry_decorator():
     assert hasattr(ZhipuProvider.embed, "retry"), "embed() must be @retry-decorated"
-    assert ZhipuProvider.embed.retry.stop.max_attempt_number == 3
+    assert ZhipuProvider.embed.retry.stop.max_attempt_number == EXPECTED_MAX_ATTEMPTS
 
 
 def test_coding_provider_inherits_chat_retry():

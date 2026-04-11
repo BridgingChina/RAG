@@ -6,7 +6,7 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
+    wait_random_exponential,
 )
 
 from app.core.config import settings
@@ -81,8 +81,15 @@ class ZhipuProvider(LLMProvider):
         }
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
+        # 5 attempts so the exponential schedule can reach the ~120s mark
+        # at least once. Zhipu 429 cooldown windows are typically 60-120s,
+        # so `max=30` with `stop_after_attempt(3)` was nowhere near enough
+        # when a concurrent burst of ingest tasks hit the rate limiter.
+        stop=stop_after_attempt(5),
+        # ``wait_random_exponential`` adds jitter on top of exponential
+        # backoff, which prevents a thundering-herd re-collision when many
+        # concurrent calls all wake up from the same backoff window.
+        wait=wait_random_exponential(multiplier=2, max=120),
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
@@ -132,8 +139,15 @@ class ZhipuProvider(LLMProvider):
             return embeddings
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
+        # 5 attempts so the exponential schedule can reach the ~120s mark
+        # at least once. Zhipu 429 cooldown windows are typically 60-120s,
+        # so `max=30` with `stop_after_attempt(3)` was nowhere near enough
+        # when a concurrent burst of ingest tasks hit the rate limiter.
+        stop=stop_after_attempt(5),
+        # ``wait_random_exponential`` adds jitter on top of exponential
+        # backoff, which prevents a thundering-herd re-collision when many
+        # concurrent calls all wake up from the same backoff window.
+        wait=wait_random_exponential(multiplier=2, max=120),
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
