@@ -36,11 +36,32 @@ async def lifespan(app: FastAPI):
         raise
 
     import asyncio as _asyncio
+    from app.services.ingest_scheduler import ingest_scheduler_loop
     from app.services.reindex_cron import reindex_cron_loop, uploading_cleanup_loop
     _asyncio.get_event_loop().create_task(reindex_cron_loop())
     _asyncio.get_event_loop().create_task(uploading_cleanup_loop())
+
+    # Scheduler loop: wire a done-callback so a silent coroutine death
+    # surfaces as a CRITICAL log (instead of the entire ingest pipeline
+    # stalling unnoticed — see PR #153 silent-failure review C3).
+    scheduler_task = _asyncio.get_event_loop().create_task(ingest_scheduler_loop())
+
+    def _on_scheduler_done(t: _asyncio.Task) -> None:
+        if t.cancelled():
+            logger.info("Ingest scheduler cancelled (shutdown)")
+            return
+        exc = t.exception()
+        logger.critical(
+            "INGEST SCHEDULER LOOP DIED -- queued tasks will NOT be dispatched "
+            "until the process restarts. Investigate immediately.",
+            exc_info=exc,
+        )
+
+    scheduler_task.add_done_callback(_on_scheduler_done)
+
     logger.info("Reindex cron task scheduled")
     logger.info("Uploading cleanup task scheduled")
+    logger.info("Ingest scheduler task scheduled")
 
     yield
 

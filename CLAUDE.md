@@ -110,7 +110,8 @@ The system uses automatic schema versioning:
 - `app/services/ranker.py` — RRF 算法 + `apply_diversity()` 多样性约束（analogy 通道限每桥 1 条）
 - `app/services/generator.py` — 基于证据生成回答，输出引用和置信度
 - `app/services/chunk_editor.py` — Chunk 手动校对服务：content 编辑（重算 search_text/tsv）、bridge_links 替换、split/merge、批量 reindex。编辑后设 `needs_reindex=True`
-- `app/services/reindex_cron.py` — 后台 cron 任务：每日 03:00 重建 stale chunks 的 search_text + tsv（不含 embedding）；每 30 分钟清理超时 uploading 任务（`uploading_cleanup_loop`）
+- `app/services/reindex_cron.py` — 后台 cron 任务：每日 03:00 重建 stale chunks 的 search_text + tsv（不含 embedding）；每 30 分钟调用 `uploading_cleanup_loop`，同时清理超时 uploading 任务 + 超时 running 任务（`cleanup_stale_running_tasks`，防止 scheduler 死锁）
+- `app/services/ingest_scheduler.py` — Ingest 全局并发调度器（issue #152）。`ingest_scheduler_loop` 每 5s 跑一次 `_scheduler_tick`：Postgres advisory lock (`pg_try_advisory_xact_lock(494956380)`) 选主，统计 RUNNING_STATUSES 任务数，拉起最多 `settings.ingest_max_concurrent - running` 条 queued/queued_for_indexing 任务，原子翻状态 + `asyncio.create_task` 派发 `_run_sync_and_parse` / `_run_indexing`。FIFO 排序按 `updated_at.asc()`
 - `app/core/rate_limit.py` — Shared slowapi `Limiter` singleton (60 req/min/IP default). Import `limiter` to add `@limiter.limit()` on endpoints. `/health` is exempt
 - `app/core/cache_middleware.py` — `MobileCacheMiddleware` adds `Cache-Control: public, max-age=300` to public mobile GET endpoints. Excludes device-specific paths (favorites/review/history)
 - `app/api/v1/pagination.py` — `paginate(query, page, page_size, item_mapper)` helper for all list endpoints — do not reimplement pagination boilerplate
@@ -135,7 +136,7 @@ The system uses automatic schema versioning:
 - `sources` — 来源元信息
 - `users` — 用户账户（username/hashed_password/display_name/is_active）
 - `audit_logs` — 审计日志（user_id/action/resource_type/resource_id/detail/ip_address）
-- `ingest_tasks` — 异步入库任务（status/file_name/file_type/r2_raw_key/zhipu_task_id/source_id/parsed_content）
+- `ingest_tasks` — 异步入库任务（status/file_name/file_type/r2_raw_key/zhipu_task_id/source_id/parsed_content）。**状态机 (#152 之后)**：`uploading → queued → syncing → parsing → chunked → queued_for_indexing → indexing → completed`；失败/软删支路：`failed` / `deleted`。`queued` / `queued_for_indexing` 是**待调度**，不算 RUNNING_STATUSES（`app/api/v1/ingest_tasks.py:38` 只含 `syncing/parsing/indexing`），允许用户 delete；只有 scheduler 能把它们翻成 running 状态
 - `knowledge_points` — 知识点实体（name/aliases/difficulty/summary/l2_content JSONB），挂在 taxonomy_nodes lvl3 下
 - `knowledge_point_key_points` — 知识点要点（summary/explanation/order_index/chunk_ids[]），ON DELETE CASCADE
 - `flashcards` — 闪卡内容（card_type/front_title/back_answer/back_key_features），FK → knowledge_points + bridges(SET NULL)
@@ -243,6 +244,15 @@ title: 资料标题
 - slowapi `Limiter` must be a single shared instance (`app/core/rate_limit.py`) — creating a second `Limiter` in endpoint modules won't share state with `app.state.limiter`
 - `/health` is `@limiter.exempt` — do not remove, or load balancer probes will get 429'd
 - `bridge_resolver.py` caches bridge `(id, name)` pairs for `resolve_bridge_from_question` (TTL 5 min, `threading.Lock`). Bridge write endpoints must call `invalidate_bridge_cache()` after commit
+- Ingest scheduler (issue #152) is the **only** place that should call `_run_sync_and_parse` / `_run_indexing` — `/retry`, `/confirm`, `create_ingest_task` endpoints are pure "enqueue" (set `queued` / `queued_for_indexing` and return). Adding a new endpoint that dispatches directly via `BackgroundTasks.add_task` bypasses the global concurrency limit and will burst-429 Zhipu
+- `ingest_scheduler_loop` uses **tx-scoped** `pg_advisory_xact_lock(494956380)` — separate lock ID from `database.py`'s init lock (606059278). Lock releases on commit/rollback; do not switch to session-scoped unless you also add explicit release on shutdown
+- Scheduler test isolation — `conftest.db_session` uses connection-level rollback, which the scheduler's own `SessionLocal()` can't see. Scheduler integration tests in `tests/integration/test_ingest_scheduler_e2e.py` use a dedicated `real_db` fixture that commits real data and cleans up by filename prefix (`scheduler_e2e_`). Don't copy `db_session` into new scheduler tests
+- **Test fixture isolation generalized**: any code that opens its own `SessionLocal()` (scheduler, cron, background runners) CAN'T see in-flight data from `conftest.db_session`'s rollback fixture — they're on separate connections. Integration tests that exercise such code must use the `real_db` pattern: commit real rows, clean up by filename prefix on teardown
+- `tests/integration/test_database_init_integration.py::test_hnsw_index_created` calls `Base.metadata.drop_all + create_all` — after a full pytest run, the local DB may be missing FKs (e.g. `ingest_tasks_source_id_fkey`) that were added to models after the initial `create_all`. Integration fixtures that need tables should defensively call `Base.metadata.create_all(engine)` at fixture entry. Full resync: `python3 -c "from app.models import Base; from app.core.database import engine, init_database; Base.metadata.drop_all(engine); init_database()"`
+- `logger.info("IngestTask %d: ...", task.id)` with `task.id: uuid.UUID` silently drops the log record — Python logging's `handleError` catches the `TypeError` and writes a traceback to stderr. ALWAYS use `%s` for UUIDs in log format strings. Batch 0 UUID migration residue still exists in some modules
+- Naked `asyncio.create_task(coro)` discards the handle — asyncio only keeps weak references, so GC can cancel in-flight tasks. For long-lived dispatched coroutines (ingest scheduler dispatch), use the `_schedule_runner` + `_dispatched_tasks: set[Task]` pattern in `app/services/ingest_scheduler.py`, and attach a done-callback that marks the task failed out-of-band on runner crashes (exceptions BEFORE the runner's own try block bypass `IngestTaskService._fail`)
+- tenacity async retry mocking: `monkeypatch(tenacity.nap.sleep)` is a no-op for async code — the async path uses `tenacity.asyncio._portable_async_sleep`. Patch via the public `.retry` attribute: `provider.chat.retry.wait = wait_none()` (see `tests/test_providers.py::fast_retry_provider`). A retry test that suspiciously runs in 10+ seconds is proof your sleep mock is not actually engaged
+- Production debug without HTTP auth: `ssh netcup "docker exec bridge_rag_api python3 -c '...'"` runs arbitrary Python inside the API container and bypasses JWT middleware. Critical for RCA when reproducing a bug would otherwise require crafting an auth token. Use `db.rollback()` at the end of a read-only debug script to guarantee zero production mutation
 
 ## Worktrees
 

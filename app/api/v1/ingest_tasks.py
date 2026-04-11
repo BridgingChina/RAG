@@ -3,7 +3,7 @@ import logging
 import re
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ from app.api.v1.schemas.ingest_task import (
 )
 from app.core.database import get_db
 from app.models import Chunk, ChunkBridgeLink, Source, User
-from app.models.ingest_task import IngestTask
+from app.models.ingest_task import RUNNING_STATUSES, IngestTask
 from app.providers import get_provider
 from app.providers.file_parser import FileParserProvider
 from app.services.audit_service import AuditService
@@ -35,7 +35,6 @@ from app.services.r2_storage import R2StorageService
 router = APIRouter(prefix="/ingest-tasks")
 
 ALLOWED_FILE_TYPES = {"pdf", "md"}
-RUNNING_STATUSES = {"syncing", "parsing", "indexing"}
 
 
 def _get_r2() -> R2StorageService:
@@ -216,7 +215,6 @@ def presign(
 @router.post("", response_model=IngestTaskDetail)
 def create_ingest_task(
     body: IngestTaskCreate,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -240,7 +238,10 @@ def create_ingest_task(
             400, f"Task is in '{task.status}' state, expected 'uploading'"
         )
 
-    task.status = "syncing"
+    # Enqueue only — the ingest scheduler (issue #152) picks up queued
+    # tasks respecting the global concurrency budget and dispatches
+    # _run_sync_and_parse when capacity allows.
+    task.status = "queued"
     db.flush()
 
     AuditService.log(
@@ -253,8 +254,6 @@ def create_ingest_task(
         ip_address=get_client_ip(request),
     )
     db.commit()
-
-    background_tasks.add_task(_run_sync_and_parse, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -357,12 +356,15 @@ def get_ingest_task(
 @router.post("/{task_id}/confirm", response_model=IngestTaskDetail)
 def confirm_ingest_task(
     task_id: UUID,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """User confirms chunks are ready -- start indexing (embedding + tagging)."""
+    """User confirms chunks are ready -- enqueue for indexing.
+
+    The actual ``_run_indexing`` dispatch happens in the ingest scheduler
+    (issue #152) when capacity allows.
+    """
     task = db.get(IngestTask, task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
@@ -372,7 +374,7 @@ def confirm_ingest_task(
             400, f"Task is in '{task.status}' state, expected 'chunked'"
         )
 
-    task.status = "indexing"
+    task.status = "queued_for_indexing"
     db.flush()
 
     AuditService.log(
@@ -384,8 +386,6 @@ def confirm_ingest_task(
         ip_address=get_client_ip(request),
     )
     db.commit()
-
-    background_tasks.add_task(_run_indexing, task.id, current_user.id, get_client_ip(request))
 
     return IngestTaskDetail(**_task_to_detail(task))
 
@@ -418,12 +418,17 @@ def get_download_url(
 @router.post("/{task_id}/retry", response_model=IngestTaskDetail)
 def retry_ingest_task(
     task_id: UUID,
-    background_tasks: BackgroundTasks,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Reset a failed/deleted task and re-run the pipeline."""
+    """Reset a failed/deleted task and re-enqueue the pipeline.
+
+    The cleanup runs inline (savepoint-protected) but the actual
+    ``_run_sync_and_parse`` dispatch is handled by the ingest scheduler
+    (issue #152) so concurrent retries are serialised through the
+    global concurrency budget instead of saturating Zhipu's rate limit.
+    """
     task = db.get(IngestTask, task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
@@ -439,7 +444,7 @@ def retry_ingest_task(
     except CleanupError as exc:
         raise HTTPException(500, str(exc)) from exc
 
-    task.status = "syncing"
+    task.status = "queued"
     task.error_message = None
     task.chunk_count = None
     task.parsed_content = None
@@ -457,8 +462,6 @@ def retry_ingest_task(
     )
     db.commit()
 
-    background_tasks.add_task(_run_sync_and_parse, task.id, current_user.id, get_client_ip(request))
-
     return IngestTaskDetail(**_task_to_detail(task))
 
 
@@ -474,7 +477,7 @@ def delete_ingest_task(
     if task is None:
         raise HTTPException(404, "Task not found")
 
-    if task.status in ("syncing", "parsing", "indexing"):
+    if task.status in RUNNING_STATUSES:
         raise HTTPException(
             400,
             f"Cannot delete task in '{task.status}' state -- wait for completion or failure",

@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text as sql_text
 
 from app.core.constants import EMBEDDING_DIM
+from app.core.database import SessionLocal
 from app.core.logging import logger
 from app.models import Chunk, ChunkBridgeLink, Source
-from app.models.ingest_task import IngestTask
+from app.models.ingest_task import RUNNING_STATUSES, IngestTask
 from app.providers.base import LLMProvider
 from app.providers.file_parser import FileParserProvider
 from app.services.audit_service import AuditService
@@ -74,6 +75,49 @@ def cleanup_stale_uploading_tasks(db: Session) -> int:
     return len(stale_tasks)
 
 
+def cleanup_stale_running_tasks(db: Session, max_age_minutes: int = 60) -> int:
+    """Mark tasks stuck in RUNNING_STATUSES longer than ``max_age_minutes``
+    as failed so the ingest scheduler can reclaim their capacity slot.
+
+    A task can get stuck if the dispatched async runner crashed or was
+    killed without writing back ``task.status``. Left alone these tasks
+    block the global concurrency budget and starve queued work. Issue #152.
+
+    ``max_age_minutes`` defaults to 60 — 2x the observed real-world p95
+    (程阳永济桥 took 32.8 min to completion with retries).
+
+    Returns the number of tasks cleaned up.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    stale_tasks = (
+        db.query(IngestTask)
+        .filter(
+            IngestTask.status.in_(RUNNING_STATUSES),
+            IngestTask.updated_at < cutoff,
+        )
+        .all()
+    )
+
+    for task in stale_tasks:
+        previous_status = task.status
+        previous_updated_at = task.updated_at
+        task.status = "failed"
+        task.error_message = (
+            f"Task exceeded max runtime of {max_age_minutes} minutes "
+            f"(stuck in '{previous_status}' since {previous_updated_at.isoformat()})"
+        )
+
+    if stale_tasks:
+        db.commit()
+        logger.info(
+            "Cleaned up %d stale running task(s) older than %d minutes",
+            len(stale_tasks),
+            max_age_minutes,
+        )
+
+    return len(stale_tasks)
+
+
 class IngestTaskService:
     """Orchestrates the multi-stage ingest pipeline."""
 
@@ -113,27 +157,85 @@ class IngestTaskService:
         return f"{cls}: {body}" if body else cls
 
     def _fail(self, task: IngestTask, error: str | BaseException) -> None:
+        """Mark a task as failed, with a last-ditch raw-UPDATE recovery path.
+
+        Split into two commits so a failure persisting the audit log does
+        not un-mark the task:
+
+        1. Primary commit: task.status = 'failed' + error_message. If this
+           fails (DB blip, deadlock, stale session), a fresh SessionLocal
+           runs a raw ``UPDATE`` as a last-ditch recovery. Capacity is
+           reclaimed even in the worst case.
+        2. Audit commit: best-effort. A failure here does NOT re-raise or
+           un-fail the task — just logs a warning.
+
+        Without (1) the #153 silent-failure review's C2 finding bites us:
+        a single ``db.commit()`` failure leaves the task perpetually stuck
+        in a running state until the 60-min stale reaper intervenes.
+        """
         error_msg = (
             self._format_exception(error)
             if isinstance(error, BaseException)
             else (error or "Unknown error")
         )
+        primary_committed = False
         try:
             task.status = "failed"
             task.error_message = error_msg
             self.db.commit()
+            primary_committed = True
+        except Exception:
+            self.db.rollback()
+            logger.exception(
+                "IngestTask %s: primary fail-commit raised; "
+                "attempting out-of-band raw UPDATE recovery",
+                task.id,
+            )
 
+        if not primary_committed:
+            # Last-ditch recovery: brand-new session, raw SQL, no ORM state.
+            try:
+                recovery_db = SessionLocal()
+                try:
+                    recovery_db.execute(
+                        sql_text(
+                            "UPDATE ingest_tasks "
+                            "SET status = 'failed', "
+                            "    error_message = :msg, "
+                            "    updated_at = now() "
+                            "WHERE id = :id"
+                        ),
+                        {"msg": error_msg[:1000], "id": task.id},
+                    )
+                    recovery_db.commit()
+                    logger.error(
+                        "IngestTask %s recovered via out-of-band UPDATE: %s",
+                        task.id,
+                        error_msg,
+                    )
+                finally:
+                    recovery_db.close()
+            except Exception:
+                # The stale reaper (cleanup_stale_running_tasks) is the
+                # last backstop — a task left in running state for 60min
+                # will eventually be reclaimed.
+                logger.exception(
+                    "IngestTask %s: out-of-band recovery ALSO failed; "
+                    "stale reaper is the final backstop",
+                    task.id,
+                )
+            return
+
+        # Primary commit succeeded — audit log is best-effort.
+        try:
             self._audit(task, AuditService.INGEST_FAILED, {"error": error_msg[:500]})
             self.db.commit()
         except Exception:
             self.db.rollback()
             logger.exception(
-                "IngestTask %s: failed to persist status='failed' to DB "
-                "(original error: %s)",
+                "IngestTask %s: audit log failed (task already marked failed)",
                 task.id,
-                error_msg[:200],
             )
-            return
         logger.error("IngestTask %s failed: %s", task.id, error_msg)
 
     def _audit(self, task: IngestTask, action: str, detail: dict | None = None) -> None:
@@ -234,7 +336,7 @@ class IngestTaskService:
         if parsed.scheme not in ("https", "http") or parsed.hostname not in ALLOWED_ZHIPU_HOSTS:
             raise ValueError(f"Untrusted download_url: scheme={parsed.scheme} host={parsed.hostname}")
 
-        logger.info("IngestTask %d: downloading zip from Zhipu", task.id)
+        logger.info("IngestTask %s: downloading zip from Zhipu", task.id)
         async with httpx.AsyncClient() as client:
             resp = await client.get(download_url, timeout=120.0)
             resp.raise_for_status()
@@ -246,7 +348,7 @@ class IngestTaskService:
             zip_bytes,
             "application/zip",
         )
-        logger.info("IngestTask %d: zip archived (%d bytes)", task.id, len(zip_bytes))
+        logger.info("IngestTask %s: zip archived (%d bytes)", task.id, len(zip_bytes))
 
         # Extract markdown and images
         parsed_md = ""
@@ -276,7 +378,7 @@ class IngestTaskService:
 
         task.image_count = image_count
         logger.info(
-            "IngestTask %d: extracted %s, %d images",
+            "IngestTask %s: extracted %s, %d images",
             task.id, md_files[0], image_count,
         )
         return parsed_md

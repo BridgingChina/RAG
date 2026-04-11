@@ -249,18 +249,20 @@ def test_retry_endpoint_returns_200_and_resets_task(
     client, db_session, task_with_source
 ):
     """POST /api/v1/ingest-tasks/{id}/retry must return 200 and flip status
-    to 'syncing' (regression for #148 Bug #2 symptom: pre-fix this returned
+    to 'queued' (regression for #148 Bug #2 symptom: pre-fix this returned
     500 ForeignKeyViolation).
+
+    After #152 the retry endpoint is pure enqueue -- the actual dispatch
+    to _run_sync_and_parse happens in the ingest scheduler when capacity
+    allows, so the task reaches 'queued' and NOT 'syncing' immediately.
     """
     task = task_with_source["task"]
 
-    # Stop BackgroundTasks from actually firing the async pipeline
-    with patch("app.api.v1.ingest_tasks._run_sync_and_parse"):
-        response = client.post(f"/api/v1/ingest-tasks/{task.id}/retry")
+    response = client.post(f"/api/v1/ingest-tasks/{task.id}/retry")
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["status"] == "syncing"
+    assert body["status"] == "queued"
     assert body["error_message"] is None
     assert body["source_id"] is None
 
