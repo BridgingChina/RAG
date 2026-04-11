@@ -46,9 +46,11 @@ import type { IngestTaskItem, IngestTaskStatus } from "@/lib/types"
 
 const STATUS_LABELS: Record<IngestTaskStatus, string> = {
   uploading: "上传中",
+  queued: "排队中",
   syncing: "同步中",
   parsing: "解析中",
   chunked: "待确认",
+  queued_for_indexing: "排队中 (待标识)",
   indexing: "标识中",
   completed: "已完成",
   failed: "失败",
@@ -56,7 +58,16 @@ const STATUS_LABELS: Record<IngestTaskStatus, string> = {
 }
 
 function isInProgress(status: IngestTaskStatus): boolean {
-  return ["uploading", "syncing", "parsing", "indexing"].includes(status)
+  // Includes scheduler-queued states (#152) so the UI keeps polling while
+  // tasks wait for the global concurrency slot.
+  return [
+    "uploading",
+    "queued",
+    "syncing",
+    "parsing",
+    "queued_for_indexing",
+    "indexing",
+  ].includes(status)
 }
 
 function formatTime(isoStr: string): string {
