@@ -17,10 +17,21 @@ logger = logging.getLogger(__name__)
 
 
 def _is_retryable_http_error(exc: BaseException) -> bool:
-    """Return True for 429 (rate limit) and 5xx (server) errors."""
+    """Return True for transient upstream/network errors worth retrying.
+
+    Covers three categories:
+    1. 429 rate limit responses.
+    2. 5xx server errors (upstream overload, partial outage).
+    3. httpx transport errors -- ConnectError, ConnectTimeout, ReadTimeout,
+       WriteTimeout, PoolTimeout, RemoteProtocolError, ReadError. These are
+       the dominant failure mode during batch ingest (long GLM prompts often
+       exceed the 60s read timeout and never get an HTTP status back).
+    """
     if isinstance(exc, httpx.HTTPStatusError):
         code = exc.response.status_code
         return code == 429 or code >= 500
+    if isinstance(exc, httpx.TransportError):
+        return True
     return False
 
 
@@ -91,6 +102,13 @@ class ZhipuProvider(LLMProvider):
 
             return embeddings
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        retry=retry_if_exception(_is_retryable_http_error),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+        reraise=True,
+    )
     async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
         base = self.CHAT_BASE_URL or self.BASE_URL
         async with httpx.AsyncClient() as client:

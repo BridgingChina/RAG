@@ -45,9 +45,15 @@ class BatchDeleteRequest(BaseModel):
     task_ids: list[UUID]
 
 
+class BatchDeleteFailure(BaseModel):
+    task_id: UUID
+    reason: str
+
+
 class BatchDeleteResponse(BaseModel):
     deleted: list[UUID]
     skipped: list[UUID]
+    failed: list[BatchDeleteFailure] = []
 
 
 class DownloadUrlResponse(BaseModel):
