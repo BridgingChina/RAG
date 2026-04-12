@@ -61,6 +61,46 @@ INGEST_SCHEDULER_LOCK_ID = 494956380
 _dispatched_tasks: set[asyncio.Task] = set()
 
 
+def _recover_zombie_tasks() -> int:
+    """Re-queue tasks stuck in RUNNING_STATUSES from a previous container.
+
+    On fresh startup no runner coroutines exist yet, so any task in
+    syncing/parsing/indexing is a zombie left by a killed container.
+    Flip them back to queued/queued_for_indexing so the scheduler can
+    re-dispatch. Called once at the top of ``ingest_scheduler_loop``
+    before the first tick.
+    """
+    db = SessionLocal()
+    try:
+        zombies = (
+            db.execute(
+                select(IngestTask).where(IngestTask.status.in_(RUNNING_STATUSES))
+            )
+            .scalars()
+            .all()
+        )
+        if not zombies:
+            return 0
+        for t in zombies:
+            old = t.status
+            # syncing/parsing → queued (re-run sync_and_parse)
+            # indexing → queued_for_indexing (re-run start_indexing)
+            t.status = "queued_for_indexing" if old == "indexing" else "queued"
+            t.error_message = None
+            logger.info(
+                "Recovered zombie task %s (%s): %s → %s",
+                t.id, t.file_name, old, t.status,
+            )
+        db.commit()
+        logger.info("Recovered %d zombie task(s) from previous container", len(zombies))
+        return len(zombies)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 async def ingest_scheduler_loop() -> None:
     """Scheduler main loop — lifespan-level background task.
 
@@ -85,6 +125,20 @@ async def ingest_scheduler_loop() -> None:
         settings.ingest_max_concurrent,
         settings.ingest_scheduler_interval_seconds,
     )
+
+    # Recover zombie tasks left in RUNNING_STATUSES by a previous container
+    # that was killed mid-indexing (e.g. deploy restart). On fresh startup
+    # there cannot be any legitimately running tasks — the runners live in
+    # this process's event loop, which just started.
+    try:
+        _recover_zombie_tasks()
+    except Exception:
+        try:
+            logger.exception("Scheduler startup: zombie recovery failed")
+        except Exception:
+            print("SCHEDULER: zombie recovery failed AND logger broke", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+
     while True:
         try:
             await _scheduler_tick()
