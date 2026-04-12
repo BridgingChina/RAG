@@ -69,22 +69,36 @@ def _recover_zombie_tasks() -> int:
     Flip them back to queued/queued_for_indexing so the scheduler can
     re-dispatch. Called once at the top of ``ingest_scheduler_loop``
     before the first tick.
+
+    Uses the same advisory lock as ``_scheduler_tick`` so that only ONE
+    worker performs recovery. Without the lock, all N uvicorn workers
+    race to recover + dispatch simultaneously, bypassing MAX_CONCURRENT.
     """
     db = SessionLocal()
     try:
+        # Only one worker should do recovery — use the scheduler lock.
+        got_lock = db.execute(
+            text("SELECT pg_try_advisory_xact_lock(:key)"),
+            {"key": INGEST_SCHEDULER_LOCK_ID},
+        ).scalar()
+        if not got_lock:
+            db.rollback()
+            return 0  # another worker is handling recovery
+
         zombies = (
             db.execute(
-                select(IngestTask).where(IngestTask.status.in_(RUNNING_STATUSES))
+                select(IngestTask)
+                .where(IngestTask.status.in_(RUNNING_STATUSES))
+                .with_for_update(skip_locked=True)
             )
             .scalars()
             .all()
         )
         if not zombies:
+            db.commit()  # release lock
             return 0
         for t in zombies:
             old = t.status
-            # syncing/parsing → queued (re-run sync_and_parse)
-            # indexing → queued_for_indexing (re-run start_indexing)
             t.status = "queued_for_indexing" if old == "indexing" else "queued"
             t.error_message = None
             logger.info(
