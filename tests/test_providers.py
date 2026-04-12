@@ -123,7 +123,7 @@ def _failing_http_response(status_code: int) -> MagicMock:
 # --- Sanity: the decorator is actually there (prevent silent removal) ---
 
 # Keep in sync with the tenacity @retry decorator on ZhipuProvider.chat/embed.
-EXPECTED_MAX_ATTEMPTS = 5
+EXPECTED_MAX_ATTEMPTS = 7
 
 
 def test_chat_has_retry_decorator():

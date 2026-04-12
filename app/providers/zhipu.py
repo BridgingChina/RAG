@@ -84,7 +84,7 @@ class ZhipuProvider(LLMProvider):
     @retry(
         # 5 attempts so the exponential schedule can cover Zhipu's 60-120s
         # 429 cooldown window at least once.
-        stop=stop_after_attempt(5),
+        stop=stop_after_attempt(7),
         # Deterministic exponential floor + small random jitter.
         # ``wait_exponential(multiplier=4, max=120)`` produces a monotonic
         # schedule: 4 → 8 → 16 → 32 → 64 → 120 seconds. Adding
@@ -150,7 +150,7 @@ class ZhipuProvider(LLMProvider):
     @retry(
         # 5 attempts so the exponential schedule can cover Zhipu's 60-120s
         # 429 cooldown window at least once.
-        stop=stop_after_attempt(5),
+        stop=stop_after_attempt(7),
         # Deterministic exponential floor + small random jitter.
         # ``wait_exponential(multiplier=4, max=120)`` produces a monotonic
         # schedule: 4 → 8 → 16 → 32 → 64 → 120 seconds. Adding
