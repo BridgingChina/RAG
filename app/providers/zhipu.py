@@ -6,7 +6,8 @@ from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_random_exponential,
+    wait_exponential,
+    wait_random,
 )
 
 from app.core.config import settings
@@ -81,15 +82,23 @@ class ZhipuProvider(LLMProvider):
         }
 
     @retry(
-        # 5 attempts so the exponential schedule can reach the ~120s mark
-        # at least once. Zhipu 429 cooldown windows are typically 60-120s,
-        # so `max=30` with `stop_after_attempt(3)` was nowhere near enough
-        # when a concurrent burst of ingest tasks hit the rate limiter.
+        # 5 attempts so the exponential schedule can cover Zhipu's 60-120s
+        # 429 cooldown window at least once.
         stop=stop_after_attempt(5),
-        # ``wait_random_exponential`` adds jitter on top of exponential
-        # backoff, which prevents a thundering-herd re-collision when many
-        # concurrent calls all wake up from the same backoff window.
-        wait=wait_random_exponential(multiplier=2, max=120),
+        # Deterministic exponential floor + small random jitter.
+        # ``wait_exponential(multiplier=4, max=120)`` produces a monotonic
+        # schedule: 4 → 8 → 16 → 32 → 64 → 120 seconds. Adding
+        # ``wait_random(1, 5)`` prevents thundering-herd re-collision
+        # without letting the total drop below the exponential floor.
+        #
+        # NOTE: the previous ``wait_random_exponential(multiplier=2, max=120)``
+        # was observed in production (log sample 2026-04-11 20:34-35) to pick
+        # sleeps as short as 0.1 s — completely useless against a 60 s rate-limit
+        # cooldown. ``wait_random_exponential`` samples uniformly from
+        # ``(0, multiplier * 2^attempt)``, so ~half the samples fall below
+        # any useful floor. Use exponential + random as an additive combo
+        # instead.
+        wait=wait_exponential(multiplier=4, max=120) + wait_random(min=1, max=5),
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
@@ -139,15 +148,23 @@ class ZhipuProvider(LLMProvider):
             return embeddings
 
     @retry(
-        # 5 attempts so the exponential schedule can reach the ~120s mark
-        # at least once. Zhipu 429 cooldown windows are typically 60-120s,
-        # so `max=30` with `stop_after_attempt(3)` was nowhere near enough
-        # when a concurrent burst of ingest tasks hit the rate limiter.
+        # 5 attempts so the exponential schedule can cover Zhipu's 60-120s
+        # 429 cooldown window at least once.
         stop=stop_after_attempt(5),
-        # ``wait_random_exponential`` adds jitter on top of exponential
-        # backoff, which prevents a thundering-herd re-collision when many
-        # concurrent calls all wake up from the same backoff window.
-        wait=wait_random_exponential(multiplier=2, max=120),
+        # Deterministic exponential floor + small random jitter.
+        # ``wait_exponential(multiplier=4, max=120)`` produces a monotonic
+        # schedule: 4 → 8 → 16 → 32 → 64 → 120 seconds. Adding
+        # ``wait_random(1, 5)`` prevents thundering-herd re-collision
+        # without letting the total drop below the exponential floor.
+        #
+        # NOTE: the previous ``wait_random_exponential(multiplier=2, max=120)``
+        # was observed in production (log sample 2026-04-11 20:34-35) to pick
+        # sleeps as short as 0.1 s — completely useless against a 60 s rate-limit
+        # cooldown. ``wait_random_exponential`` samples uniformly from
+        # ``(0, multiplier * 2^attempt)``, so ~half the samples fall below
+        # any useful floor. Use exponential + random as an additive combo
+        # instead.
+        wait=wait_exponential(multiplier=4, max=120) + wait_random(min=1, max=5),
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,

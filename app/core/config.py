@@ -21,9 +21,14 @@ class Settings(BaseSettings):
 
     # Ingest scheduler (issue #152)
     # Max number of ingest tasks allowed in RUNNING_STATUSES at once.
-    # Default 2 keeps Zhipu burst 429s at bay even when user enqueues
-    # many retries at once.
-    ingest_max_concurrent: int = 2
+    # Default 1 — production observation (2026-04-11 20:00-20:35) showed
+    # that MAX_CONCURRENT=2 lets two tasks retry simultaneously against the
+    # SAME Zhipu rate-limit cooldown window, compounding the problem instead
+    # of serialising it. A single task doing ~30 sequential LLM calls is
+    # also sustainable within Zhipu's per-second limits (verified by
+    # 程阳永济桥.md completing in ~33 min with only 3 ReadTimeouts). Raise
+    # via env var only if the rate limit budget has been verified.
+    ingest_max_concurrent: int = 1
     # How often the scheduler polls the queue for work to dispatch.
     ingest_scheduler_interval_seconds: float = 5.0
     # Max runtime for a single ingest task before the stale cleanup
