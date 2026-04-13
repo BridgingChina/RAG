@@ -176,6 +176,7 @@ class HybridRetriever:
         quota: tuple[int, int, int] = DEFAULT_QUOTA,
         facet: Optional[Facet] = None,
         debug: bool = False,
+        query_embedding: Optional[list[float]] = None,
     ) -> HybridRetrievalResult:
         """Perform three-channel retrieval.
 
@@ -188,6 +189,9 @@ class HybridRetriever:
             quota: (anchor_limit, concept_limit, analogy_limit)
             facet: Optional Facet for analogy bridge selection
             debug: If True, populate result.debug with RetrievalDebug
+            query_embedding: Pre-computed query embedding; skips internal
+                embed call when provided (used by QA SSE to parallelise
+                embedding with facet extraction).
 
         Returns:
             HybridRetrievalResult with chunks from each channel
@@ -197,11 +201,12 @@ class HybridRetriever:
         timings: dict[str, float] = {}
         channel_debugs: list[ChannelDebug] = []
 
-        # Get query embedding
+        # Get query embedding (skip if caller already computed it)
         if debug:
             t0 = time.perf_counter()
-        embeddings = await self.provider.embed([query])
-        query_embedding = embeddings[0]
+        if query_embedding is None:
+            embeddings = await self.provider.embed([query])
+            query_embedding = embeddings[0]
         if debug:
             timings["embed"] = time.perf_counter() - t0
 

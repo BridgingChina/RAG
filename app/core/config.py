@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # LLM settings
     embedding_model: str = "embedding-3"
     chat_model: str = "glm-4.7"
+    # Faster model for latency-sensitive QA (facet extraction + generation).
+    # glm-4-flash: ~4s vs glm-4.7: ~20s per call.
+    qa_chat_model: str = "glm-4-flash"
     use_coding_plan: bool = False
     # httpx read timeout (seconds) for chat completions. glm-4.7 with long
     # tagging/enrichment prompts can take well over 60s; the previous
