@@ -460,6 +460,16 @@ class IngestTaskService:
                     [b.strip() for b in bridges_val if isinstance(b, str) and b.strip()]
                 )
 
+            # Per-chunk commit pattern: each chunk's ORM changes + tsv UPDATE
+            # live in their own short transaction. This avoids the long-txn
+            # trap where Postgres ``now()`` returns transaction-start time,
+            # causing ``updated_at`` to lie about the real commit wall-clock —
+            # which in turn caused ``cleanup_stale_running_tasks`` to target
+            # tasks that were actively making progress. See #158 RCA:
+            # a 1.5h single transaction let the stale reaper flip the task
+            # to 'failed' mid-flight, then the runner's final commit
+            # overwrote status='completed' but left the reaper's error_message
+            # in place, producing a zombie "completed-with-error" row.
             for i, chunk in enumerate(chunks):
                 contextual_text = ""
                 try:
@@ -523,23 +533,28 @@ class IngestTaskService:
                         )
                     )
 
-            self.db.flush()
+                # Flush ORM changes, then update tsv in the same transaction.
+                self.db.flush()
+                self.db.execute(
+                    sql_text(
+                        "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) "
+                        "WHERE id = :id"
+                    ),
+                    {
+                        "id": chunk.id,
+                        "tsv_text": tokenizer.to_tsvector_text(
+                            chunk.search_text or chunk.content
+                        ),
+                    },
+                )
+                # Commit per chunk: bounds the transaction to <1 min rather
+                # than accumulating over all chunks. A subsequent chunk's
+                # failure no longer rolls back prior progress — and a retry
+                # after failure will re-run via ``_cleanup_task_data`` which
+                # wipes chunks and starts fresh.
+                self.db.commit()
 
-            mappings = [
-                {
-                    "id": c.id,
-                    "tsv_text": tokenizer.to_tsvector_text(c.search_text or c.content),
-                }
-                for c in chunks
-            ]
-            self.db.execute(
-                sql_text(
-                    "UPDATE chunks SET tsv = to_tsvector('simple', :tsv_text) "
-                    "WHERE id = :id"
-                ),
-                mappings,
-            )
-
+            # Final status transition — own short transaction.
             task.status = "completed"
             task.parsed_content = None  # Clear plaintext to reduce exposure (R2 has raw file)
             self.db.commit()
