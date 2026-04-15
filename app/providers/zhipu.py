@@ -82,23 +82,21 @@ class ZhipuProvider(LLMProvider):
         }
 
     @retry(
-        # 5 attempts so the exponential schedule can cover Zhipu's 60-120s
-        # 429 cooldown window at least once.
-        stop=stop_after_attempt(7),
+        # 4 attempts — enough to ride out transient blips without letting a
+        # single flaky call compound into minutes of backoff. At attempt=4 with
+        # the schedule below, worst-case total wait is ~14s (2+4+8), so a
+        # single call's hard ceiling becomes: 3 × 45s read timeout + 14s
+        # backoff ≈ 2.5 minutes (down from ~22 minutes with attempt=7).
+        # Zhipu prod success rate is 99%+ (see #158 RCA), so deep retry
+        # budgets hurt more than they help.
+        stop=stop_after_attempt(4),
         # Deterministic exponential floor + small random jitter.
-        # ``wait_exponential(multiplier=4, max=120)`` produces a monotonic
-        # schedule: 4 → 8 → 16 → 32 → 64 → 120 seconds. Adding
-        # ``wait_random(1, 5)`` prevents thundering-herd re-collision
-        # without letting the total drop below the exponential floor.
-        #
-        # NOTE: the previous ``wait_random_exponential(multiplier=2, max=120)``
-        # was observed in production (log sample 2026-04-11 20:34-35) to pick
-        # sleeps as short as 0.1 s — completely useless against a 60 s rate-limit
-        # cooldown. ``wait_random_exponential`` samples uniformly from
-        # ``(0, multiplier * 2^attempt)``, so ~half the samples fall below
-        # any useful floor. Use exponential + random as an additive combo
-        # instead.
-        wait=wait_exponential(multiplier=4, max=120) + wait_random(min=1, max=5),
+        # ``wait_exponential(multiplier=2, max=30)`` schedule: 2 → 4 → 8 → 16 → 30.
+        # Adding ``wait_random(1, 5)`` prevents thundering-herd re-collision
+        # without letting the total drop below the exponential floor. Prior
+        # ``multiplier=4, max=120`` was sized for 60-120s 429 cooldowns that
+        # production never actually exhibited (zero 429s in 24h sample).
+        wait=wait_exponential(multiplier=2, max=30) + wait_random(min=1, max=5),
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
@@ -148,23 +146,21 @@ class ZhipuProvider(LLMProvider):
             return embeddings
 
     @retry(
-        # 5 attempts so the exponential schedule can cover Zhipu's 60-120s
-        # 429 cooldown window at least once.
-        stop=stop_after_attempt(7),
+        # 4 attempts — enough to ride out transient blips without letting a
+        # single flaky call compound into minutes of backoff. At attempt=4 with
+        # the schedule below, worst-case total wait is ~14s (2+4+8), so a
+        # single call's hard ceiling becomes: 3 × 45s read timeout + 14s
+        # backoff ≈ 2.5 minutes (down from ~22 minutes with attempt=7).
+        # Zhipu prod success rate is 99%+ (see #158 RCA), so deep retry
+        # budgets hurt more than they help.
+        stop=stop_after_attempt(4),
         # Deterministic exponential floor + small random jitter.
-        # ``wait_exponential(multiplier=4, max=120)`` produces a monotonic
-        # schedule: 4 → 8 → 16 → 32 → 64 → 120 seconds. Adding
-        # ``wait_random(1, 5)`` prevents thundering-herd re-collision
-        # without letting the total drop below the exponential floor.
-        #
-        # NOTE: the previous ``wait_random_exponential(multiplier=2, max=120)``
-        # was observed in production (log sample 2026-04-11 20:34-35) to pick
-        # sleeps as short as 0.1 s — completely useless against a 60 s rate-limit
-        # cooldown. ``wait_random_exponential`` samples uniformly from
-        # ``(0, multiplier * 2^attempt)``, so ~half the samples fall below
-        # any useful floor. Use exponential + random as an additive combo
-        # instead.
-        wait=wait_exponential(multiplier=4, max=120) + wait_random(min=1, max=5),
+        # ``wait_exponential(multiplier=2, max=30)`` schedule: 2 → 4 → 8 → 16 → 30.
+        # Adding ``wait_random(1, 5)`` prevents thundering-herd re-collision
+        # without letting the total drop below the exponential floor. Prior
+        # ``multiplier=4, max=120`` was sized for 60-120s 429 cooldowns that
+        # production never actually exhibited (zero 429s in 24h sample).
+        wait=wait_exponential(multiplier=2, max=30) + wait_random(min=1, max=5),
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,

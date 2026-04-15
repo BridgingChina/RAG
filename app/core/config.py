@@ -15,12 +15,17 @@ class Settings(BaseSettings):
     # glm-4-flash: ~4s vs glm-4.7: ~20s per call.
     qa_chat_model: str = "glm-4-flash"
     use_coding_plan: bool = False
-    # httpx read timeout (seconds) for chat completions. glm-4.7 with long
-    # tagging/enrichment prompts can take well over 60s; the previous
-    # hard-coded 60s was the dominant retry-budget killer.
-    chat_read_timeout: float = 180.0
-    # httpx read timeout (seconds) for embeddings (typically fast).
-    embed_read_timeout: float = 60.0
+    # httpx read timeout (seconds) for chat completions.
+    # 45s balances two forces: give glm-4.7 enough headroom for p95 enrichment
+    # calls (~10-20s), while failing fast on the p99 tail so we don't pile up
+    # 180s blocks that cascade into hour-long indexing. Prior 180s value turned
+    # every transient slowdown into a 3-minute stall; at retry=4 that could
+    # snowball to 12+ minutes per call. See #158 RCA (2026-04-15 潮州广济桥.pdf).
+    chat_read_timeout: float = 45.0
+    # httpx read timeout (seconds) for embeddings.
+    # Embeddings are fast (~1-2s p95). 20s is a generous ceiling; anything
+    # longer is almost certainly a network stall, not a slow response.
+    embed_read_timeout: float = 20.0
 
     # Ingest scheduler (issue #152)
     # Max number of ingest tasks allowed in RUNNING_STATUSES at once.
