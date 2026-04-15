@@ -214,6 +214,7 @@ title: 资料标题
 - `ask` 端点自动从问题文本匹配桥梁名（`_resolve_bridge_from_question`），无需调用方传 `target_bridge_id`
 - Radix UI `<SelectItem value="">` 不工作 — 必须用哨兵值（如 `"__all__"`、`"__none__"`）
 - SQLAlchemy `onupdate=func.now()` 仅对 ORM 级别 UPDATE 生效 — raw SQL / `.update()` 需手动 `SET updated_at = now()`
+- **PG `now()` = TX start time, not statement time.** Long-lived SQLAlchemy transactions + `onupdate=func.now()` write `updated_at` reflecting TX start, not commit wall-clock. A 1h `_run_indexing` run writes `updated_at` from 1h ago. Combined with multi-worker `cleanup_stale_running_tasks` this created the #158 zombie-row incident (status='completed' + error_message='exceeded max runtime'). Rule: keep write transactions <1 min; use `statement_timestamp()` if you explicitly need wall-clock
 - `AuditService.log()` 的 detail dict 必须是 JSON 可序列化的 — 不能放 `func.now()` 等 SQLAlchemy 对象
 - Pydantic response schema 加 required field 后，端点构造器必须同步传值，否则 500 ValidationError
 - FastAPI 路由顺序：literal 路由（`/merge`、`/batch`）必须在 parametric 路由（`/{chunk_id}/split`）之前注册，否则 "merge" 被当作 chunk_id 解析导致 422
@@ -245,6 +246,7 @@ title: 资料标题
 - `/health` is `@limiter.exempt` — do not remove, or load balancer probes will get 429'd
 - `bridge_resolver.py` caches bridge `(id, name)` pairs for `resolve_bridge_from_question` (TTL 5 min, `threading.Lock`). Bridge write endpoints must call `invalidate_bridge_cache()` after commit
 - Ingest scheduler (issue #152) is the **only** place that should call `_run_sync_and_parse` / `_run_indexing` — `/retry`, `/confirm`, `create_ingest_task` endpoints are pure "enqueue" (set `queued` / `queued_for_indexing` and return). Adding a new endpoint that dispatches directly via `BackgroundTasks.add_task` bypasses the global concurrency limit and will burst-429 Zhipu
+- `IngestTaskService.start_indexing` commits **per chunk** (not per task) — deliberate after #158. Do not collapse to one big commit; the long transaction re-trips the `now()` / stale-reaper trap. Mid-run failure leaves partial progress on purpose; `_cleanup_task_data` wipes on retry
 - `ingest_scheduler_loop` uses **tx-scoped** `pg_advisory_xact_lock(494956380)` — separate lock ID from `database.py`'s init lock (606059278). Lock releases on commit/rollback; do not switch to session-scoped unless you also add explicit release on shutdown
 - Scheduler test isolation — `conftest.db_session` uses connection-level rollback, which the scheduler's own `SessionLocal()` can't see. Scheduler integration tests in `tests/integration/test_ingest_scheduler_e2e.py` use a dedicated `real_db` fixture that commits real data and cleans up by filename prefix (`scheduler_e2e_`). Don't copy `db_session` into new scheduler tests
 - **Test fixture isolation generalized**: any code that opens its own `SessionLocal()` (scheduler, cron, background runners) CAN'T see in-flight data from `conftest.db_session`'s rollback fixture — they're on separate connections. Integration tests that exercise such code must use the `real_db` pattern: commit real rows, clean up by filename prefix on teardown
@@ -253,6 +255,7 @@ title: 资料标题
 - Naked `asyncio.create_task(coro)` discards the handle — asyncio only keeps weak references, so GC can cancel in-flight tasks. For long-lived dispatched coroutines (ingest scheduler dispatch), use the `_schedule_runner` + `_dispatched_tasks: set[Task]` pattern in `app/services/ingest_scheduler.py`, and attach a done-callback that marks the task failed out-of-band on runner crashes (exceptions BEFORE the runner's own try block bypass `IngestTaskService._fail`)
 - tenacity async retry mocking: `monkeypatch(tenacity.nap.sleep)` is a no-op for async code — the async path uses `tenacity.asyncio._portable_async_sleep`. Patch via the public `.retry` attribute: `provider.chat.retry.wait = wait_none()` (see `tests/test_providers.py::fast_retry_provider`). A retry test that suspiciously runs in 10+ seconds is proof your sleep mock is not actually engaged
 - Production debug without HTTP auth: `ssh netcup "docker exec bridge_rag_api python3 -c '...'"` runs arbitrary Python inside the API container and bypasses JWT middleware. Critical for RCA when reproducing a bug would otherwise require crafting an auth token. Use `db.rollback()` at the end of a read-only debug script to guarantee zero production mutation
+- `.github/workflows/deploy.yml` runs `git fetch origin main && git reset --hard origin/main && ./deploy.sh` — any server-side dirty tree auto-resets on next push. Emergency hotfix when a normal push is blocked: `scp` → `sudo cp /opt/bridge-rag/app/<path>` (chown bridge-rag) → `sudo -u bridge-rag bash -c 'cd /opt/bridge-rag/app && ./deploy.sh api'`. Convergence happens on the next real push
 
 ## Worktrees
 
