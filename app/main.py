@@ -80,10 +80,12 @@ register_mobile_error_handlers(app)
 from app.core.cache_middleware import MobileCacheMiddleware
 app.add_middleware(MobileCacheMiddleware)
 
-# CORS middleware
+# CORS middleware — explicit list (settings.cors_origins) + regex for prod web domains
+# regex matches: bridgingchina.com (+ any subdomain) and bridge-web.user-unauthorized.workers.dev (+ any subdomain)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^https://([a-z0-9-]+\.)?bridgingchina\.com$|^https://([a-z0-9-]+\.)?bridge-web\.user-unauthorized\.workers\.dev$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
