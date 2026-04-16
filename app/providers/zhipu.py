@@ -1,13 +1,14 @@
+import asyncio
 import logging
+import random
 
 import httpx
 from tenacity import (
+    RetryCallState,
     before_sleep_log,
     retry,
     retry_if_exception,
     stop_after_attempt,
-    wait_exponential,
-    wait_random,
 )
 
 from app.core.config import settings
@@ -15,6 +16,18 @@ from app.core.constants import EMBEDDING_DIM
 from app.providers.base import ChatMessage, ChatResponse, LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Global concurrency limiter for Zhipu API calls (P1 fix).
+#
+# Even with ingest_max_concurrent=1 a single task fires 3+ LLM calls per
+# chunk (enricher, tagger, bridge_linker) plus embed.  When upstream is
+# slow the burst can pile up.  This semaphore ensures at most N concurrent
+# HTTP requests reach Zhipu at any instant, preventing burst-429s when
+# multiple indexing tasks run (future max_concurrent > 1) or when the
+# reindex cron overlaps with a live ingest.
+# ---------------------------------------------------------------------------
+_zhipu_semaphore = asyncio.Semaphore(3)
 
 
 def _is_retryable_http_error(exc: BaseException) -> bool:
@@ -39,6 +52,36 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
     if isinstance(exc, httpx.TransportError):
         return True
     return False
+
+
+def _rate_limit_aware_wait(retry_state: RetryCallState) -> float:
+    """Adaptive wait: short for transport/5xx, long for 429.
+
+    429 means the rate-limit window hasn't reset — retrying in 2-8s just
+    wastes an attempt.  We wait 30×attempt (30 → 60 → 90 → 120 cap) with
+    jitter so the cooldown actually elapses.
+
+    Transport errors (ReadTimeout, ConnectError) and 5xx are transient
+    blips — standard exponential 2→4→8→16→30 is fine.
+    """
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    attempt = retry_state.attempt_number
+
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        base = min(30 * attempt, 120)
+        jitter = random.uniform(2, 10)
+        wait = base + jitter
+        logger.info(
+            "429 rate-limited — backing off %.1fs (attempt %d)",
+            wait,
+            attempt,
+        )
+        return wait
+
+    # Transport errors / 5xx: short exponential (same as before)
+    base = min(2 ** attempt, 30)
+    jitter = random.uniform(1, 5)
+    return base + jitter
 
 
 def _chat_timeout() -> httpx.Timeout:
@@ -82,21 +125,12 @@ class ZhipuProvider(LLMProvider):
         }
 
     @retry(
-        # 4 attempts — enough to ride out transient blips without letting a
-        # single flaky call compound into minutes of backoff. At attempt=4 with
-        # the schedule below, worst-case total wait is ~14s (2+4+8), so a
-        # single call's hard ceiling becomes: 3 × 45s read timeout + 14s
-        # backoff ≈ 2.5 minutes (down from ~22 minutes with attempt=7).
-        # Zhipu prod success rate is 99%+ (see #158 RCA), so deep retry
-        # budgets hurt more than they help.
-        stop=stop_after_attempt(4),
-        # Deterministic exponential floor + small random jitter.
-        # ``wait_exponential(multiplier=2, max=30)`` schedule: 2 → 4 → 8 → 16 → 30.
-        # Adding ``wait_random(1, 5)`` prevents thundering-herd re-collision
-        # without letting the total drop below the exponential floor. Prior
-        # ``multiplier=4, max=120`` was sized for 60-120s 429 cooldowns that
-        # production never actually exhibited (zero 429s in 24h sample).
-        wait=wait_exponential(multiplier=2, max=30) + wait_random(min=1, max=5),
+        # 6 attempts (was 4) — extra budget covers 429 rate-limit cooldowns
+        # that need 30-60s+ backoff. Transport errors still resolve in 2-3
+        # attempts; the extra headroom is consumed only when 429 fires.
+        stop=stop_after_attempt(6),
+        # Adaptive wait: 429 → 30×attempt (long), transport/5xx → 2^n (short).
+        wait=_rate_limit_aware_wait,
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
@@ -117,16 +151,17 @@ class ZhipuProvider(LLMProvider):
             embeddings: list[list[float]] = []
             for start in range(0, len(texts), self.MAX_EMBED_BATCH):
                 batch = texts[start : start + self.MAX_EMBED_BATCH]
-                resp = await client.post(
-                    f"{self.BASE_URL}/embeddings",
-                    headers=self._headers(),
-                    json={
-                        "model": self.embedding_model,
-                        "input": batch,
-                        "dimensions": EMBEDDING_DIM,
-                    },
-                    timeout=_embed_timeout(),
-                )
+                async with _zhipu_semaphore:
+                    resp = await client.post(
+                        f"{self.BASE_URL}/embeddings",
+                        headers=self._headers(),
+                        json={
+                            "model": self.embedding_model,
+                            "input": batch,
+                            "dimensions": EMBEDDING_DIM,
+                        },
+                        timeout=_embed_timeout(),
+                    )
                 resp.raise_for_status()
                 data = resp.json()
                 rows = data.get("data", [])
@@ -146,46 +181,38 @@ class ZhipuProvider(LLMProvider):
             return embeddings
 
     @retry(
-        # 4 attempts — enough to ride out transient blips without letting a
-        # single flaky call compound into minutes of backoff. At attempt=4 with
-        # the schedule below, worst-case total wait is ~14s (2+4+8), so a
-        # single call's hard ceiling becomes: 3 × 45s read timeout + 14s
-        # backoff ≈ 2.5 minutes (down from ~22 minutes with attempt=7).
-        # Zhipu prod success rate is 99%+ (see #158 RCA), so deep retry
-        # budgets hurt more than they help.
-        stop=stop_after_attempt(4),
-        # Deterministic exponential floor + small random jitter.
-        # ``wait_exponential(multiplier=2, max=30)`` schedule: 2 → 4 → 8 → 16 → 30.
-        # Adding ``wait_random(1, 5)`` prevents thundering-herd re-collision
-        # without letting the total drop below the exponential floor. Prior
-        # ``multiplier=4, max=120`` was sized for 60-120s 429 cooldowns that
-        # production never actually exhibited (zero 429s in 24h sample).
-        wait=wait_exponential(multiplier=2, max=30) + wait_random(min=1, max=5),
+        # 6 attempts (was 4) — extra budget covers 429 rate-limit cooldowns
+        # that need 30-60s+ backoff. Transport errors still resolve in 2-3
+        # attempts; the extra headroom is consumed only when 429 fires.
+        stop=stop_after_attempt(6),
+        # Adaptive wait: 429 → 30×attempt (long), transport/5xx → 2^n (short).
+        wait=_rate_limit_aware_wait,
         retry=retry_if_exception(_is_retryable_http_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
     async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
         base = self.CHAT_BASE_URL or self.BASE_URL
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{base}/chat/completions",
-                headers=self._headers(),
-                json={
-                    "model": self.chat_model,
-                    "messages": [{"role": m.role, "content": m.content} for m in messages],
-                },
-                timeout=_chat_timeout(),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            choices = data.get("choices") or []
-            if not choices:
-                raise ValueError("Empty response from LLM provider")
-            content = choices[0].get("message", {}).get("content", "")
-            if not content:
-                raise ValueError("Empty content from LLM provider")
-            return ChatResponse(
-                content=content,
-                usage=data.get("usage", {}),
-            )
+        async with _zhipu_semaphore:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{base}/chat/completions",
+                    headers=self._headers(),
+                    json={
+                        "model": self.chat_model,
+                        "messages": [{"role": m.role, "content": m.content} for m in messages],
+                    },
+                    timeout=_chat_timeout(),
+                )
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise ValueError("Empty response from LLM provider")
+        content = choices[0].get("message", {}).get("content", "")
+        if not content:
+            raise ValueError("Empty content from LLM provider")
+        return ChatResponse(
+            content=content,
+            usage=data.get("usage", {}),
+        )
