@@ -16,12 +16,15 @@ class Settings(BaseSettings):
     qa_chat_model: str = "glm-4-flash"
     use_coding_plan: bool = False
     # httpx read timeout (seconds) for chat completions.
-    # 45s balances two forces: give glm-4.7 enough headroom for p95 enrichment
-    # calls (~10-20s), while failing fast on the p99 tail so we don't pile up
-    # 180s blocks that cascade into hour-long indexing. Prior 180s value turned
-    # every transient slowdown into a 3-minute stall; at retry=4 that could
-    # snowball to 12+ minutes per call. See #158 RCA (2026-04-15 潮州广济桥.pdf).
-    chat_read_timeout: float = 45.0
+    # 90s (was 45s) — empirically 45s caused ReadTimeout cascade during
+    # Zhipu's slow-response periods (2026-04-16 晋祠十字桥.pdf RCA): 6×
+    # 45s ReadTimeouts exhausted the retry budget faster than Zhipu could
+    # recover.  90s lets genuinely-slow responses complete instead of
+    # being force-killed.  Worst-case per-call ceiling: 90s × 8 attempts
+    # + backoffs ≈ 15 min — still bounded, but resilient to bad days.
+    # Per-chunk fallback (see ingest_task_service.start_indexing) stops
+    # any single failure from killing the whole task.
+    chat_read_timeout: float = 90.0
     # httpx read timeout (seconds) for embeddings.
     # Embeddings are fast (~1-2s p95). 20s is a generous ceiling; anything
     # longer is almost certainly a network stall, not a slow response.

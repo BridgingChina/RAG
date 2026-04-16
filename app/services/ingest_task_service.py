@@ -471,6 +471,11 @@ class IngestTaskService:
             # overwrote status='completed' but left the reaper's error_message
             # in place, producing a zombie "completed-with-error" row.
             for i, chunk in enumerate(chunks):
+                # Track whether any LLM enrichment step degraded to fallback.
+                # Degraded chunks get ``needs_reindex=True`` so the daily
+                # reindex cron picks them up once Zhipu is healthy.
+                chunk_degraded = False
+
                 contextual_text = ""
                 try:
                     surrounding = [chunks[i - 1].content] if i > 0 else None
@@ -490,18 +495,50 @@ class IngestTaskService:
                         task.id,
                         e,
                     )
+                    chunk_degraded = True
 
                 search_text = chunk.content
                 if contextual_text:
                     search_text = f"{contextual_text}\n\n{chunk.content}"
 
-                tag_result = await tagger.tag(chunk.content)
+                # Tagger failure → null taxonomy. Chunk is still searchable
+                # via vector + FTS, just not filterable by lvl1/lvl2/lvl3.
+                # Reindex cron will retry when Zhipu recovers.
+                try:
+                    tag_result = await tagger.tag(chunk.content)
+                except Exception as e:
+                    logger.warning(
+                        "Tagger failed for chunk %d/%d (task %s): %s — continuing with null taxonomy",
+                        i + 1, len(chunks), task.id, e,
+                    )
+                    from app.services.tagger import TagResult
+                    tag_result = TagResult(lvl1=None, lvl2=None, lvl3=None, bridge_id=None)
+                    chunk_degraded = True
 
-                link_result = await bridge_linker.link_chunk(
-                    db=self.db,
-                    content=chunk.content,
-                    hint_bridge_names=bridge_hints,
-                )
+                # Bridge linker failure → no bridge binding. Chunk becomes
+                # orphan content until reindex. Still searchable.
+                try:
+                    link_result = await bridge_linker.link_chunk(
+                        db=self.db,
+                        content=chunk.content,
+                        hint_bridge_names=bridge_hints,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Bridge linker failed for chunk %d/%d (task %s): %s — continuing without bridge binding",
+                        i + 1, len(chunks), task.id, e,
+                    )
+                    from app.services.bridge_linker import BridgeLinkingResult
+                    link_result = BridgeLinkingResult(
+                        primary_bridge_name=None,
+                        secondary_bridge_names=[],
+                        candidate_bridge_names=[],
+                        binding_status="none",
+                        auto_created_bridge_names=[],
+                        links=[],
+                    )
+                    chunk_degraded = True
+
                 primary_link = next(
                     (l for l in link_result.links if l.role == "primary"), None
                 )
@@ -521,6 +558,8 @@ class IngestTaskService:
                 chunk.bridge_id = primary_link.bridge_id if primary_link else None
                 chunk.bridge_binding_status = link_result.binding_status
                 chunk.embedding = embeddings[0]
+                if chunk_degraded:
+                    chunk.needs_reindex = True
 
                 for link in link_result.links:
                     self.db.add(

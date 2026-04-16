@@ -125,10 +125,12 @@ class ZhipuProvider(LLMProvider):
         }
 
     @retry(
-        # 6 attempts (was 4) — extra budget covers 429 rate-limit cooldowns
-        # that need 30-60s+ backoff. Transport errors still resolve in 2-3
-        # attempts; the extra headroom is consumed only when 429 fires.
-        stop=stop_after_attempt(6),
+        # 8 attempts (was 6) — Zhipu's slow-response periods can burn
+        # through attempts on ReadTimeouts alone before a 429 hits. Bumping
+        # to 8 plus 90s read timeout gives real resilience during load.
+        # Per-chunk LLM fallbacks downstream (see ingest_task_service)
+        # prevent any single call's exhaustion from killing the whole task.
+        stop=stop_after_attempt(8),
         # Adaptive wait: 429 → 30×attempt (long), transport/5xx → 2^n (short).
         wait=_rate_limit_aware_wait,
         retry=retry_if_exception(_is_retryable_http_error),
@@ -181,10 +183,12 @@ class ZhipuProvider(LLMProvider):
             return embeddings
 
     @retry(
-        # 6 attempts (was 4) — extra budget covers 429 rate-limit cooldowns
-        # that need 30-60s+ backoff. Transport errors still resolve in 2-3
-        # attempts; the extra headroom is consumed only when 429 fires.
-        stop=stop_after_attempt(6),
+        # 8 attempts (was 6) — Zhipu's slow-response periods can burn
+        # through attempts on ReadTimeouts alone before a 429 hits. Bumping
+        # to 8 plus 90s read timeout gives real resilience during load.
+        # Per-chunk LLM fallbacks downstream (see ingest_task_service)
+        # prevent any single call's exhaustion from killing the whole task.
+        stop=stop_after_attempt(8),
         # Adaptive wait: 429 → 30×attempt (long), transport/5xx → 2^n (short).
         wait=_rate_limit_aware_wait,
         retry=retry_if_exception(_is_retryable_http_error),

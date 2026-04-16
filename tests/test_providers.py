@@ -123,9 +123,10 @@ def _failing_http_response(status_code: int) -> MagicMock:
 # --- Sanity: the decorator is actually there (prevent silent removal) ---
 
 # Keep in sync with the tenacity @retry decorator on ZhipuProvider.chat/embed.
-# Bumped from 4 to 6: extra budget covers 429 rate-limit cooldowns that use
-# a longer backoff (30×attempt). Transport errors still resolve in 2-3 attempts.
-EXPECTED_MAX_ATTEMPTS = 6
+# Bumped from 6 to 8: Zhipu slow-response periods can eat through retries
+# on ReadTimeouts alone (2026-04-16 晋祠十字桥 RCA). 8 attempts + 90s
+# read timeout + per-chunk fallbacks = resilient to sustained upstream load.
+EXPECTED_MAX_ATTEMPTS = 8
 
 
 def test_chat_has_retry_decorator():
