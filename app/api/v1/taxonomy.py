@@ -113,10 +113,19 @@ def create_taxonomy_node(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> TaxonomyNodeDetail:
-    """Create a new taxonomy node."""
-    # Validate: lvl3 requires lvl2, lvl2 requires lvl1
-    if body.lvl3 and not body.lvl2:
-        raise HTTPException(status_code=422, detail="lvl3 requires lvl2")
+    """Create a new taxonomy node (lvl1 or lvl2 only post-Phase 3)."""
+    # Phase 3: lvl3 taxonomy rows no longer exist — concrete knowledge lives
+    # in the knowledge_points table. Redirect callers to POST /knowledge-points.
+    if body.lvl3:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "lvl3 taxonomy nodes are no longer supported. "
+                "Create a KnowledgePoint via POST /api/v1/knowledge-points instead."
+            ),
+        )
+    if body.lvl2 is None and body.lvl1 is None:
+        raise HTTPException(status_code=422, detail="lvl1 is required")
 
     # Check for duplicate
     query = db.query(TaxonomyNode).filter(TaxonomyNode.lvl1 == body.lvl1)
