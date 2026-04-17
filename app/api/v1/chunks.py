@@ -20,7 +20,7 @@ from app.api.v1.schemas.chunk import (
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.core.database import get_db
-from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
+from app.models import Bridge, Chunk, ChunkBridgeLink, KnowledgePoint, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
 from app.services.chunk_editor import check_optimistic_lock, get_tokenizer
 from app.services.kp_resolver import resolve_knowledge_point_id
@@ -70,7 +70,19 @@ def list_chunks(
     if lvl2 is not None:
         query = query.filter(Chunk.lvl2 == lvl2)
     if lvl3 is not None:
-        query = query.filter(Chunk.lvl3 == lvl3)
+        # Phase 2: filter by the knowledge_point_id FK instead of the lvl3
+        # string. lvl1 and lvl2 scope the subquery so paths that share a
+        # (lvl2, lvl3) label under different lvl1 stay disambiguated.
+        kp_id_subq = (
+            db.query(KnowledgePoint.id)
+            .join(TaxonomyNode, KnowledgePoint.taxonomy_node_id == TaxonomyNode.id)
+            .filter(TaxonomyNode.lvl3 == lvl3)
+        )
+        if lvl1 is not None:
+            kp_id_subq = kp_id_subq.filter(TaxonomyNode.lvl1 == lvl1)
+        if lvl2 is not None:
+            kp_id_subq = kp_id_subq.filter(TaxonomyNode.lvl2 == lvl2)
+        query = query.filter(Chunk.knowledge_point_id.in_(kp_id_subq.scalar_subquery()))
     if binding_status is not None:
         query = query.filter(Chunk.bridge_binding_status == binding_status)
     if source_id is not None:
