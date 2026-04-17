@@ -29,30 +29,19 @@ class KnowledgePointBridgeService:
     ) -> list[KnowledgePointBridge]:
         """Auto-derive KP-bridge associations from chunk taxonomy tags.
 
-        1. Get KP's taxonomy_node → lvl3 value
-        2. Find chunks with matching lvl3
-        3. Join chunk_bridge_links → get distinct bridge_ids
-        4. Optionally call LLM to generate relevance_note
-        5. Delete existing associations, insert new ones
+        Phase 3: no more TaxonomyNode join — chunks carry the
+        knowledge_point_id FK directly, which pins exactly the chunks
+        attached to this KP.
+
+        1. Find distinct bridge_ids via chunks (filtered by FK) →
+           chunk_bridge_links
+        2. Optionally call LLM to generate relevance_note
+        3. Delete existing associations, insert new ones
         """
-        # 1. Get KP and its taxonomy node's lvl3
         kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == knowledge_point_id).first()
         if not kp:
             raise ValueError(f"KnowledgePoint {knowledge_point_id} not found")
 
-        if not kp.taxonomy_node_id:
-            raise ValueError("KnowledgePoint has no taxonomy_node_id")
-
-        taxonomy_node = (
-            db.query(TaxonomyNode)
-            .filter(TaxonomyNode.id == kp.taxonomy_node_id)
-            .first()
-        )
-        if not taxonomy_node or not taxonomy_node.lvl3:
-            raise ValueError("Taxonomy node not found or has no lvl3 value")
-
-        # 2-3. Find distinct bridge_ids via chunks → chunk_bridge_links.
-        # Phase 2: pin to this KP via the FK instead of the lvl3 string.
         bridge_ids = (
             db.query(distinct(ChunkBridgeLink.bridge_id))
             .join(Chunk, Chunk.id == ChunkBridgeLink.chunk_id)

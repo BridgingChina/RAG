@@ -400,34 +400,22 @@ async def generate_key_points(
     if not kp:
         raise HTTPException(status_code=404, detail="Knowledge point not found")
 
-    taxonomy_node = None
-    if kp.taxonomy_node_id:
-        taxonomy_node = (
-            db.query(TaxonomyNode)
-            .filter(TaxonomyNode.id == kp.taxonomy_node_id)
-            .first()
+    # Phase 3: KP is the authoritative "concrete knowledge" entity; its
+    # lvl1/lvl2 columns hold the taxonomy path, and the knowledge_point_id
+    # FK on chunks is the precise backlink. No TaxonomyNode join needed.
+    chunks = (
+        db.query(Chunk)
+        .filter(Chunk.knowledge_point_id == kp.id)
+        .limit(20)
+        .all()
+    )
+    if len(chunks) < 3 and kp.lvl2:
+        chunks = (
+            db.query(Chunk)
+            .filter(Chunk.lvl1 == kp.lvl1, Chunk.lvl2 == kp.lvl2)
+            .limit(20)
+            .all()
         )
-
-    # 2. Query chunks matching taxonomy. Phase 2: lvl3 lookup goes through
-    # the knowledge_point_id FK so we land on exactly the chunks tagged to
-    # THIS KP (no cross-lvl1 leakage). lvl2 fallback still uses the string
-    # column because lvl2 has no FK.
-    chunks = []
-    if taxonomy_node:
-        if taxonomy_node.lvl3:
-            chunks = (
-                db.query(Chunk)
-                .filter(Chunk.knowledge_point_id == kp.id)
-                .limit(20)
-                .all()
-            )
-        if len(chunks) < 3 and taxonomy_node.lvl2:
-            chunks = (
-                db.query(Chunk)
-                .filter(Chunk.lvl2 == taxonomy_node.lvl2)
-                .limit(20)
-                .all()
-            )
 
     if not chunks:
         raise HTTPException(

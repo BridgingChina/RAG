@@ -61,19 +61,15 @@ def _resolve_context(
         if not kp:
             logger.warning("QA context references non-existent knowledge_point %s", request.context.id)
             return None, None
-        if not kp.taxonomy_node_id:
-            logger.warning("Knowledge point %s has no taxonomy_node_id, ignoring context", kp.id)
-            return None, None
-        tax_node = db.query(TaxonomyNode).filter(
-            TaxonomyNode.id == kp.taxonomy_node_id
-        ).first()
-        if not tax_node:
-            logger.warning("Knowledge point %s references missing taxonomy node %s", kp.id, kp.taxonomy_node_id)
+        # Phase 3: KP carries lvl1 / lvl2 directly, and kp.name is the former
+        # lvl3 label. No TaxonomyNode join needed.
+        if not kp.lvl1:
+            logger.warning("Knowledge point %s has no lvl1, ignoring context", kp.id)
             return None, None
         return None, TaxonomyFilter(
-            lvl1=tax_node.lvl1,
-            lvl2=tax_node.lvl2,
-            lvl3=tax_node.lvl3,
+            lvl1=kp.lvl1,
+            lvl2=kp.lvl2,
+            lvl3=kp.name,
         )
     return None, None
 

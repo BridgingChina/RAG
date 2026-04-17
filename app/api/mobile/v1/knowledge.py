@@ -105,24 +105,24 @@ def get_knowledge_point(
     if not kp:
         raise HTTPException(404, detail="知识点不存在")
 
+    # Phase 3: KP carries lvl1 / lvl2 directly; resolve the corresponding
+    # lvl1-only and lvl2-only taxonomy_nodes rows for their UUIDs.
     line_info = None
     category_info = None
-    if kp.taxonomy_node_id:
-        tax_node = db.query(TaxonomyNode).filter(TaxonomyNode.id == kp.taxonomy_node_id).first()
-        if tax_node:
-            lvl1_node = db.query(TaxonomyNode).filter(
-                TaxonomyNode.lvl1 == tax_node.lvl1, TaxonomyNode.lvl2.is_(None),
+    if kp.lvl1:
+        lvl1_node = db.query(TaxonomyNode).filter(
+            TaxonomyNode.lvl1 == kp.lvl1, TaxonomyNode.lvl2.is_(None),
+        ).first()
+        if lvl1_node:
+            line_info = {"id": str(lvl1_node.id), "name": lvl1_node.lvl1}
+        if kp.lvl2:
+            lvl2_node = db.query(TaxonomyNode).filter(
+                TaxonomyNode.lvl1 == kp.lvl1,
+                TaxonomyNode.lvl2 == kp.lvl2,
+                TaxonomyNode.lvl3.is_(None),
             ).first()
-            if lvl1_node:
-                line_info = {"id": str(lvl1_node.id), "name": lvl1_node.lvl1}
-            if tax_node.lvl2:
-                lvl2_node = db.query(TaxonomyNode).filter(
-                    TaxonomyNode.lvl1 == tax_node.lvl1,
-                    TaxonomyNode.lvl2 == tax_node.lvl2,
-                    TaxonomyNode.lvl3.is_(None),
-                ).first()
-                if lvl2_node:
-                    category_info = {"id": str(lvl2_node.id), "name": lvl2_node.lvl2}
+            if lvl2_node:
+                category_info = {"id": str(lvl2_node.id), "name": lvl2_node.lvl2}
 
     key_points = (
         db.query(KnowledgePointKeyPoint)
