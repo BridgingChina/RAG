@@ -9,7 +9,9 @@ interface TaxonomyTreeProps {
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
   onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
-  onDeleteNode: (nodeId: string, nodeLabel: string) => void
+  // level is the depth (1 = lvl1, 2 = lvl2, 3 = KnowledgePoint after Phase 3).
+  // The caller routes to the correct DELETE endpoint based on level.
+  onDeleteNode: (nodeId: string, nodeLabel: string, level: number) => void
 }
 
 interface TreeNodeProps {
@@ -19,7 +21,7 @@ interface TreeNodeProps {
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
   onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
-  onDeleteNode: (nodeId: string, nodeLabel: string) => void
+  onDeleteNode: (nodeId: string, nodeLabel: string, level: number) => void
 }
 
 function TreeNode({
@@ -119,9 +121,9 @@ function TreeNode({
             className="h-6 w-6 text-destructive hover:text-destructive"
             onClick={(e) => {
               e.stopPropagation()
-              onDeleteNode(item.node_id, item.label)
+              onDeleteNode(item.node_id, item.label, level)
             }}
-            title="删除分类"
+            title={level === 3 ? "删除知识点" : "删除分类"}
           >
             <Trash2 className="h-3 w-3" />
           </Button>

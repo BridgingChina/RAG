@@ -37,6 +37,7 @@ import {
   fetchChunks,
   createTaxonomyNode,
   deleteTaxonomyNode,
+  deleteKnowledgePoint,
   batchUpdateTaxonomy,
 } from "@/lib/api"
 
@@ -64,7 +65,7 @@ export function Component() {
   const [selectedChunkIds, setSelectedChunkIds] = useState<Set<string>>(new Set())
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<{ nodeId: string; label: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ nodeId: string; label: string; level: number } | null>(null)
   const [isBatchUpdateDialogOpen, setIsBatchUpdateDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -118,8 +119,8 @@ export function Component() {
     setIsAddDialogOpen(true)
   }
 
-  const handleDeleteNode = (nodeId: string, nodeLabel: string) => {
-    setDeleteTarget({ nodeId, label: nodeLabel })
+  const handleDeleteNode = (nodeId: string, nodeLabel: string, level: number) => {
+    setDeleteTarget({ nodeId, label: nodeLabel, level })
     setActionError(null)
     setIsDeleteDialogOpen(true)
   }
@@ -129,7 +130,14 @@ export function Component() {
     setIsSubmitting(true)
     setActionError(null)
     try {
-      await deleteTaxonomyNode(deleteTarget.nodeId)
+      // Phase 3: tree level 3 is a KnowledgePoint, not a taxonomy node.
+      // Route to the correct DELETE endpoint; the two have independent FK
+      // guards (taxonomy → chunks+KPs, KP → chunks).
+      if (deleteTarget.level === 3) {
+        await deleteKnowledgePoint(deleteTarget.nodeId)
+      } else {
+        await deleteTaxonomyNode(deleteTarget.nodeId)
+      }
       refetchTree()
       setIsDeleteDialogOpen(false)
       setDeleteTarget(null)
@@ -499,7 +507,9 @@ export function Component() {
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>
             <DialogDescription>
-              确定要删除分类「{deleteTarget?.label}」吗？仅当该分类下无关联知识块和知识点时可删除。
+              {deleteTarget?.level === 3
+                ? `确定要删除知识点「${deleteTarget?.label}」吗？仅当该知识点下无关联知识块时可删除。`
+                : `确定要删除分类「${deleteTarget?.label}」吗？仅当该分类下无关联知识块和知识点时可删除。`}
             </DialogDescription>
           </DialogHeader>
           {actionError && (
