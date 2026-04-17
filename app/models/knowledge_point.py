@@ -14,6 +14,8 @@ class KnowledgePoint(Base, UUIDMixin, TimestampMixin):
     taxonomy_node_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("taxonomy_nodes.id"), nullable=True
     )
+    lvl1: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    lvl2: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     aliases: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     difficulty: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
@@ -22,4 +24,5 @@ class KnowledgePoint(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         Index("ix_kp_taxonomy", "taxonomy_node_id"),
+        Index("ix_kp_lvl1_lvl2", "lvl1", "lvl2"),
     )

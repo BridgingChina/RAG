@@ -77,6 +77,8 @@ def test_tree_includes_knowledge_points_with_own_ids(db_session):
 
     kp = KnowledgePoint(
         name="石拱桥力学原理",
+        lvl1=lvl3_node.lvl1,
+        lvl2=lvl3_node.lvl2,
         taxonomy_node_id=lvl3_node.id,
     )
     db_session.add(kp)

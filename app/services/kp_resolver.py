@@ -1,11 +1,8 @@
 """Resolve a taxonomy path (lvl1, lvl2, lvl3) to the matching KnowledgePoint id.
 
-Transitional helper for the lvl3-KP merge refactor (Phase 1).
-
-Ingest/tagging/split writes the lvl1/lvl2/lvl3 string tags to a chunk; this
-helper looks up the same-name KnowledgePoint via the taxonomy node path and
-returns its id so callers can populate the new `chunks.knowledge_point_id`
-FK alongside the legacy string columns (double-write).
+Phase 3: queries KnowledgePoint directly by its own lvl1/lvl2/name columns —
+no longer joins through taxonomy_nodes. This means the resolver works even
+after the lvl3 rows are deleted from taxonomy_nodes.
 
 Returns None if the chunk is not tagged to lvl3 or no matching KP exists.
 """
@@ -13,7 +10,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models import KnowledgePoint, TaxonomyNode
+from app.models import KnowledgePoint
 
 
 def resolve_knowledge_point_id(
@@ -26,11 +23,10 @@ def resolve_knowledge_point_id(
         return None
     row = (
         db.query(KnowledgePoint.id)
-        .join(TaxonomyNode, KnowledgePoint.taxonomy_node_id == TaxonomyNode.id)
         .filter(
-            TaxonomyNode.lvl1 == lvl1,
-            TaxonomyNode.lvl2 == lvl2,
-            TaxonomyNode.lvl3 == lvl3,
+            KnowledgePoint.lvl1 == lvl1,
+            KnowledgePoint.lvl2 == lvl2,
+            KnowledgePoint.name == lvl3,
         )
         .first()
     )

@@ -11,7 +11,7 @@ def test_returns_kp_id_when_path_matches(db_session):
     tn = TaxonomyNode(lvl1="r_l1", lvl2="r_l2", lvl3="r_l3")
     db_session.add(tn)
     db_session.flush()
-    kp = KnowledgePoint(name="r_l3", taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name="r_l3", lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
 
@@ -40,8 +40,8 @@ def test_disambiguates_by_full_path(db_session):
     tn_b = TaxonomyNode(lvl1="l1b", lvl2="shared_l2", lvl3="shared_l3")
     db_session.add_all([tn_a, tn_b])
     db_session.flush()
-    kp_a = KnowledgePoint(name="shared_l3", taxonomy_node_id=tn_a.id)
-    kp_b = KnowledgePoint(name="shared_l3", taxonomy_node_id=tn_b.id)
+    kp_a = KnowledgePoint(name="shared_l3", lvl1=tn_a.lvl1, lvl2=tn_a.lvl2, taxonomy_node_id=tn_a.id)
+    kp_b = KnowledgePoint(name="shared_l3", lvl1=tn_b.lvl1, lvl2=tn_b.lvl2, taxonomy_node_id=tn_b.id)
     db_session.add_all([kp_a, kp_b])
     db_session.flush()
 

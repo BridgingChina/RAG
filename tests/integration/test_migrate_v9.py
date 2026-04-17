@@ -46,7 +46,7 @@ def test_migrate_v8_to_v9_creates_column_index_fk_and_backfills(db_session, test
     db_session.add(tn)
     db_session.flush()
 
-    kp = KnowledgePoint(name="v9_l3", taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name="v9_l3", lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
 
@@ -125,7 +125,7 @@ def test_migrate_v8_to_v9_is_idempotent(db_session, test_source):
     tn = TaxonomyNode(lvl1="v9i_l1", lvl2="v9i_l2", lvl3="v9i_l3")
     db_session.add(tn)
     db_session.flush()
-    kp = KnowledgePoint(name="v9i_l3", taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name="v9i_l3", lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
 

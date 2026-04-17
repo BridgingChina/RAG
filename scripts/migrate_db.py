@@ -246,6 +246,38 @@ def migrate_v8_to_v9(conn) -> None:
     )
 
 
+def migrate_v9_to_v10(conn) -> None:
+    """Add knowledge_points.lvl1 / lvl2 + backfill from taxonomy_node join.
+
+    Phase 3 of the lvl3-KP merge: knowledge_points becomes the authoritative
+    holder of (lvl1, lvl2, name=lvl3). taxonomy_nodes retains only lvl1/lvl2
+    rows after a separate cleanup step (scripts/cleanup_lvl3_taxonomy_rows.py)
+    executes once the application code no longer reads lvl3 taxonomy rows.
+    """
+    conn.execute(text(
+        "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS lvl1 VARCHAR(100)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS lvl2 VARCHAR(100)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_kp_lvl1_lvl2 ON knowledge_points(lvl1, lvl2)"
+    ))
+    conn.execute(text("""
+        UPDATE knowledge_points kp
+           SET lvl1 = tn.lvl1,
+               lvl2 = tn.lvl2
+          FROM taxonomy_nodes tn
+         WHERE kp.taxonomy_node_id = tn.id
+           AND kp.lvl1 IS NULL
+    """))
+    set_schema_version(
+        engine, 10,
+        "Add knowledge_points.lvl1 / lvl2 with backfill (Phase 3 prep)",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -255,6 +287,7 @@ MIGRATIONS = {
     6: migrate_v6_to_v7,
     7: migrate_v7_to_v8,
     8: migrate_v8_to_v9,
+    9: migrate_v9_to_v10,
 }
 
 

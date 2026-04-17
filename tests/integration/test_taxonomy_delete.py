@@ -42,7 +42,7 @@ def test_delete_taxonomy_node_blocked_by_knowledge_point(db_session):
     db_session.add(node)
     db_session.flush()
 
-    kp = KnowledgePoint(name="斜拉桥主梁", taxonomy_node_id=node.id)
+    kp = KnowledgePoint(name="斜拉桥主梁", lvl1=node.lvl1, lvl2=node.lvl2, taxonomy_node_id=node.id)
     db_session.add(kp)
     db_session.flush()
 
@@ -87,7 +87,7 @@ def test_delete_lvl3_node_blocked_by_chunk_fk(db_session, test_source):
     node = TaxonomyNode(lvl1="tdfk_l1", lvl2="tdfk_l2", lvl3="tdfk_l3")
     db_session.add(node)
     db_session.flush()
-    kp = KnowledgePoint(name="tdfk_l3_kp", taxonomy_node_id=node.id)
+    kp = KnowledgePoint(name="tdfk_l3_kp", lvl1=node.lvl1, lvl2=node.lvl2, taxonomy_node_id=node.id)
     db_session.add(kp)
     db_session.flush()
     db_session.add(Chunk(

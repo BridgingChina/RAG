@@ -36,7 +36,7 @@ def _seed_taxonomy_kp(db_session, lvl1: str, lvl2: str, lvl3: str) -> tuple[Taxo
     tn = TaxonomyNode(lvl1=lvl1, lvl2=lvl2, lvl3=lvl3)
     db_session.add(tn)
     db_session.flush()
-    kp = KnowledgePoint(name=lvl3, taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name=lvl3, lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
     return tn, kp

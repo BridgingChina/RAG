@@ -29,8 +29,8 @@ def test_tree_lvl3_chunk_count_via_fk(db_session, test_source):
     tn_l3a = next(n for n in nodes if n.lvl3 == lvl3a)
     tn_l3b = next(n for n in nodes if n.lvl3 == lvl3b)
 
-    kp_a = KnowledgePoint(name=lvl3a, taxonomy_node_id=tn_l3a.id)
-    kp_b = KnowledgePoint(name=lvl3b, taxonomy_node_id=tn_l3b.id)
+    kp_a = KnowledgePoint(name=lvl3a, lvl1=tn_l3a.lvl1, lvl2=tn_l3a.lvl2, taxonomy_node_id=tn_l3a.id)
+    kp_b = KnowledgePoint(name=lvl3b, lvl1=tn_l3b.lvl1, lvl2=tn_l3b.lvl2, taxonomy_node_id=tn_l3b.id)
     db_session.add_all([kp_a, kp_b])
     db_session.flush()
 

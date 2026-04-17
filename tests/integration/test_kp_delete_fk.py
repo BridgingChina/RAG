@@ -40,7 +40,7 @@ def test_delete_kp_blocked_by_chunk_reference(db_session, test_source):
     db_session.add(tn)
     db_session.flush()
 
-    kp = KnowledgePoint(name="kpdel_l3", taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name="kpdel_l3", lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
 
@@ -71,7 +71,7 @@ def test_delete_kp_allowed_when_no_chunks(db_session):
     db_session.add(tn)
     db_session.flush()
 
-    kp = KnowledgePoint(name="kpfree_l3", taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name="kpfree_l3", lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
     kp_id = kp.id

@@ -36,7 +36,7 @@ def test_batch_update_populates_knowledge_point_id(db_session, test_source):
     tn = TaxonomyNode(lvl1="bu_l1", lvl2="bu_l2", lvl3="bu_l3")
     db_session.add(tn)
     db_session.flush()
-    kp = KnowledgePoint(name="bu_l3", taxonomy_node_id=tn.id)
+    kp = KnowledgePoint(name="bu_l3", lvl1=tn.lvl1, lvl2=tn.lvl2, taxonomy_node_id=tn.id)
     db_session.add(kp)
     db_session.flush()
 

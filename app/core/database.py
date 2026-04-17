@@ -17,7 +17,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 9
+LATEST_SCHEMA_VERSION = 10
 
 
 def get_db():
@@ -135,6 +135,7 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         "knowledge_points": {
             "id", "taxonomy_node_id", "name", "aliases", "difficulty",
             "summary", "l2_content", "created_at", "updated_at",
+            "lvl1", "lvl2",
         },
         "knowledge_point_key_points": {
             "id", "knowledge_point_id", "summary", "explanation",
