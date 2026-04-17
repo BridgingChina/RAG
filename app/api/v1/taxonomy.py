@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.core.taxonomy_loader import invalidate_taxonomy_cache
 from app.models import Chunk, KnowledgePoint, TaxonomyNode, User
 from app.services.audit_service import AuditService
+from app.services.kp_resolver import resolve_knowledge_point_id
 
 router = APIRouter(prefix="/taxonomy", tags=["taxonomy"])
 
@@ -324,6 +325,7 @@ def batch_update_chunks(
             detail=f"Taxonomy path not found: {body.lvl1}/{body.lvl2 or ''}/{body.lvl3 or ''}",
         )
 
+    resolved_kp_id = resolve_knowledge_point_id(db, body.lvl1, body.lvl2, body.lvl3)
     updated = (
         db.query(Chunk)
         .filter(Chunk.id.in_(body.chunk_ids))
@@ -332,6 +334,7 @@ def batch_update_chunks(
                 Chunk.lvl1: body.lvl1,
                 Chunk.lvl2: body.lvl2,
                 Chunk.lvl3: body.lvl3,
+                Chunk.knowledge_point_id: resolved_kp_id,
             },
             synchronize_session=False,
         )
