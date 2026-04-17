@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class KPCreate(BaseModel):
     taxonomy_node_id: UUID | None = None
+    lvl1: str | None = Field(default=None, max_length=100)
+    lvl2: str | None = Field(default=None, max_length=100)
     name: str = Field(min_length=1, max_length=200)
     aliases: str | None = None
     difficulty: str | None = None
@@ -14,11 +16,18 @@ class KPCreate(BaseModel):
 
 class KPUpdate(BaseModel):
     taxonomy_node_id: UUID | None = None
+    lvl1: str | None = Field(default=None, max_length=100)
+    lvl2: str | None = Field(default=None, max_length=100)
     name: str | None = Field(default=None, min_length=1, max_length=200)
     aliases: str | None = None
     difficulty: str | None = None
     summary: str | None = None
     l2_content: dict | None = None
+
+
+class AutoAssociateResult(BaseModel):
+    candidate_count: int
+    matched_chunk_ids: list[UUID]
 
 
 class KeyPointItem(BaseModel):
@@ -32,6 +41,8 @@ class KeyPointItem(BaseModel):
 class KPDetail(BaseModel):
     id: UUID
     taxonomy_node_id: UUID | None
+    lvl1: str | None = None
+    lvl2: str | None = None
     name: str
     aliases: str | None
     difficulty: str | None
@@ -49,6 +60,8 @@ class KPListItem(BaseModel):
     id: UUID
     name: str
     taxonomy_node_id: UUID | None
+    lvl1: str | None = None
+    lvl2: str | None = None
     difficulty: str | None
     summary: str | None
 

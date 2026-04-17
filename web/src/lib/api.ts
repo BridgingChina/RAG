@@ -551,12 +551,21 @@ export function fetchKnowledgePoint(id: string): Promise<KnowledgePointDetail> {
 
 export function createKnowledgePoint(data: {
   name: string
+  lvl1?: string
+  lvl2?: string
   taxonomy_node_id?: string
   aliases?: string
   difficulty?: string
   summary?: string
 }): Promise<KnowledgePointDetail> {
   return post<KnowledgePointDetail>("/knowledge-points", data)
+}
+
+export function autoAssociateChunks(id: string) {
+  return post<import("./types").AutoAssociateResult>(
+    `/knowledge-points/${id}/auto-associate-chunks`,
+    {},
+  )
 }
 
 export function updateKnowledgePoint(

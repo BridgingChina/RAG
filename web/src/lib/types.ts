@@ -470,6 +470,8 @@ export interface KnowledgePointListItem {
   id: string
   name: string
   taxonomy_node_id: string | null
+  lvl1: string | null
+  lvl2: string | null
   difficulty: string | null
   summary: string | null
 }
@@ -485,12 +487,19 @@ export interface KeyPointItem {
 export interface KnowledgePointDetail {
   id: string
   taxonomy_node_id: string | null
+  lvl1: string | null
+  lvl2: string | null
   name: string
   aliases: string | null
   difficulty: string | null
   summary: string | null
   l2_content: L2Content | null
   key_points: KeyPointItem[]
+}
+
+export interface AutoAssociateResult {
+  candidate_count: number
+  matched_chunk_ids: string[]
 }
 
 export interface L2Content {

@@ -30,7 +30,12 @@ import {
 } from "@/components/ui/table"
 import { Pagination } from "@/components/Pagination"
 import { useApi } from "@/hooks/useApi"
-import { fetchKnowledgePoints, createKnowledgePoint, fetchTaxonomyTree } from "@/lib/api"
+import {
+  autoAssociateChunks,
+  createKnowledgePoint,
+  fetchKnowledgePoints,
+  fetchTaxonomyTree,
+} from "@/lib/api"
 
 const DIFFICULTY_OPTIONS = [
   { value: "basic", label: "基础" },
@@ -51,8 +56,10 @@ export function Component() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [newName, setNewName] = useState("")
-  const [newTaxonomyNodeId, setNewTaxonomyNodeId] = useState("")
+  const [newLvl1, setNewLvl1] = useState("")
+  const [newLvl2, setNewLvl2] = useState("")
   const [newDifficulty, setNewDifficulty] = useState("")
+  const [createStatusMsg, setCreateStatusMsg] = useState<string | null>(null)
 
   const { data, loading, error, refetch } = useApi(
     () => fetchKnowledgePoints({ page, page_size: 20 }),
@@ -61,46 +68,56 @@ export function Component() {
 
   const { data: taxonomyTree } = useApi(() => fetchTaxonomyTree(), [])
 
-  // Flatten taxonomy tree to get lvl3 nodes for the select
-  const taxonomyOptions: Array<{ id: string; label: string }> = []
-  if (taxonomyTree) {
-    for (const l1 of taxonomyTree.items) {
-      for (const l2 of l1.children) {
-        for (const l3 of l2.children) {
-          taxonomyOptions.push({
-            id: l3.node_id,
-            label: `${l1.label} / ${l2.label} / ${l3.label}`,
-          })
-        }
-      }
-    }
-  }
-
-  // Build a map of taxonomy_node_id → label for display
+  // Phase 3: tree has 3 layers (lvl1 → lvl2 → KP). Build lvl1 / lvl2
+  // option lists for the create dialog and a (node_id → label) map used
+  // when rendering the KP list (the label is the KP's own name at L3).
+  const lvl1Options: string[] = []
+  const lvl2ByLvl1 = new Map<string, string[]>()
   const taxonomyLabelMap = new Map<string, string>()
   if (taxonomyTree) {
     for (const l1 of taxonomyTree.items) {
+      lvl1Options.push(l1.label)
+      lvl2ByLvl1.set(l1.label, l1.children.map((l2) => l2.label))
       for (const l2 of l1.children) {
-        for (const l3 of l2.children) {
-          taxonomyLabelMap.set(l3.node_id, l3.label)
+        for (const kp of l2.children) {
+          taxonomyLabelMap.set(kp.node_id, kp.label)
         }
       }
     }
   }
+  const lvl2Options = newLvl1 ? (lvl2ByLvl1.get(newLvl1) ?? []) : []
 
   const handleCreate = async () => {
     if (!newName.trim()) return
     setCreating(true)
     setCreateError(null)
+    setCreateStatusMsg(null)
     try {
       const kp = await createKnowledgePoint({
         name: newName.trim(),
-        taxonomy_node_id: newTaxonomyNodeId || undefined,
+        lvl1: newLvl1 || undefined,
+        lvl2: newLvl2 || undefined,
         difficulty: newDifficulty || undefined,
       })
+      // Auto-associate chunks under the same (lvl1, lvl2) via LLM.
+      // Skip if lvl1/lvl2 not set (endpoint would 422).
+      if (newLvl1 && newLvl2) {
+        setCreateStatusMsg("AI 正在关联同分类下的知识块…")
+        try {
+          const r = await autoAssociateChunks(kp.id)
+          setCreateStatusMsg(
+            `关联完成：扫描 ${r.candidate_count} 条候选，命中 ${r.matched_chunk_ids.length} 条。`,
+          )
+        } catch (e) {
+          setCreateStatusMsg(
+            `KP 已创建，但自动关联失败：${e instanceof Error ? e.message : String(e)}。稍后可在详情页重试。`,
+          )
+        }
+      }
       setIsCreateOpen(false)
       setNewName("")
-      setNewTaxonomyNodeId("")
+      setNewLvl1("")
+      setNewLvl2("")
       setNewDifficulty("")
       navigate(`/knowledge-points/${kp.id}`)
     } catch (e) {
@@ -223,20 +240,50 @@ export function Component() {
               />
             </div>
             <div className="space-y-2">
-              <Label>分类节点</Label>
-              <Select value={newTaxonomyNodeId} onValueChange={setNewTaxonomyNodeId}>
+              <Label>一级分类</Label>
+              <Select
+                value={newLvl1 || "__none__"}
+                onValueChange={(v) => {
+                  const val = v === "__none__" ? "" : v
+                  setNewLvl1(val)
+                  setNewLvl2("")
+                }}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="选择分类..." />
+                  <SelectValue placeholder="选择一级分类..." />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">不选择</SelectItem>
-                  {taxonomyOptions.map((opt) => (
-                    <SelectItem key={opt.id} value={opt.id}>
-                      {opt.label}
+                  {lvl1Options.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {l}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>二级分类</Label>
+              <Select
+                value={newLvl2 || "__none__"}
+                onValueChange={(v) => setNewLvl2(v === "__none__" ? "" : v)}
+                disabled={!newLvl1}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={newLvl1 ? "选择二级分类..." : "请先选一级分类"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">不选择</SelectItem>
+                  {lvl2Options.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {l}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                填写分类后，创建成功会自动 LLM 扫描同分类下未挂载的知识块并关联。
+              </p>
             </div>
             <div className="space-y-2">
               <Label>难度</Label>
@@ -256,6 +303,9 @@ export function Component() {
             </div>
             {createError && (
               <p className="text-sm text-destructive">{createError}</p>
+            )}
+            {createStatusMsg && (
+              <p className="text-sm text-muted-foreground">{createStatusMsg}</p>
             )}
           </div>
           <DialogFooter>

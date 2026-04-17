@@ -12,6 +12,7 @@ from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.api.v1.schemas.knowledge_point import (
+    AutoAssociateResult,
     GenerateKeyPointsResponse,
     KPBridgeItem,
     KPBridgeReplaceRequest,
@@ -38,6 +39,8 @@ def _build_detail(kp: KnowledgePoint, key_points: list[KnowledgePointKeyPoint]) 
     return KPDetail(
         id=kp.id,
         taxonomy_node_id=kp.taxonomy_node_id,
+        lvl1=kp.lvl1,
+        lvl2=kp.lvl2,
         name=kp.name,
         aliases=kp.aliases,
         difficulty=kp.difficulty,
@@ -77,6 +80,8 @@ def list_knowledge_points(
             id=kp.id,
             name=kp.name,
             taxonomy_node_id=kp.taxonomy_node_id,
+            lvl1=kp.lvl1,
+            lvl2=kp.lvl2,
             difficulty=kp.difficulty,
             summary=kp.summary,
         ),
@@ -107,6 +112,114 @@ def create_knowledge_point(
     db.refresh(kp)
 
     return _build_detail(kp, [])
+
+
+@router.post(
+    "/{kp_id}/auto-associate-chunks",
+    response_model=AutoAssociateResult,
+    summary="LLM-match unassigned chunks under the KP's (lvl1, lvl2) and set the FK",
+)
+async def auto_associate_chunks(
+    kp_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AutoAssociateResult:
+    """Let the LLM decide which same-(lvl1, lvl2) chunks belong to this KP.
+
+    Scope: chunks where lvl1 / lvl2 match the KP and knowledge_point_id IS NULL.
+    Never touches chunks already attached to another KP.
+    """
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+    if not kp.lvl1 or not kp.lvl2:
+        raise HTTPException(
+            status_code=422,
+            detail="KnowledgePoint is missing lvl1 / lvl2 — cannot scope candidate chunks",
+        )
+
+    candidates = (
+        db.query(Chunk)
+        .filter(
+            Chunk.lvl1 == kp.lvl1,
+            Chunk.lvl2 == kp.lvl2,
+            Chunk.knowledge_point_id.is_(None),
+        )
+        .order_by(Chunk.created_at)
+        .limit(50)
+        .all()
+    )
+    if not candidates:
+        return AutoAssociateResult(candidate_count=0, matched_chunk_ids=[])
+
+    evidence_lines = [f"[{i}] {c.content}" for i, c in enumerate(candidates, 1)]
+    prompt = (
+        f"你是桥梁知识专家。以下是分类「{kp.lvl1} / {kp.lvl2}」下的一批知识块，"
+        f"请逐条判断它是否属于知识点「{kp.name}」。\n\n"
+        f"知识点定义：{kp.summary or kp.name}\n\n"
+        "判断标准：该知识块的内容是否直接讨论、阐明、举例或涉及此知识点的某一方面。"
+        "宁漏勿错——只把明显相关的标 yes；边缘/仅提到名字的标 no。\n\n"
+        "候选知识块：\n"
+        + "\n".join(evidence_lines)
+        + "\n\n"
+        '输出严格的 JSON（不要输出任何其他内容）：\n'
+        '{"matches": {"1": "yes", "2": "no", ...}}'
+    )
+
+    provider = get_provider()
+    try:
+        response = await provider.chat([ChatMessage(role="user", content=prompt)])
+    except Exception as e:
+        logger.error("LLM call failed for auto-associate KP %s: %s", kp_id, e)
+        raise HTTPException(
+            status_code=502, detail="LLM service unavailable. Please try again later."
+        )
+
+    try:
+        text = response.content.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        parsed = json.loads(text)
+        matches = parsed.get("matches", {})
+        if not isinstance(matches, dict):
+            raise TypeError("matches is not an object")
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.error("Failed to parse auto-associate LLM response: %s\nResponse: %s",
+                     e, response.content)
+        raise HTTPException(
+            status_code=502, detail="Failed to parse LLM response as JSON"
+        )
+
+    matched_ids: list[UUID] = []
+    for idx, chunk in enumerate(candidates, 1):
+        verdict = matches.get(str(idx), "")
+        if isinstance(verdict, str) and verdict.strip().lower() == "yes":
+            chunk.knowledge_point_id = kp.id
+            chunk.lvl3 = kp.name
+            matched_ids.append(chunk.id)
+
+    AuditService.log(
+        db,
+        action="auto_associate_chunks",
+        resource_type="knowledge_point",
+        user_id=current_user.id,
+        resource_id=str(kp_id),
+        detail={
+            "candidate_count": len(candidates),
+            "matched_count": len(matched_ids),
+        },
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    return AutoAssociateResult(
+        candidate_count=len(candidates),
+        matched_chunk_ids=matched_ids,
+    )
 
 
 @router.post("/{kp_id}/sync-bridges", response_model=list[KPBridgeItem])
