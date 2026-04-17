@@ -48,12 +48,21 @@ def get_taxonomy_tree(db: Session = Depends(get_db)) -> TaxonomyTree:
     for l1, l2, cnt in rows:
         lvl2_counts[(l1, l2)] = cnt
 
-    # Count chunks per lvl1+lvl2+lvl3
+    # Count chunks per lvl1+lvl2+lvl3 via the knowledge_point_id FK.
+    # Phase 2: aggregate through the FK instead of the lvl3 string — runs on
+    # ix_chunks_knowledge_point_id and avoids the unindexed string group-by.
     lvl3_counts = {}
     rows = (
-        db.query(Chunk.lvl1, Chunk.lvl2, Chunk.lvl3, func.count(Chunk.id))
-        .filter(Chunk.lvl1.isnot(None), Chunk.lvl2.isnot(None), Chunk.lvl3.isnot(None))
-        .group_by(Chunk.lvl1, Chunk.lvl2, Chunk.lvl3)
+        db.query(
+            TaxonomyNode.lvl1,
+            TaxonomyNode.lvl2,
+            TaxonomyNode.lvl3,
+            func.count(Chunk.id),
+        )
+        .join(KnowledgePoint, KnowledgePoint.taxonomy_node_id == TaxonomyNode.id)
+        .join(Chunk, Chunk.knowledge_point_id == KnowledgePoint.id)
+        .filter(TaxonomyNode.lvl3.isnot(None))
+        .group_by(TaxonomyNode.lvl1, TaxonomyNode.lvl2, TaxonomyNode.lvl3)
         .all()
     )
     for l1, l2, l3, cnt in rows:
