@@ -4,6 +4,8 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
@@ -339,10 +341,39 @@ def delete_knowledge_point(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    """Delete a knowledge point (CASCADE deletes key points)."""
+    """Delete a knowledge point.
+
+    Refuses when chunks still reference the KP via knowledge_point_id. The FK
+    action is SET NULL (see schema v9), which would silently orphan chunks
+    from their concrete-knowledge entity — unacceptable once Phase 2 switches
+    readers to this FK. Mirror the delete_taxonomy_node guard pattern: explicit
+    count-check first, then savepoint + IntegrityError as defense-in-depth.
+    """
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
     if not kp:
         raise HTTPException(status_code=404, detail="Knowledge point not found")
+
+    chunk_count = (
+        db.query(func.count(Chunk.id))
+        .filter(Chunk.knowledge_point_id == kp_id)
+        .scalar()
+        or 0
+    )
+    if chunk_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete knowledge point with {chunk_count} associated chunk(s)",
+        )
+
+    try:
+        with db.begin_nested():
+            db.delete(kp)
+            db.flush()
+    except IntegrityError as e:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete knowledge point due to existing references",
+        ) from e
 
     AuditService.log(
         db,
@@ -353,7 +384,6 @@ def delete_knowledge_point(
         ip_address=get_client_ip(request),
     )
 
-    db.delete(kp)
     db.commit()
 
 
