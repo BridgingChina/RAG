@@ -63,6 +63,40 @@ export class ConflictError extends Error {
   }
 }
 
+// Turn a non-OK response body into the right Error. FastAPI sends either
+// {"detail": "..."} or {"detail": {...}} (when HTTPException.detail is a dict).
+// A 409 is only a chunk optimistic-lock conflict when the payload actually
+// carries chunk_id + current_updated_at — any other 409 (e.g. taxonomy node
+// still has knowledge points attached) must surface its own detail message.
+function parseHttpError(status: number, text: string): Error {
+  let data: unknown = null
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return new Error(text || `HTTP ${status}`)
+  }
+
+  const root = (data && typeof data === "object") ? (data as Record<string, unknown>) : null
+  const rootDetail = root?.["detail"]
+  const payload = (rootDetail && typeof rootDetail === "object")
+    ? (rootDetail as Record<string, unknown>)
+    : root
+
+  if (status === 409 && payload) {
+    const chunkId = payload["chunk_id"]
+    const currentUpdatedAt = payload["current_updated_at"]
+    if (typeof chunkId === "string" && typeof currentUpdatedAt === "string") {
+      return new ConflictError(currentUpdatedAt, chunkId)
+    }
+  }
+
+  if (typeof rootDetail === "string") return new Error(rootDetail)
+  if (payload && typeof payload["detail"] === "string") {
+    return new Error(payload["detail"] as string)
+  }
+  return new Error(text || `HTTP ${status}`)
+}
+
 // --- Core HTTP methods ---
 
 async function get<T>(
@@ -115,11 +149,7 @@ async function post<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
-    if (res.status === 409) {
-      const data = JSON.parse(text)
-      throw new ConflictError(data.current_updated_at, data.chunk_id)
-    }
-    throw new Error(text || `HTTP ${res.status}`)
+    throw parseHttpError(res.status, text)
   }
 
   return res.json()
@@ -138,11 +168,7 @@ async function put<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
-    if (res.status === 409) {
-      const data = JSON.parse(text)
-      throw new ConflictError(data.current_updated_at, data.chunk_id)
-    }
-    throw new Error(text || `HTTP ${res.status}`)
+    throw parseHttpError(res.status, text)
   }
 
   return res.json()
@@ -160,11 +186,7 @@ async function del(url: string): Promise<void> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
-    if (res.status === 409) {
-      const data = JSON.parse(text)
-      throw new ConflictError(data.current_updated_at, data.chunk_id)
-    }
-    throw new Error(text || `HTTP ${res.status}`)
+    throw parseHttpError(res.status, text)
   }
 }
 
@@ -181,11 +203,7 @@ async function patch<T>(url: string, body: unknown): Promise<T> {
       localStorage.removeItem("auth-token")
       window.location.href = "/login"
     }
-    if (res.status === 409) {
-      const data = JSON.parse(text)
-      throw new ConflictError(data.current_updated_at, data.chunk_id)
-    }
-    throw new Error(text || `HTTP ${res.status}`)
+    throw parseHttpError(res.status, text)
   }
 
   return res.json()
