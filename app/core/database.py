@@ -17,7 +17,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 
 def get_db():
@@ -113,6 +113,7 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "bridge_id", "bridge_binding_status", "page_range",
             "embedding", "contextual_text", "search_text", "tsv",
             "needs_reindex", "updated_at", "created_at",
+            "knowledge_point_id",
         },
         "chunk_bridge_links": {
             "id", "chunk_id", "bridge_id", "role", "confidence", "method", "created_at",

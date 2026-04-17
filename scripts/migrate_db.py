@@ -213,6 +213,39 @@ def migrate_v7_to_v8(conn) -> None:
     set_schema_version(engine, 8, "Add sources.updated_at column", conn=conn)
 
 
+def migrate_v8_to_v9(conn) -> None:
+    """Add chunks.knowledge_point_id FK (ON DELETE SET NULL) + backfill from lvl3 strings.
+
+    First step of the lvl3-KP merge refactor. chunks.lvl1/lvl2/lvl3 stay in place
+    during this double-write phase; reads still flow through the string columns.
+    """
+    conn.execute(text(
+        "ALTER TABLE chunks "
+        "ADD COLUMN IF NOT EXISTS knowledge_point_id UUID "
+        "REFERENCES knowledge_points(id) ON DELETE SET NULL"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_chunks_knowledge_point_id "
+        "ON chunks(knowledge_point_id)"
+    ))
+    conn.execute(text("""
+        UPDATE chunks c
+           SET knowledge_point_id = kp.id
+          FROM knowledge_points kp
+          JOIN taxonomy_nodes tn ON tn.id = kp.taxonomy_node_id
+         WHERE c.lvl1 = tn.lvl1
+           AND c.lvl2 = tn.lvl2
+           AND c.lvl3 = tn.lvl3
+           AND c.knowledge_point_id IS NULL
+    """))
+    set_schema_version(
+        engine,
+        9,
+        "Add chunks.knowledge_point_id FK (ON DELETE SET NULL) with backfill from lvl3 strings",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -221,6 +254,7 @@ MIGRATIONS = {
     5: migrate_v5_to_v6,
     6: migrate_v6_to_v7,
     7: migrate_v7_to_v8,
+    8: migrate_v8_to_v9,
 }
 
 

@@ -23,6 +23,12 @@ class Chunk(Base, UUIDMixin, CreatedAtMixin):
     bridge_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("bridges.id"), nullable=True
     )
+    knowledge_point_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_points.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     bridge_binding_status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=sql_text("'none'")
     )
