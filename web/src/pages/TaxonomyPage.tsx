@@ -499,7 +499,7 @@ export function Component() {
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>
             <DialogDescription>
-              确定要删除分类「{deleteTarget?.label}」吗？仅当该分类下无关联知识块时可删除。
+              确定要删除分类「{deleteTarget?.label}」吗？仅当该分类下无关联知识块和知识点时可删除。
             </DialogDescription>
           </DialogHeader>
           {actionError && (

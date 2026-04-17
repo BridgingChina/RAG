@@ -3,6 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
@@ -17,7 +18,7 @@ from app.api.v1.schemas.taxonomy import (
 )
 from app.core.database import get_db
 from app.core.taxonomy_loader import invalidate_taxonomy_cache
-from app.models import Chunk, TaxonomyNode, User
+from app.models import Chunk, KnowledgePoint, TaxonomyNode, User
 from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/taxonomy", tags=["taxonomy"])
@@ -236,7 +237,32 @@ def delete_taxonomy_node(
             detail=f"Cannot delete taxonomy node with {chunk_count} associated chunks",
         )
 
-    # Audit log before delete so flush happens before the row is removed
+    kp_count = (
+        db.query(func.count(KnowledgePoint.id))
+        .filter(KnowledgePoint.taxonomy_node_id == node_id)
+        .scalar()
+        or 0
+    )
+    if kp_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete taxonomy node with {kp_count} associated knowledge point(s)",
+        )
+
+    # Savepoint catches any unchecked FK references (defense-in-depth for
+    # future tables that add FKs to taxonomy_nodes without updating the checks
+    # above). db.rollback() would nuke the outer transaction, so we use a
+    # nested block that PostgreSQL implements as SAVEPOINT.
+    try:
+        with db.begin_nested():
+            db.delete(node)
+            db.flush()
+    except IntegrityError as e:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete taxonomy node due to existing references",
+        ) from e
+
     AuditService.log(
         db,
         action=AuditService.DELETE,
@@ -246,7 +272,6 @@ def delete_taxonomy_node(
         ip_address=get_client_ip(request),
     )
 
-    db.delete(node)
     db.commit()
     invalidate_taxonomy_cache()
 
