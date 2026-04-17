@@ -22,30 +22,19 @@ def get_knowledge_tree(
 ) -> MobileResponse[dict]:
     """Return the knowledge architecture tree.
 
-    Combines taxonomy_nodes (3-level hierarchy) with knowledge_points
-    (leaf entities under lvl3 nodes).
+    Phase 3: lvl1 → lvl2 → KnowledgePoint (3 layers). The old lvl3
+    taxonomy layer was a 1:1 mirror of KnowledgePoint, so it has been
+    collapsed — the KP itself now sits where lvl3 used to.
+
+    Mobile clients that previously walked 4 layers must drop the lvl3
+    wrapper (see EchoBridgeCQU/web#2, EchoBridgeCQU/app#3).
     """
-    # 1. Load all taxonomy nodes
-    nodes = db.query(TaxonomyNode).order_by(
+    # 1. Skeleton: lvl1 + lvl2 rows (lvl3 rows are ignored — being retired).
+    nodes = db.query(TaxonomyNode).filter(TaxonomyNode.lvl3.is_(None)).order_by(
         TaxonomyNode.lvl1,
         TaxonomyNode.lvl2.asc().nullsfirst(),
-        TaxonomyNode.lvl3.asc().nullsfirst(),
     ).all()
 
-    # 2. Load all knowledge points
-    kps = db.query(KnowledgePoint).all()
-    kp_by_taxonomy: dict[UUID, list[dict]] = {}
-    for kp in kps:
-        if kp.taxonomy_node_id:
-            kp_by_taxonomy.setdefault(kp.taxonomy_node_id, []).append({
-                "id": str(kp.id),
-                "name": kp.name,
-                "type": "knowledge_point",
-                "tags": [],
-                "summary": kp.summary,
-            })
-
-    # 3. Build tree in memory
     lvl1_nodes: dict[str, dict] = {}
     lvl2_nodes: dict[tuple[str, str], dict] = {}
 
@@ -53,22 +42,17 @@ def get_knowledge_tree(
         if node.lvl2 is None:
             if node.lvl1 not in lvl1_nodes:
                 lvl1_nodes[node.lvl1] = {
-                    "id": str(node.id), "name": node.lvl1, "icon_url": None, "children": [],
+                    "id": str(node.id), "name": node.lvl1,
+                    "icon_url": None, "children": [],
                 }
             continue
 
         if node.lvl1 not in lvl1_nodes:
+            # lvl1 parent not yet seen (seed order); placeholder using lvl2 id
             lvl1_nodes[node.lvl1] = {
-                "id": str(node.id), "name": node.lvl1, "icon_url": None, "children": [],
+                "id": str(node.id), "name": node.lvl1,
+                "icon_url": None, "children": [],
             }
-
-        if node.lvl3 is None:
-            key2 = (node.lvl1, node.lvl2)
-            if key2 not in lvl2_nodes:
-                lvl2_node = {"id": str(node.id), "name": node.lvl2, "children": []}
-                lvl2_nodes[key2] = lvl2_node
-                lvl1_nodes[node.lvl1]["children"].append(lvl2_node)
-            continue
 
         key2 = (node.lvl1, node.lvl2)
         if key2 not in lvl2_nodes:
@@ -76,11 +60,25 @@ def get_knowledge_tree(
             lvl2_nodes[key2] = lvl2_node
             lvl1_nodes[node.lvl1]["children"].append(lvl2_node)
 
-        lvl3_entry = {
-            "id": str(node.id), "name": node.lvl3,
-            "children": kp_by_taxonomy.get(node.id, []),
-        }
-        lvl2_nodes[key2]["children"].append(lvl3_entry)
+    # 2. Hang each KnowledgePoint under its (lvl1, lvl2) via its own columns.
+    kps = (
+        db.query(KnowledgePoint)
+        .order_by(KnowledgePoint.name)
+        .all()
+    )
+    for kp in kps:
+        if not kp.lvl1 or not kp.lvl2:
+            continue
+        key2 = (kp.lvl1, kp.lvl2)
+        if key2 not in lvl2_nodes:
+            continue
+        lvl2_nodes[key2]["children"].append({
+            "id": str(kp.id),
+            "name": kp.name,
+            "type": "knowledge_point",
+            "tags": [],
+            "summary": kp.summary,
+        })
 
     lines = list(lvl1_nodes.values())
 

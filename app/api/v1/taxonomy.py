@@ -27,93 +27,71 @@ router = APIRouter(prefix="/taxonomy", tags=["taxonomy"])
 
 @router.get("/tree", response_model=TaxonomyTree)
 def get_taxonomy_tree(db: Session = Depends(get_db)) -> TaxonomyTree:
-    """Get full taxonomy tree with per-node chunk counts."""
-    nodes = db.query(TaxonomyNode).all()
+    """Get full taxonomy tree with per-node chunk counts.
 
-    # Count chunks per lvl1
+    Phase 3: lvl1 → lvl2 → KnowledgePoint (3 layers). The old lvl3 taxonomy
+    layer retired with Phase 3; KP now sits where lvl3 used to.
+    """
+    # Skeleton: only lvl1 / lvl2 taxonomy rows (lvl3 rows are being retired).
+    nodes = db.query(TaxonomyNode).filter(TaxonomyNode.lvl3.is_(None)).all()
+
     lvl1_counts = dict(
         db.query(Chunk.lvl1, func.count(Chunk.id))
         .filter(Chunk.lvl1.isnot(None))
         .group_by(Chunk.lvl1)
         .all()
     )
-    # Count chunks per lvl1+lvl2
     lvl2_counts = {}
-    rows = (
+    for l1, l2, cnt in (
         db.query(Chunk.lvl1, Chunk.lvl2, func.count(Chunk.id))
         .filter(Chunk.lvl1.isnot(None), Chunk.lvl2.isnot(None))
         .group_by(Chunk.lvl1, Chunk.lvl2)
         .all()
-    )
-    for l1, l2, cnt in rows:
+    ):
         lvl2_counts[(l1, l2)] = cnt
 
-    # Count chunks per lvl1+lvl2+lvl3 via the knowledge_point_id FK.
-    # Phase 2: aggregate through the FK instead of the lvl3 string — runs on
-    # ix_chunks_knowledge_point_id and avoids the unindexed string group-by.
-    lvl3_counts = {}
-    rows = (
-        db.query(
-            TaxonomyNode.lvl1,
-            TaxonomyNode.lvl2,
-            TaxonomyNode.lvl3,
-            func.count(Chunk.id),
-        )
-        .join(KnowledgePoint, KnowledgePoint.taxonomy_node_id == TaxonomyNode.id)
-        .join(Chunk, Chunk.knowledge_point_id == KnowledgePoint.id)
-        .filter(TaxonomyNode.lvl3.isnot(None))
-        .group_by(TaxonomyNode.lvl1, TaxonomyNode.lvl2, TaxonomyNode.lvl3)
+    kp_chunk_counts = dict(
+        db.query(Chunk.knowledge_point_id, func.count(Chunk.id))
+        .filter(Chunk.knowledge_point_id.isnot(None))
+        .group_by(Chunk.knowledge_point_id)
         .all()
     )
-    for l1, l2, l3, cnt in rows:
-        lvl3_counts[(l1, l2, l3)] = cnt
 
-    # Build tree from nodes, tracking node IDs
-    # Structure: {lvl1: (node_id, {lvl2: (node_id, {lvl3: node_id})})}
-    lvl1_map: dict[str, tuple[UUID, dict[str, tuple[UUID, dict[str, UUID]]]]] = {}
+    lvl1_map: dict[str, tuple[UUID, dict[str, UUID]]] = {}
     for node in nodes:
-        if node.lvl1 not in lvl1_map:
-            # lvl1-only node
-            if not node.lvl2:
-                lvl1_map[node.lvl1] = (node.id, {})
-                continue
-            # lvl2+ node but lvl1 entry doesn't exist yet (shouldn't happen with seed)
-            lvl1_map[node.lvl1] = (0, {})
-        if not node.lvl2:
-            # Update lvl1 node_id if this is the lvl1-only row
-            lvl1_map[node.lvl1] = (node.id, lvl1_map[node.lvl1][1])
+        if node.lvl2 is None:
+            lvl1_map.setdefault(node.lvl1, (node.id, {}))
+            if lvl1_map[node.lvl1][0] != node.id:
+                lvl1_map[node.lvl1] = (node.id, lvl1_map[node.lvl1][1])
             continue
-        lvl1_id, lvl2_dict = lvl1_map[node.lvl1]
-        if node.lvl2 not in lvl2_dict:
-            if not node.lvl3:
-                lvl2_dict[node.lvl2] = (node.id, {})
-                continue
-            lvl2_dict[node.lvl2] = (0, {})
-        if not node.lvl3:
-            lvl2_dict[node.lvl2] = (node.id, lvl2_dict[node.lvl2][1])
+        entry = lvl1_map.setdefault(node.lvl1, (node.id, {}))
+        entry[1][node.lvl2] = node.id
+
+    kps_by_lvl2: dict[tuple[str, str], list[KnowledgePoint]] = {}
+    for kp in db.query(KnowledgePoint).order_by(KnowledgePoint.name).all():
+        if not kp.lvl1 or not kp.lvl2:
             continue
-        lvl2_id, lvl3_dict = lvl2_dict[node.lvl2]
-        lvl3_dict[node.lvl3] = node.id
+        kps_by_lvl2.setdefault((kp.lvl1, kp.lvl2), []).append(kp)
 
     items = []
     for lvl1, (lvl1_nid, lvl2_dict) in lvl1_map.items():
         lvl2_children = []
-        for lvl2, (lvl2_nid, lvl3_dict) in lvl2_dict.items():
-            lvl3_children = [
+        for lvl2, lvl2_nid in lvl2_dict.items():
+            kp_children = [
                 TaxonomyTreeItem(
-                    node_id=nid,
-                    label=lvl3,
-                    chunk_count=lvl3_counts.get((lvl1, lvl2, lvl3), 0),
+                    node_id=kp.id,
+                    label=kp.name,
+                    chunk_count=kp_chunk_counts.get(kp.id, 0),
                     children=[],
                 )
-                for lvl3, nid in lvl3_dict.items()
+                for kp in kps_by_lvl2.get((lvl1, lvl2), [])
             ]
             lvl2_children.append(
                 TaxonomyTreeItem(
                     node_id=lvl2_nid,
                     label=lvl2,
                     chunk_count=lvl2_counts.get((lvl1, lvl2), 0),
-                    children=lvl3_children,
+                    children=kp_children,
                 )
             )
         items.append(

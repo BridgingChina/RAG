@@ -20,27 +20,26 @@ def _collect_ids(node: dict, result: list[str] | None = None) -> list[str]:
 
 
 def test_tree_nodes_have_unique_ids(db_session):
-    """Each node in the knowledge tree must have a distinct ID.
-
-    Regression test for issue #146: lvl2 category and its first lvl3
-    child shared the same ID because NULLs sorted last in ORDER BY.
-    """
-    # Create taxonomy: lvl1 → lvl2 → lvl3
+    """Phase 3: tree is lvl1 → lvl2 → KP (3 layers). Each layer must have a
+    distinct ID; the KP's id sits where lvl3 used to. Retains the spirit of
+    the original issue #146 regression — the lvl2 category and its first
+    child must not collide."""
     lvl1_node = TaxonomyNode(lvl1="功能与社会")
     lvl2_node = TaxonomyNode(lvl1="功能与社会", lvl2="交通功能")
-    lvl3_node = TaxonomyNode(lvl1="功能与社会", lvl2="交通功能", lvl3="人行通道")
-    db_session.add_all([lvl1_node, lvl2_node, lvl3_node])
+    db_session.add_all([lvl1_node, lvl2_node])
     db_session.flush()
 
-    # Sanity: the three nodes have different UUIDs
-    assert len({lvl1_node.id, lvl2_node.id, lvl3_node.id}) == 3
+    kp = KnowledgePoint(
+        name="人行通道",
+        lvl1=lvl2_node.lvl1,
+        lvl2=lvl2_node.lvl2,
+    )
+    db_session.add(kp)
+    db_session.flush()
 
-    # Call the endpoint logic directly
-    from unittest.mock import MagicMock
+    assert len({lvl1_node.id, lvl2_node.id, kp.id}) == 3
 
-    mock_deps = MagicMock()
     result = get_knowledge_tree(depth=None, db=db_session)
-
     lines = result.data["lines"]
     assert len(lines) == 1
 
@@ -48,12 +47,8 @@ def test_tree_nodes_have_unique_ids(db_session):
     for line in lines:
         _collect_ids(line, all_ids)
 
-    # The bug caused duplicates; after fix, all IDs must be unique
-    assert len(all_ids) == len(set(all_ids)), (
-        f"Duplicate IDs found in tree: {all_ids}"
-    )
+    assert len(all_ids) == len(set(all_ids)), f"Duplicate IDs: {all_ids}"
 
-    # Verify correct ID assignment
     line_node = lines[0]
     assert line_node["id"] == str(lvl1_node.id)
     assert line_node["name"] == "功能与社会"
@@ -62,9 +57,10 @@ def test_tree_nodes_have_unique_ids(db_session):
     assert category_node["id"] == str(lvl2_node.id)
     assert category_node["name"] == "交通功能"
 
-    topic_node = category_node["children"][0]
-    assert topic_node["id"] == str(lvl3_node.id)
-    assert topic_node["name"] == "人行通道"
+    kp_node = category_node["children"][0]
+    assert kp_node["id"] == str(kp.id)
+    assert kp_node["name"] == "人行通道"
+    assert kp_node["type"] == "knowledge_point"
 
 
 def test_tree_includes_knowledge_points_with_own_ids(db_session):
