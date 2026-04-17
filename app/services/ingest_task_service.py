@@ -26,6 +26,7 @@ from app.services.audit_service import AuditService
 from app.services.bridge_linker import BridgeLinker
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
+from app.services.kp_resolver import resolve_knowledge_point_id
 from app.services.markdown_parser import parse_markdown
 from app.services.r2_storage import R2StorageService
 from app.services.tagger import MetadataTagger
@@ -555,6 +556,9 @@ class IngestTaskService:
                 chunk.lvl1 = tag_result.lvl1
                 chunk.lvl2 = tag_result.lvl2
                 chunk.lvl3 = tag_result.lvl3
+                chunk.knowledge_point_id = resolve_knowledge_point_id(
+                    self.db, tag_result.lvl1, tag_result.lvl2, tag_result.lvl3,
+                )
                 chunk.bridge_id = primary_link.bridge_id if primary_link else None
                 chunk.bridge_binding_status = link_result.binding_status
                 chunk.embedding = embeddings[0]

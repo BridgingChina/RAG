@@ -115,13 +115,16 @@ def split_chunk(
     content_a = content[:position]
     content_b = content[position:]
 
-    # Inherit metadata from original
+    # Inherit metadata from original (including the Phase-1 double-write
+    # knowledge_point_id FK — the split produces two chunks in the same
+    # taxonomy path as the parent, so they inherit the same KP association).
     shared_attrs = dict(
         source_id=chunk.source_id,
         section_title=chunk.section_title,
         lvl1=chunk.lvl1,
         lvl2=chunk.lvl2,
         lvl3=chunk.lvl3,
+        knowledge_point_id=chunk.knowledge_point_id,
         bridge_id=chunk.bridge_id,
         bridge_binding_status=chunk.bridge_binding_status,
         page_range=chunk.page_range,
