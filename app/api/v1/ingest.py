@@ -18,6 +18,7 @@ from app.providers import get_provider
 from app.services.bridge_linker import BridgeLinker
 from app.services.chunker import SemanticChunker
 from app.services.context_enricher import ContextEnricher
+from app.services.kp_resolver import resolve_knowledge_point_id
 from app.services.markdown_parser import parse_markdown
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
@@ -220,7 +221,8 @@ async def ingest(
                 detail=f"Invalid embedding dimension: expected {EMBEDDING_DIM}, got {len(chunk_embedding)}",
             )
 
-        # Create chunk
+        # Create chunk (Phase-1 double-write: populate knowledge_point_id
+        # alongside the legacy lvl3 string).
         chunk = Chunk(
             source_id=source.id,
             content=chunk_result.content,
@@ -230,6 +232,9 @@ async def ingest(
             lvl1=tag_result.lvl1,
             lvl2=tag_result.lvl2,
             lvl3=tag_result.lvl3,
+            knowledge_point_id=resolve_knowledge_point_id(
+                db, tag_result.lvl1, tag_result.lvl2, tag_result.lvl3,
+            ),
             bridge_id=chunk_bridge_id,
             bridge_binding_status=bridge_link_result.binding_status,
             embedding=chunk_embedding,

@@ -23,6 +23,7 @@ from app.core.database import get_db
 from app.models import Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode, User
 from app.services.audit_service import AuditService
 from app.services.chunk_editor import check_optimistic_lock, get_tokenizer
+from app.services.kp_resolver import resolve_knowledge_point_id
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -253,6 +254,13 @@ def update_chunk(
     # Apply remaining updates (lvl1/2/3, bridge_id, bridge_binding_status)
     for key, value in update_data.items():
         setattr(chunk, key, value)
+
+    # Phase-1 double-write: keep knowledge_point_id FK in sync with the lvl3
+    # string column. Any edit that touches lvl1/lvl2/lvl3 must re-resolve.
+    if any(k in update_data for k in ("lvl1", "lvl2", "lvl3")):
+        chunk.knowledge_point_id = resolve_knowledge_point_id(
+            db, chunk.lvl1, chunk.lvl2, chunk.lvl3,
+        )
 
     db.flush()
 
