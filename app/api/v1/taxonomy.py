@@ -364,10 +364,23 @@ def batch_update_chunks(
 
 
 def _count_chunks_for_node(db: Session, node: TaxonomyNode) -> int:
-    """Count chunks matching a taxonomy node's path."""
+    """Count chunks matching a taxonomy node's path.
+
+    Phase 2: lvl3 nodes count via the knowledge_point_id FK so the query
+    uses ix_chunks_knowledge_point_id and picks up the same disambiguation
+    the KP→TaxonomyNode relation already provides. lvl1 / lvl2 nodes have
+    no FK (knowledge_points only attach to lvl3), so they remain on the
+    string columns — those are dropped in Phase 3 anyway.
+    """
+    if node.lvl3:
+        return (
+            db.query(func.count(Chunk.id))
+            .join(KnowledgePoint, Chunk.knowledge_point_id == KnowledgePoint.id)
+            .filter(KnowledgePoint.taxonomy_node_id == node.id)
+            .scalar()
+            or 0
+        )
     query = db.query(func.count(Chunk.id)).filter(Chunk.lvl1 == node.lvl1)
     if node.lvl2:
         query = query.filter(Chunk.lvl2 == node.lvl2)
-    if node.lvl3:
-        query = query.filter(Chunk.lvl3 == node.lvl3)
     return query.scalar() or 0

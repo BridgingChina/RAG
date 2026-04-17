@@ -77,3 +77,62 @@ def test_delete_taxonomy_node_returns_404_for_missing_id(db_session):
             current_user=admin,
         )
     assert excinfo.value.status_code == 404
+
+
+def test_delete_lvl3_node_blocked_by_chunk_fk(db_session, test_source):
+    """Phase 2: lvl3 node's chunk count now comes from knowledge_point_id FK."""
+    from app.core.constants import EMBEDDING_DIM
+    from app.models import Chunk, KnowledgePoint
+
+    node = TaxonomyNode(lvl1="tdfk_l1", lvl2="tdfk_l2", lvl3="tdfk_l3")
+    db_session.add(node)
+    db_session.flush()
+    kp = KnowledgePoint(name="tdfk_l3_kp", taxonomy_node_id=node.id)
+    db_session.add(kp)
+    db_session.flush()
+    db_session.add(Chunk(
+        source_id=test_source.id, content="tdfk-chunk",
+        lvl1="tdfk_l1", lvl2="tdfk_l2", lvl3="tdfk_l3",
+        knowledge_point_id=kp.id,
+        embedding=[0.0] * EMBEDDING_DIM,
+    ))
+    db_session.flush()
+
+    with pytest.raises(HTTPException) as excinfo:
+        delete_taxonomy_node(
+            node_id=node.id,
+            request=_fake_request(),
+            db=db_session,
+            current_user=_make_admin(db_session),
+        )
+    # Two gates guard the delete: "has chunks" (FK-counted now) and
+    # "has knowledge points". With a KP attached AND a chunk pointing at it,
+    # the chunks check fires first → "associated chunks" message.
+    assert excinfo.value.status_code == 409
+    assert "chunks" in excinfo.value.detail.lower()
+
+
+def test_delete_lvl2_node_blocked_by_chunk_string(db_session, test_source):
+    """lvl1/lvl2 nodes still count chunks by lvl1/lvl2 string (no FK path)."""
+    from app.core.constants import EMBEDDING_DIM
+    from app.models import Chunk
+
+    node = TaxonomyNode(lvl1="tdstr_l1", lvl2="tdstr_l2")
+    db_session.add(node)
+    db_session.flush()
+    db_session.add(Chunk(
+        source_id=test_source.id, content="tdstr-chunk",
+        lvl1="tdstr_l1", lvl2="tdstr_l2", lvl3=None,
+        embedding=[0.0] * EMBEDDING_DIM,
+    ))
+    db_session.flush()
+
+    with pytest.raises(HTTPException) as excinfo:
+        delete_taxonomy_node(
+            node_id=node.id,
+            request=_fake_request(),
+            db=db_session,
+            current_user=_make_admin(db_session),
+        )
+    assert excinfo.value.status_code == 409
+    assert "chunks" in excinfo.value.detail.lower()
