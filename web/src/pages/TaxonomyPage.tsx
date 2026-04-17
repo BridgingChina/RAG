@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TaxonomyTree } from "@/components/taxonomy/TaxonomyTree"
+import { KnowledgePointPreview } from "@/components/taxonomy/KnowledgePointPreview"
 import { useApi } from "@/hooks/useApi"
 import {
   fetchTaxonomyTree,
@@ -62,6 +63,7 @@ export function Component() {
     lvl2?: string
     lvl3?: string
   } | null>(null)
+  const [selectedKpId, setSelectedKpId] = useState<string | null>(null)
   const [selectedChunkIds, setSelectedChunkIds] = useState<Set<string>>(new Set())
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -105,9 +107,17 @@ export function Component() {
     [selectedPath],
   )
 
-  const handleSelectNode = (path: { lvl1: string; lvl2?: string; lvl3?: string }) => {
+  const handleSelectNode = (
+    path: { lvl1: string; lvl2?: string; lvl3?: string },
+    nodeId: string,
+    level: number,
+  ) => {
     setSelectedPath(path)
     setSelectedChunkIds(new Set())
+    // Level 3 is a KnowledgePoint after Phase 3 — show KP preview instead
+    // of a chunks list so the user gets concrete-knowledge info (summary,
+    // key points, L2 hints) without having to jump to another page.
+    setSelectedKpId(level === 3 ? nodeId : null)
   }
 
   const handleAddNode = (parent: { lvl1: string; lvl2?: string }) => {
@@ -296,13 +306,15 @@ export function Component() {
             </div>
           </Card>
 
-          {/* Right panel: Chunks (2/3) */}
+          {/* Right panel: KnowledgePoint preview (level 3) or chunks (level 1/2) */}
           <Card className="flex-1 flex flex-col">
             <CardContent className="flex-1 overflow-auto p-4">
               {!selectedPath ? (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   选择左侧分类查看知识块
                 </div>
+              ) : selectedKpId ? (
+                <KnowledgePointPreview kpId={selectedKpId} />
               ) : chunksLoading ? (
                 <Skeleton className="h-full w-full" />
               ) : chunks.length === 0 ? (

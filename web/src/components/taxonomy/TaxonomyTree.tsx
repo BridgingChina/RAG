@@ -7,7 +7,9 @@ import type { TaxonomyTreeItem } from "@/lib/types"
 interface TaxonomyTreeProps {
   items: TaxonomyTreeItem[]
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
-  onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
+  // Passes the node's uuid too — at level 3 this is the KnowledgePoint id,
+  // letting the caller fetch KP detail instead of the chunks list.
+  onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }, nodeId: string, level: number) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
   // level is the depth (1 = lvl1, 2 = lvl2, 3 = KnowledgePoint after Phase 3).
   // The caller routes to the correct DELETE endpoint based on level.
@@ -19,7 +21,9 @@ interface TreeNodeProps {
   level: number
   parentPath?: { lvl1: string; lvl2?: string }
   selectedPath?: { lvl1: string; lvl2?: string; lvl3?: string }
-  onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }) => void
+  // Passes the node's uuid too — at level 3 this is the KnowledgePoint id,
+  // letting the caller fetch KP detail instead of the chunks list.
+  onSelect: (path: { lvl1: string; lvl2?: string; lvl3?: string }, nodeId: string, level: number) => void
   onAddNode: (parent: { lvl1: string; lvl2?: string }) => void
   onDeleteNode: (nodeId: string, nodeLabel: string, level: number) => void
 }
@@ -65,7 +69,7 @@ function TreeNode({
           ${isSelected ? "bg-accent" : ""}
         `}
         style={{ paddingLeft: `${paddingLeft}px` }}
-        onClick={() => onSelect(currentPath)}
+        onClick={() => onSelect(currentPath, item.node_id, level)}
       >
         {/* Expand/collapse toggle */}
         <div className="flex-shrink-0">
