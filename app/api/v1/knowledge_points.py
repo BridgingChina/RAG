@@ -408,13 +408,16 @@ async def generate_key_points(
             .first()
         )
 
-    # 2. Query chunks matching taxonomy (lvl3 first, fallback to lvl2)
+    # 2. Query chunks matching taxonomy. Phase 2: lvl3 lookup goes through
+    # the knowledge_point_id FK so we land on exactly the chunks tagged to
+    # THIS KP (no cross-lvl1 leakage). lvl2 fallback still uses the string
+    # column because lvl2 has no FK.
     chunks = []
     if taxonomy_node:
         if taxonomy_node.lvl3:
             chunks = (
                 db.query(Chunk)
-                .filter(Chunk.lvl3 == taxonomy_node.lvl3)
+                .filter(Chunk.knowledge_point_id == kp.id)
                 .limit(20)
                 .all()
             )

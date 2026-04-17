@@ -51,11 +51,12 @@ class KnowledgePointBridgeService:
         if not taxonomy_node or not taxonomy_node.lvl3:
             raise ValueError("Taxonomy node not found or has no lvl3 value")
 
-        # 2-3. Find distinct bridge_ids via chunks → chunk_bridge_links
+        # 2-3. Find distinct bridge_ids via chunks → chunk_bridge_links.
+        # Phase 2: pin to this KP via the FK instead of the lvl3 string.
         bridge_ids = (
             db.query(distinct(ChunkBridgeLink.bridge_id))
             .join(Chunk, Chunk.id == ChunkBridgeLink.chunk_id)
-            .filter(Chunk.lvl3 == taxonomy_node.lvl3)
+            .filter(Chunk.knowledge_point_id == kp.id)
             .all()
         )
         bridge_ids = [row[0] for row in bridge_ids]
