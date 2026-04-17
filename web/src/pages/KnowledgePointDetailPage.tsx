@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog"
 import { useApi } from "@/hooks/useApi"
 import {
+  autoAssociateChunks,
   fetchKnowledgePoint,
   updateKnowledgePoint,
   deleteKnowledgePoint,
@@ -65,6 +66,11 @@ export function Component() {
   const [generatingFC, setGeneratingFC] = useState(false)
   const [fcError, setFcError] = useState<string | null>(null)
   const [fcSuccess, setFcSuccess] = useState<string | null>(null)
+
+  // Auto-associate chunks
+  const [associating, setAssociating] = useState(false)
+  const [associateError, setAssociateError] = useState<string | null>(null)
+  const [associateSuccess, setAssociateSuccess] = useState<string | null>(null)
 
   // Bridges
   const [syncing, setSyncing] = useState(false)
@@ -188,6 +194,24 @@ export function Component() {
       setFcError(e instanceof Error ? e.message : String(e))
     } finally {
       setGeneratingFC(false)
+    }
+  }
+
+  const handleAutoAssociate = async () => {
+    if (!id) return
+    setAssociating(true)
+    setAssociateError(null)
+    setAssociateSuccess(null)
+    try {
+      const result = await autoAssociateChunks(id)
+      setAssociateSuccess(
+        `扫描 ${result.candidate_count} 条候选，LLM 命中 ${result.matched_chunk_ids.length} 条并写入关联。`,
+      )
+      refetch()
+    } catch (e) {
+      setAssociateError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAssociating(false)
     }
   }
 
@@ -524,6 +548,14 @@ export function Component() {
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
+                onClick={handleAutoAssociate}
+                disabled={associating}
+                title="LLM 扫描同一 lvl1/lvl2 下未挂载的知识块，自动把该属于本知识点的挂到 FK 上"
+              >
+                {associating ? "AI 关联中..." : "AI 关联知识块"}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={handleGenerateKeyPoints}
                 disabled={generatingKP}
               >
@@ -537,6 +569,8 @@ export function Component() {
                 {generatingFC ? "生成中..." : "生成闪卡"}
               </Button>
             </div>
+            {associateError && <p className="text-sm text-destructive">{associateError}</p>}
+            {associateSuccess && <p className="text-sm text-green-600">{associateSuccess}</p>}
             {kpError && <p className="text-sm text-destructive">{kpError}</p>}
             {kpSuccess && <p className="text-sm text-green-600">{kpSuccess}</p>}
             {fcError && <p className="text-sm text-destructive">{fcError}</p>}
