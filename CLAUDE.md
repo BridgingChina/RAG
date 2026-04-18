@@ -113,7 +113,7 @@ The system uses automatic schema versioning:
 - `app/services/reindex_cron.py` — 后台 cron 任务：每日 03:00 重建 stale chunks 的 search_text + tsv（不含 embedding）；每 30 分钟调用 `uploading_cleanup_loop`，同时清理超时 uploading 任务 + 超时 running 任务（`cleanup_stale_running_tasks`，防止 scheduler 死锁）
 - `app/services/ingest_scheduler.py` — Ingest 全局并发调度器（issue #152）。`ingest_scheduler_loop` 每 5s 跑一次 `_scheduler_tick`：Postgres advisory lock (`pg_try_advisory_xact_lock(494956380)`) 选主，统计 RUNNING_STATUSES 任务数，拉起最多 `settings.ingest_max_concurrent - running` 条 queued/queued_for_indexing 任务，原子翻状态 + `asyncio.create_task` 派发 `_run_sync_and_parse` / `_run_indexing`。FIFO 排序按 `updated_at.asc()`
 - `app/core/rate_limit.py` — Shared slowapi `Limiter` singleton (60 req/min/IP default). Import `limiter` to add `@limiter.limit()` on endpoints. `/health` is exempt
-- `app/core/cache_middleware.py` — `MobileCacheMiddleware` adds `Cache-Control: public, max-age=300` to public mobile GET endpoints. Excludes device-specific paths (favorites/review/history)
+- `app/core/cache_middleware.py` — `PublicCacheMiddleware` adds `Cache-Control: public, max-age=300` to public (C 端) read-only GET endpoints. Excludes device-specific paths (favorites/review/history)
 - `app/api/v1/pagination.py` — `paginate(query, page, page_size, item_mapper)` helper for all list endpoints — do not reimplement pagination boilerplate
 
 **桥梁详情聚合：** 四章节（structure/geography/society/history）从 chunks 实时聚合（无独立表），通过 `LVL1_TO_SECTION` 映射 lvl1 → section key。L0 = section_title 或 content 截断，L1 = 完整 content + citations。
@@ -164,12 +164,12 @@ The system uses automatic schema versioning:
 - Knowledge Points CRUD: `GET/POST /api/v1/knowledge-points`, `GET/PUT/DELETE /api/v1/knowledge-points/{id}`, `POST /api/v1/knowledge-points/{id}/generate-key-points`（LLM 生成 key_points），`POST /{id}/generate-flashcards`，`POST /{id}/sync-bridges`，`GET/PUT /{id}/bridges`
 - Bridge Images: `POST /api/v1/bridges/{id}/images/presign`, `POST /images`, `GET /images`, `PUT /images/reorder`, `DELETE /images/{image_id}`
 - Batch Operations: `POST /api/v1/bridges/batch-geocode`（高德 API），`POST /bridges/import-coordinates`（CSV），`POST /api/v1/flashcards/batch-generate`
-- Mobile API (no auth): `GET /api/mobile/v1/config`, `GET /api/mobile/v1/bridges`, `GET /api/mobile/v1/bridges/clusters`, `GET /api/mobile/v1/bridges/{id}`, `GET /api/mobile/v1/bridges/{id}/knowledge-points`, `GET /api/mobile/v1/knowledge/tree`, `GET /api/mobile/v1/knowledge/points/{id}`, `GET /api/mobile/v1/knowledge/points/{id}/bridges`, `GET /api/mobile/v1/knowledge/points/{id}/flashcards`, `POST /api/mobile/v1/qa/ask` (SSE), `GET /api/mobile/v1/search`
-- Mobile favorites (X-Device-Id): `GET/POST /api/mobile/v1/favorites`, `DELETE /api/mobile/v1/favorites/{id}`, `POST /api/mobile/v1/favorites/check`
-- Mobile review (X-Device-Id): `GET /api/mobile/v1/review/today`, `GET /api/mobile/v1/review/cards`, `PUT /api/mobile/v1/review/progress/{id}`
-- Mobile history (X-Device-Id): `GET/POST /api/mobile/v1/history`
-- Mobile endpoints use `MobileResponse`/`MobilePaginatedResponse` wrappers (not `PaginatedResponse`)
-- 除 `/health`、`/auth/login` 和 `/api/mobile/v1/*` 外，所有端点均需 JWT Bearer token 认证。Mobile 端点中 favorites/review/history 需要 `X-Device-Id` header（UUID v4），其余 mobile 端点完全公开
+- Public API (no auth): `GET /v1/config`, `GET /v1/bridges`, `GET /v1/bridges/clusters`, `GET /v1/bridges/{id}`, `GET /v1/bridges/{id}/knowledge-points`, `GET /v1/knowledge/tree`, `GET /v1/knowledge/points/{id}`, `GET /v1/knowledge/points/{id}/bridges`, `GET /v1/knowledge/points/{id}/flashcards`, `POST /v1/qa/ask` (SSE), `GET /v1/search`
+- Public favorites (X-Device-Id): `GET/POST /v1/favorites`, `DELETE /v1/favorites/{id}`, `POST /v1/favorites/check`
+- Public review (X-Device-Id): `GET /v1/review/today`, `GET /v1/review/cards`, `PUT /v1/review/progress/{id}`
+- Public history (X-Device-Id): `GET/POST /v1/history`
+- Public endpoints use `PublicResponse`/`PublicPaginatedResponse` wrappers (not `PaginatedResponse`)
+- 除 `/health`、`/auth/login` 和 `/v1/*` 外，所有端点均需 JWT Bearer token 认证。Public 端点中 favorites/review/history 需要 `X-Device-Id` header（UUID v4），其余 public 端点完全公开
 - 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
@@ -232,7 +232,7 @@ title: 资料标题
 - Worktree 开发修改共享类型（如 `IngestTaskStatus` 加枚举值）后，main 上未修改的旧组件可能引用该类型而报错 — worktree 中 `tsc` 不会检查 main 独有的文件，squash merge 后 Docker build 才暴露
 - `ChunkEditor` 的 `handleConflictError` + conflict dialog 被 save/split/delete 共用 — 修改对话框文案时要保持通用（不能用 save-specific 语言）
 - 进入新 UI 模式（如 split mode）时必须 `setActionError(null)` — 否则前一个操作的错误会泄漏到新模式
-- Mobile API 响应格式与管理后台不同：`{"data": ..., "meta": ...}` 而非 `{"items": ..., "total": ...}`
+- Public API 响应格式与管理后台不同：`{"data": ..., "meta": ...}` 而非 `{"items": ..., "total": ...}`
 - `generate_streaming()` 返回 `list[tuple]` 而非 async generator — 伪流式，单次 LLM 调用后拆分，后续 TODO 升级为真流式
 - `GET /bridges/clusters` 必须在 `/{bridge_id}` 之前注册（bridges.py 文件中），否则 "clusters" 被当作 UUID 解析
 - `device_favorites` 使用 UNIQUE(device_id, target_type, target_id) — 重复添加收藏会触发 IntegrityError，需捕获返回 409
@@ -259,7 +259,7 @@ title: 资料标题
 - **HTTP 409 is not a chunk optimistic-lock monopoly.** `web/src/lib/api.ts` previously constructed `ConflictError("Chunk has been modified by another user")` on every 409 and discarded the server's `detail`. When the taxonomy delete endpoint started returning 409 for "knowledge point still attached", users saw the chunk-conflict message on a totally unrelated dialog. Rule: any new 409 path on the backend must be accompanied by a verification that the frontend surfaces the real `detail`. The client uses `parseHttpError()` which only returns `ConflictError` when the payload carries both `chunk_id` and `current_updated_at` — additional fields, not status code, disambiguate the conflict kind
 - **Delete endpoints must enumerate every FK pointing at the target table.** `delete_taxonomy_node` only counted `chunks` for years while `knowledge_points.taxonomy_node_id` also had a RESTRICT FK — the miss produced a 500 the moment real data linked the two. When adding a new delete route: list every inbound FK, add an explicit count-check per table returning 409 with a specific message, and wrap the final `db.delete` in `db.begin_nested()` + `except IntegrityError: raise HTTPException(409, ...)` as defense-in-depth for future FKs that get added without updating the checks. Audit logging goes **after** the savepoint so a failed delete does not leave orphan audit rows
 - Frontend-only changes that alter user-facing error copy must be verified in a browser, not just `tsc` + `pytest`. Type-check green + tests green does not mean the UI behaves as intended — the taxonomy-delete 409 misclassification above was caught only by a user screenshot after a passing CI run
-- **Before NULL-ing or dropping a column, grep every read site.** Phase 3 of the lvl3-KP merge NULLed `knowledge_points.taxonomy_node_id` for all 51 rows; four unrelated endpoints (generate_key_points, kp_bridge_service, mobile/knowledge detail, mobile/qa context) still branched on that FK and silently returned empty results, producing a "No matching chunks found" 422 for the user. Rule: any schema cleanup (UPDATE ... SET col = NULL, DROP COLUMN, DELETE rows referenced by an FK) must be preceded by `git grep -rn "col_name"` and the plan must enumerate every read site + patch it in the same PR
+- **Before NULL-ing or dropping a column, grep every read site.** Phase 3 of the lvl3-KP merge NULLed `knowledge_points.taxonomy_node_id` for all 51 rows; four unrelated endpoints (generate_key_points, kp_bridge_service, public/knowledge detail, public/qa context) still branched on that FK and silently returned empty results, producing a "No matching chunks found" 422 for the user. Rule: any schema cleanup (UPDATE ... SET col = NULL, DROP COLUMN, DELETE rows referenced by an FK) must be preceded by `git grep -rn "col_name"` and the plan must enumerate every read site + patch it in the same PR
 - **Post-deploy smoke must hit real endpoints, not just SQL.** A `SELECT COUNT` showing the right row counts is necessary but not sufficient — the bug that broke generate_key_points did NOT show up in SQL (counts were fine), only in the Python branch that read `kp.taxonomy_node_id`. After any schema-adjacent deploy, shell into the API container and invoke 2-3 representative endpoints via `python3 -c` to exercise the code paths, or run `curl` against the public URL with a real auth token
 - **`chunks.knowledge_point_id` is in a Phase-1 double-write period** (schema v9, 2026-04-17). Legacy lvl1/lvl2/lvl3 strings are still authoritative for reads; the FK must be kept in sync wherever code writes a chunk's taxonomy path. Use `app.services.kp_resolver.resolve_knowledge_point_id(db, lvl1, lvl2, lvl3)` — returns the matching `KnowledgePoint.id` or `None`. **Current double-write sites (audit before adding a new chunk-write path):**
   1. `IngestTaskService.start_indexing` — `app/services/ingest_task_service.py` (sets FK right after tagger assigns lvl1/lvl2/lvl3)
@@ -268,6 +268,8 @@ title: 资料标题
   4. `chunks.update_chunk` PUT endpoint — `app/api/v1/chunks.py` (re-resolves when any lvl field is in `update_data`)
   5. `ingest.ingest` deprecated sync endpoint — `app/api/v1/ingest.py` (FK set in Chunk() constructor)
   If you add a sixth, also add a regression test and update this list. Plan: `docs/plans/2026-04-17-merge-lvl3-kp-design.md` (Phase 2 switches readers to FK; Phase 3 drops the string columns). Until Phase 2 lands, **every new `knowledge_points` row must also have a same-name lvl3 `taxonomy_nodes` row** — otherwise the legacy string write path will resolve to a dangling label
+- **5 known-flaky tests on `main` (lvl3-KP Phase 3 schema-v10 drift)** — `test_database_init::TestVerifySchemaCompatibility::*` (x2), `test_kp_bridge_service::TestSyncFromChunks::test_raises_when_no_taxonomy_node`, `test_models_batch2::test_schema_version_is_8`, `test_models_knowledge_point::test_knowledge_point_model_structure`. When a refactor shows these failing, don't debug them as new — `git stash -u && pytest <same-tests> && git stash pop` confirms baseline. Production schema is v10 but these tests still hardcode v8 / old KP structure
+- **Rename refactors must sweep historical RCA entries in this file** — Gotchas bullets reference specific code paths / symbol names (e.g. an old bullet pointing at `mobile/qa context` after PR #160 should read `public/qa context`). When renaming a package or class, `git grep -n 'old_name' CLAUDE.md` is part of the DoD — stale references send future readers to files that no longer exist at the cited path
 
 ## Worktrees
 

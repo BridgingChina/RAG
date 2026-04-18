@@ -1,6 +1,6 @@
 """Bridge name resolver — matches bridge names in question text.
 
-Extracted from app/api/v1/ask.py so both admin and mobile API layers
+Extracted from app/api/v1/ask.py so both admin and public API layers
 can use it without cross-layer imports.
 
 Uses a module-level TTL cache (5 min) to avoid full table scan per request.

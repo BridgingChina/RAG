@@ -1,0 +1,244 @@
+"""Public API: SSE pseudo-streaming QA endpoint.
+
+Single LLM call + structured JSON split into sequential SSE events
+(started -> outline -> detail* -> sources -> done). Not real token streaming.
+"""
+import asyncio
+import json
+import logging
+import time
+import uuid
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+
+from app.api.public.v1.schemas.qa import QARequest
+from app.core.config import settings
+from app.core.database import get_db
+from app.core.rate_limit import limiter
+from app.models import TaxonomyNode
+from app.models.knowledge_point import KnowledgePoint
+from app.providers import get_provider
+from app.services.facet_extractor import FacetExtractor
+from app.services.generator import Generator
+from app.services.hybrid_retriever import (
+    HybridRetriever,
+    HybridRetrievalResult,
+    TaxonomyFilter,
+)
+from app.services.tokenizer import Tokenizer, default_user_dict_path
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# Per-step timeout budgets (seconds).  Total worst-case ≈ 43s < 60s.
+_PARALLEL_TIMEOUT = 10   # facet ∥ embed (flash ~4s, embed ~1s)
+_RETRIEVE_TIMEOUT = 10   # DB queries after embedding is ready
+_GENERATE_TIMEOUT = 25   # LLM generation with evidence
+
+
+def _sse_event(event: str, data: dict) -> str:
+    """Format a single SSE event."""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _resolve_context(
+    db: Session, request: QARequest,
+) -> tuple[uuid.UUID | None, TaxonomyFilter | None]:
+    """Resolve QA context to bridge_id or taxonomy_filter."""
+    if not request.context or not request.context.type or not request.context.id:
+        return None, None
+
+    if request.context.type == "bridge":
+        return request.context.id, None
+
+    if request.context.type == "knowledge_point":
+        kp = db.query(KnowledgePoint).filter(
+            KnowledgePoint.id == request.context.id
+        ).first()
+        if not kp:
+            logger.warning("QA context references non-existent knowledge_point %s", request.context.id)
+            return None, None
+        # Phase 3: KP carries lvl1 / lvl2 directly, and kp.name is the former
+        # lvl3 label. No TaxonomyNode join needed.
+        if not kp.lvl1:
+            logger.warning("Knowledge point %s has no lvl1, ignoring context", kp.id)
+            return None, None
+        return None, TaxonomyFilter(
+            lvl1=kp.lvl1,
+            lvl2=kp.lvl2,
+            lvl3=kp.name,
+        )
+    return None, None
+
+
+async def _safe_extract_facet(extractor: FacetExtractor, question: str):
+    """Extract facets, returning None on any failure."""
+    try:
+        return await extractor.extract(question)
+    except Exception:
+        logger.warning("Facet extraction failed, continuing without facets", exc_info=True)
+        return None
+
+
+@router.post("/ask")
+@limiter.limit("10/minute")
+async def ask_sse(
+    request: Request,
+    body: QARequest,
+    db: Session = Depends(get_db),
+):
+    """SSE streaming QA endpoint.
+    TODO: Upgrade to real LLM streaming.
+    """
+    async def event_stream():
+        qa_id = str(uuid.uuid4())
+        start_time = time.monotonic()
+        last_event_time = start_time
+        timeout_seconds = 60
+        ping_interval = 15
+
+        def _maybe_ping() -> str:
+            nonlocal last_event_time
+            now = time.monotonic()
+            if now - last_event_time > ping_interval:
+                last_event_time = now
+                return _sse_event("ping", {})
+            return ""
+
+        def _mark_event() -> None:
+            nonlocal last_event_time
+            last_event_time = time.monotonic()
+
+        yield _sse_event("started", {"qa_id": qa_id})
+        _mark_event()
+
+        try:
+            # Use faster model for latency-sensitive QA path
+            provider = get_provider()
+            provider.chat_model = settings.qa_chat_model
+
+            tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
+            retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
+            generator = Generator(provider=provider)
+            facet_extractor = FacetExtractor(provider=provider)
+
+            target_bridge_id, taxonomy_filter = _resolve_context(db, body)
+
+            if not target_bridge_id and not taxonomy_filter:
+                from app.services.bridge_resolver import resolve_bridge_from_question
+                target_bridge_id = resolve_bridge_from_question(db, body.question)
+
+            # ── Phase 1: facet extraction ∥ query embedding (parallel) ──
+            try:
+                facet, embeddings = await asyncio.wait_for(
+                    asyncio.gather(
+                        _safe_extract_facet(facet_extractor, body.question),
+                        provider.embed([body.question]),
+                    ),
+                    timeout=_PARALLEL_TIMEOUT,
+                )
+                query_embedding = embeddings[0]
+            except asyncio.TimeoutError:
+                logger.warning("Phase 1 (facet∥embed) timed out after %ds", _PARALLEL_TIMEOUT)
+                # Facet is optional; embedding is required — try embed alone
+                try:
+                    embeddings = await asyncio.wait_for(
+                        provider.embed([body.question]),
+                        timeout=_PARALLEL_TIMEOUT,
+                    )
+                    query_embedding = embeddings[0]
+                    facet = None
+                except (asyncio.TimeoutError, Exception):
+                    logger.error("Embedding timed out, cannot proceed")
+                    yield _sse_event("error", {
+                        "code": "TIMEOUT",
+                        "message": "向量化超时，请稍后重试",
+                    })
+                    yield _sse_event("done", {"qa_id": qa_id})
+                    return
+
+            ping = _maybe_ping()
+            if ping:
+                yield ping
+
+            # ── Phase 2: retrieval (with pre-computed embedding) ──
+            try:
+                evidence = await asyncio.wait_for(
+                    retriever.retrieve(
+                        db,
+                        body.question,
+                        target_bridge_id=target_bridge_id,
+                        taxonomy_filter=taxonomy_filter,
+                        facet=facet,
+                        query_embedding=query_embedding,
+                    ),
+                    timeout=_RETRIEVE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.error("Retrieval timed out after %ds for question=%r", _RETRIEVE_TIMEOUT, body.question)
+                yield _sse_event("error", {
+                    "code": "TIMEOUT",
+                    "message": "检索超时，请稍后重试",
+                })
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
+            except Exception:
+                logger.error("Retrieval failed for question=%r", body.question, exc_info=True)
+                yield _sse_event("error", {
+                    "code": "RETRIEVAL_FAILED",
+                    "message": "检索系统暂时不可用，请稍后重试",
+                })
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
+
+            ping = _maybe_ping()
+            if ping:
+                yield ping
+
+            if not evidence.all_chunks():
+                yield _sse_event("error", {
+                    "code": "INSUFFICIENT_EVIDENCE",
+                    "message": "未找到直接证据，建议换一种问法或缩小范围",
+                    "fallback_actions": [],
+                })
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
+
+            # ── Phase 3: LLM generation ──
+            try:
+                events = await asyncio.wait_for(
+                    generator.generate_streaming(body.question, evidence),
+                    timeout=_GENERATE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.error("Generation timed out after %ds for question=%r", _GENERATE_TIMEOUT, body.question)
+                yield _sse_event("error", {
+                    "code": "TIMEOUT",
+                    "message": "生成超时，请稍后重试",
+                })
+                yield _sse_event("done", {"qa_id": qa_id})
+                return
+
+            for event_type, data in events:
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_seconds:
+                    yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                    yield _sse_event("done", {"qa_id": qa_id})
+                    return
+                yield _sse_event(event_type, data)
+                _mark_event()
+
+            yield _sse_event("done", {"qa_id": qa_id})
+
+        except Exception:
+            logger.error("SSE QA stream failed", exc_info=True)
+            yield _sse_event("error", {
+                "code": "INTERNAL_ERROR",
+                "message": "服务端内部错误，请稍后重试",
+            })
+            yield _sse_event("done", {"qa_id": qa_id})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

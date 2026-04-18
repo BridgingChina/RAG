@@ -1,9 +1,0 @@
-"""Mobile API routes."""
-from fastapi import APIRouter
-
-from app.api.mobile.v1 import router as v1_router
-
-router = APIRouter()
-router.include_router(v1_router)
-
-__all__ = ["router"]

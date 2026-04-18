@@ -2,7 +2,7 @@
 
 > 对应 design.md v1.1 | RESTful JSON API | 问答接口使用 SSE 流式返回  
 > MVP 不设用户体系，使用客户端生成的设备 ID 关联个人数据（收藏/复习进度）。  
-> 本规范定义移动端公开 API。现有 `/api/v1/*` 为管理后台 API，继续保留；移动端 API 使用 `/api/mobile/v1/*` 前缀，无需 JWT 认证。  
+> 本规范定义移动端公开 API。现有 `/api/v1/*` 为管理后台 API，继续保留；移动端 API 使用 `/v1/*` 前缀，无需 JWT 认证。  
 > **所有实体主键统一使用 UUID v4。**
 
 ---
@@ -11,7 +11,7 @@
 
 ### 0.1 Base URL
 ```
-https://{host}/api/mobile/v1
+https://{host}/v1
 ```
 
 ### 0.2 请求头
@@ -66,9 +66,9 @@ https://{host}/api/mobile/v1
 
 ### 0.6 与现有管理后台 API 的关系
 
-现有管理后台 API（`/api/v1/*`）继续保留，需 JWT 认证，用于内容管理。移动端 API（`/api/mobile/v1/*`）是只读的公开 API（除收藏/复习外），不需要 JWT。两套 API 共享同一数据库，但 schema 和响应格式不同。
+现有管理后台 API（`/api/v1/*`）继续保留，需 JWT 认证，用于内容管理。移动端 API（`/v1/*`）是只读的公开 API（除收藏/复习外），不需要 JWT。两套 API 共享同一数据库，但 schema 和响应格式不同。
 
-| 维度 | 管理后台 `/api/v1/*` | 移动端 `/api/mobile/v1/*` |
+| 维度 | 管理后台 `/api/v1/*` | 移动端 `/v1/*` |
 |------|---------------------|--------------------------|
 | 认证 | JWT Bearer Token | X-Device-Id（仅收藏/复习） |
 | 读写 | 读写 | 只读 + 收藏/复习写入 |
@@ -637,7 +637,7 @@ data: {
 
 **与现有 `/api/v1/ask` 的关系：**
 - 现有端点：`POST /api/v1/ask` → 同步 JSON，含 `confidence` + `evidence_groups` + `debug`
-- 新端点：`POST /api/mobile/v1/qa/ask` → SSE 流式，面向终端用户
+- 新端点：`POST /v1/qa/ask` → SSE 流式，面向终端用户
 - 底层共用 `HybridRetriever` + `Generator`
 - Generator 新增 `generate_streaming()` 方法：单次 LLM 调用，输出结构化 JSON，收到完整响应后按结构拆分为多个 SSE 事件依次 yield。现有 `generate_v2()` 保持不变
 
