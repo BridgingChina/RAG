@@ -268,6 +268,8 @@ title: 资料标题
   4. `chunks.update_chunk` PUT endpoint — `app/api/v1/chunks.py` (re-resolves when any lvl field is in `update_data`)
   5. `ingest.ingest` deprecated sync endpoint — `app/api/v1/ingest.py` (FK set in Chunk() constructor)
   If you add a sixth, also add a regression test and update this list. Plan: `docs/plans/2026-04-17-merge-lvl3-kp-design.md` (Phase 2 switches readers to FK; Phase 3 drops the string columns). Until Phase 2 lands, **every new `knowledge_points` row must also have a same-name lvl3 `taxonomy_nodes` row** — otherwise the legacy string write path will resolve to a dangling label
+- **5 known-flaky tests on `main` (lvl3-KP Phase 3 schema-v10 drift)** — `test_database_init::TestVerifySchemaCompatibility::*` (x2), `test_kp_bridge_service::TestSyncFromChunks::test_raises_when_no_taxonomy_node`, `test_models_batch2::test_schema_version_is_8`, `test_models_knowledge_point::test_knowledge_point_model_structure`. When a refactor shows these failing, don't debug them as new — `git stash -u && pytest <same-tests> && git stash pop` confirms baseline. Production schema is v10 but these tests still hardcode v8 / old KP structure
+- **Rename refactors must sweep historical RCA entries in this file** — Gotchas bullets reference specific code paths / symbol names (e.g. an old bullet pointing at `mobile/qa context` after PR #160 should read `public/qa context`). When renaming a package or class, `git grep -n 'old_name' CLAUDE.md` is part of the DoD — stale references send future readers to files that no longer exist at the cited path
 
 ## Worktrees
 
