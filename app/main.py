@@ -73,12 +73,12 @@ app = FastAPI(title="Bridge RAG", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-from app.api.mobile.v1.error_handlers import register_mobile_error_handlers
-register_mobile_error_handlers(app)
+from app.api.public.v1.error_handlers import register_public_error_handlers
+register_public_error_handlers(app)
 
-# Mobile cache middleware (must be added before CORS so it runs after CORS in the response chain)
-from app.core.cache_middleware import MobileCacheMiddleware
-app.add_middleware(MobileCacheMiddleware)
+# Public cache middleware (must be added before CORS so it runs after CORS in the response chain)
+from app.core.cache_middleware import PublicCacheMiddleware
+app.add_middleware(PublicCacheMiddleware)
 
 # CORS middleware — explicit list (settings.cors_origins) + regex for prod web domains
 # regex matches: bridgingchina.net (+ any subdomain) and bridge-web.user-unauthorized.workers.dev (+ any subdomain)
@@ -94,9 +94,9 @@ app.add_middleware(
 # API v1 routes
 app.include_router(v1_router, prefix="/api/v1", tags=["v1"])
 
-# Mobile API routes (no auth required)
-from app.api.mobile import router as mobile_router
-app.include_router(mobile_router, prefix="/api/mobile/v1", tags=["mobile"])
+# Public API routes (no auth required)
+from app.api.public import router as public_router
+app.include_router(public_router, prefix="/v1", tags=["public"])
 
 
 @app.get("/health")

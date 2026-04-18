@@ -4,7 +4,7 @@ The bug: PostgreSQL sorts NULLs last by default, so lvl3 nodes were
 processed before their parent lvl2 nodes. The lvl2 dict entry was
 created with the lvl3 node's ID, causing parent and child to share IDs.
 """
-from app.api.mobile.v1.knowledge import get_knowledge_tree
+from app.api.public.v1.knowledge import get_knowledge_tree
 from app.models import TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
 
