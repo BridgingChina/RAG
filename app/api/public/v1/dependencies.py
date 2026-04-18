@@ -5,7 +5,7 @@ Threat model for X-Device-Id
 X-Device-Id is a client-generated UUID v4 sent via HTTP header. It is NOT
 a secret and provides NO authentication — any client that knows (or guesses)
 another device's UUID can impersonate it. This is an accepted trade-off for
-a public educational app with no user accounts on the public side:
+a public educational app with no user accounts on the consumer (C 端) side:
 
 - **What it guards:** favorites, review progress, and view history are
   partitioned by device_id so that one device's data does not leak into

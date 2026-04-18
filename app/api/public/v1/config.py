@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.get("/config", response_model=PublicResponse[dict])
 def get_config() -> PublicResponse[dict]:
-    """Return app configuration for public client.
+    """Return app configuration for C 端 consumers.
 
     Data sourced from config/facets.yaml + hardcoded map config.
     """

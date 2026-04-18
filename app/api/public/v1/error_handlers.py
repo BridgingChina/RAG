@@ -27,9 +27,9 @@ def register_public_error_handlers(app: FastAPI) -> None:
     async def _public_http_exception_handler(
         request: Request, exc: HTTPException
     ) -> JSONResponse:
-        # Only convert for public API routes
+        # Only convert for public API routes (/v1/*)
         if not request.url.path.startswith("/v1/"):
-            # Preserve FastAPI default format for non-public routes
+            # Preserve FastAPI default format for admin / non-/v1 routes
             return JSONResponse(
                 status_code=exc.status_code,
                 content={"detail": exc.detail},

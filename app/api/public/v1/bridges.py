@@ -44,7 +44,7 @@ def list_bridges(
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> PublicPaginatedResponse[dict]:
-    """List bridges with filtering for public client."""
+    """List bridges with filtering for C 端 consumers."""
     query = db.query(Bridge)
 
     if bridge_type:

@@ -16,7 +16,7 @@ CACHE_MAX_AGE = 300  # 5 minutes
 
 
 class PublicCacheMiddleware(BaseHTTPMiddleware):
-    """Add Cache-Control headers to public public GET endpoints.
+    """Add Cache-Control headers to public read-only GET endpoints.
 
     Excludes device-specific endpoints (favorites, review, history)
     that depend on X-Device-Id and should not be cached.
