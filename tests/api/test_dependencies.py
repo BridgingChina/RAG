@@ -144,6 +144,34 @@ async def test_admin_get_current_user_rejects_invalid_token(
     assert exc_info.value.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_admin_get_current_user_401s_on_malformed_payload(
+    ed25519_setup: dict[str, Any],
+) -> None:
+    """A validly-signed token missing ``sub`` must 401 rather than 500 —
+    a bad claim mapping from the auth Worker should degrade to
+    "unauthenticated", not crash the route."""
+    now = int(time.time())
+    # Sign with the fixture's key + kid, but omit sub/email.
+    token = pyjwt.encode(
+        {
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "iat": now,
+            "exp": now + 300,
+            "role": "admin",
+            "isActive": True,
+        },
+        ed25519_setup["private_pem"],
+        algorithm="EdDSA",
+        headers={"kid": ed25519_setup["kid"]},
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await admin_deps.get_current_user(credentials=_bearer(token))
+    assert exc_info.value.status_code == 401
+    assert "claim" in exc_info.value.detail.lower()
+
+
 # ---------------------------------------------------------------------------
 # public /v1 get_optional_user
 # ---------------------------------------------------------------------------
@@ -180,6 +208,29 @@ async def test_optional_user_anonymises_deactivated_user(
     ed25519_setup: dict[str, Any],
 ) -> None:
     token = _make_token(ed25519_setup, role="user", is_active=False)
+    user = await public_deps.get_optional_user(credentials=_bearer(token))
+    assert user is None
+
+
+@pytest.mark.asyncio
+async def test_optional_user_anonymises_malformed_payload(
+    ed25519_setup: dict[str, Any],
+) -> None:
+    """Validly-signed JWT missing required claims must degrade to anonymous
+    on the public API, not 500 the request."""
+    now = int(time.time())
+    token = pyjwt.encode(
+        {
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "iat": now,
+            "exp": now + 300,
+            # no sub, no email
+        },
+        ed25519_setup["private_pem"],
+        algorithm="EdDSA",
+        headers={"kid": ed25519_setup["kid"]},
+    )
     user = await public_deps.get_optional_user(credentials=_bearer(token))
     assert user is None
 

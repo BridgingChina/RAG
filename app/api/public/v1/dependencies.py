@@ -55,10 +55,13 @@ async def get_optional_user(
         return None
     try:
         payload = await verify_jwt(credentials.credentials)
+        user = CurrentUser.from_payload(payload)
     except HTTPException:
-        # Invalid token on an optional endpoint -> treat as anonymous.
+        # Invalid token (bad sig, expired, wrong iss/aud, missing required
+        # claims) on an optional endpoint -> treat as anonymous. Keeps the
+        # public API serving data to signed-out callers even if the auth
+        # Worker briefly ships a malformed-but-signed payload.
         return None
-    user = CurrentUser.from_payload(payload)
     if not user.is_active:
         return None
     return user

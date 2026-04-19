@@ -249,3 +249,42 @@ async def test_verify_rejects_unparseable_token(
         await verify_jwt("not-a-jwt")
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "Invalid token header"
+
+
+@pytest.mark.asyncio
+async def test_malformed_payload_missing_sub_raises_401(
+    ed25519_keypair: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A validly-signed JWT that omits required claims (e.g. ``sub``) must
+    surface as HTTPException(401) from ``CurrentUser.from_payload`` so that
+    ``get_optional_user`` can gracefully degrade to anonymous instead of
+    500-ing every public request."""
+    from app.models.current_user import CurrentUser
+
+    async def fake_get_key(kid: str) -> Any:
+        return ed25519_keypair["jwk"]
+
+    monkeypatch.setattr(jwt_verifier, "get_key_for_kid", fake_get_key)
+
+    now = int(time.time())
+    # Valid signature, valid iss/aud/exp/kid — but no "sub" or "email".
+    token = pyjwt.encode(
+        {
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "iat": now,
+            "exp": now + 60,
+            "role": "user",
+        },
+        ed25519_keypair["private_pem"],
+        algorithm="EdDSA",
+        headers={"kid": ed25519_keypair["kid"]},
+    )
+    # verify_jwt itself succeeds (sub/email are not required at that layer).
+    payload = await verify_jwt(token)
+    assert "sub" not in payload
+    # But CurrentUser.from_payload must raise 401.
+    with pytest.raises(HTTPException) as exc_info:
+        CurrentUser.from_payload(payload)
+    assert exc_info.value.status_code == 401
+    assert "claim" in exc_info.value.detail.lower()
