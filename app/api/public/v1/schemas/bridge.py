@@ -1,7 +1,7 @@
 """Public bridge schemas."""
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PublicBridgeListItem(BaseModel):
@@ -22,11 +22,7 @@ class BridgeSectionLevel(BaseModel):
     l1: list[dict] = []
 
 
-class BridgeSections(BaseModel):
-    structure: BridgeSectionLevel = BridgeSectionLevel()
-    geography: BridgeSectionLevel = BridgeSectionLevel()
-    society: BridgeSectionLevel = BridgeSectionLevel()
-    history: BridgeSectionLevel = BridgeSectionLevel()
+BridgeSections = dict[str, BridgeSectionLevel]
 
 
 class PublicBridgeDetail(BaseModel):
@@ -40,7 +36,7 @@ class PublicBridgeDetail(BaseModel):
     longitude: float | None
     tags: list[str] = []
     images: list[dict] = []
-    sections: BridgeSections = BridgeSections()
+    sections: BridgeSections = Field(default_factory=dict)
     related_knowledge_points: list[dict] = []
     sources: list[dict] = []
     sources_count: int = 0

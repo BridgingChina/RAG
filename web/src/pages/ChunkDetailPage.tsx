@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/useApi"
-import { fetchChunk, updateChunk, deleteChunk } from "@/lib/api"
+import { fetchChunk, updateChunk, deleteChunk, fetchTaxonomyTree } from "@/lib/api"
 import type { ChunkUpdateRequest } from "@/lib/types"
 
 export function Component() {
@@ -45,6 +45,9 @@ export function Component() {
     () => fetchChunk(id!),
     [id],
   )
+
+  const { data: taxTree } = useApi(fetchTaxonomyTree, [])
+  const lvl1Options = taxTree?.items ?? []
 
   const [formData, setFormData] = useState<ChunkUpdateRequest>({})
 
@@ -179,10 +182,11 @@ export function Component() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">无</SelectItem>
-                    <SelectItem value="形制与技术">形制与技术</SelectItem>
-                    <SelectItem value="地域与环境">地域与环境</SelectItem>
-                    <SelectItem value="功能与社会">功能与社会</SelectItem>
-                    <SelectItem value="历史与演变">历史与演变</SelectItem>
+                    {lvl1Options.map((item) => (
+                      <SelectItem key={item.node_id} value={item.label}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

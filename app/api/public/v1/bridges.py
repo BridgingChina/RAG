@@ -10,7 +10,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.orm import Session
 
-from app.api.public.v1.schemas.bridge import BridgeSections, BridgeSectionLevel, PublicBridgeDetail, PublicBridgeListItem
+from app.api.public.v1.schemas.bridge import BridgeSectionLevel, PublicBridgeDetail, PublicBridgeListItem
 from app.api.public.v1.schemas.common import PublicMeta, PublicPaginatedResponse, PublicResponse
 from app.api.public.v1.utils import escape_like as _escape_like
 from app.core.database import get_db
@@ -18,16 +18,10 @@ from app.models import Bridge, Chunk, Source
 from app.models.bridge_image import BridgeImage
 from app.models.knowledge_point import KnowledgePoint
 from app.models.knowledge_point_bridge import KnowledgePointBridge
+from app.models.taxonomy import TaxonomyNode
 from app.services.bridge_image_service import BridgeImageService
 
 router = APIRouter()
-
-LVL1_TO_SECTION: dict[str, str] = {
-    "形制与技术": "structure",
-    "地域与环境": "geography",
-    "功能与社会": "society",
-    "历史与演变": "history",
-}
 
 
 @router.get("", response_model=PublicPaginatedResponse[dict])
@@ -198,8 +192,16 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse
     if not bridge:
         raise HTTPException(404, detail="桥梁不存在")
 
-    # Query chunks belonging to this bridge with a recognized lvl1
-    valid_lvl1 = list(LVL1_TO_SECTION.keys())
+    # Pull all known lvl1 themes from taxonomy (lvl2 IS NULL marks a top-level row).
+    # Order is the canonical taxonomy order, used both to filter chunks and to seed
+    # an empty section per theme so the C-end always renders all main lines.
+    valid_lvl1 = [
+        row[0]
+        for row in db.query(TaxonomyNode.lvl1)
+        .filter(TaxonomyNode.lvl2.is_(None), TaxonomyNode.lvl3.is_(None))
+        .order_by(TaxonomyNode.lvl1)
+        .all()
+    ]
     chunks = (
         db.query(Chunk)
         .filter(Chunk.bridge_id == bridge_id, Chunk.lvl1.in_(valid_lvl1))
@@ -226,15 +228,16 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse
         if sid in source_map
     ]
 
-    # Group chunks into sections by lvl1
-    section_data: dict[str, BridgeSectionLevel] = {
-        sec: BridgeSectionLevel() for sec in LVL1_TO_SECTION.values()
+    # Group chunks into sections keyed by lvl1 (Chinese theme name). Section keys and
+    # order are taxonomy-driven, so adding a new lvl1 theme automatically gets its own
+    # section without code changes.
+    sections: dict[str, BridgeSectionLevel] = {
+        lvl1: BridgeSectionLevel() for lvl1 in valid_lvl1
     }
     for c in chunks:
-        sec_key = LVL1_TO_SECTION.get(c.lvl1)  # type: ignore[arg-type]
-        if not sec_key:
+        level = sections.get(c.lvl1)
+        if level is None:
             continue
-        level = section_data[sec_key]
 
         summary = c.section_title or (c.content[:80] + "\u2026" if len(c.content) > 80 else c.content)
         # L0: summary only
@@ -245,8 +248,6 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse
             src = source_map[c.source_id]
             l1_entry["citations"] = [{"source_id": str(src.id), "title": src.title}]
         level.l1.append(l1_entry)
-
-    sections = BridgeSections(**section_data)
 
     # Tags: derive from non-null bridge attributes
     tags = [v for v in [bridge.bridge_type, bridge.material, bridge.era] if v]

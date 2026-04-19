@@ -22,12 +22,14 @@ def test_public_bridges_knowledge_points_endpoint_exists():
     assert "/v1/bridges/{bridge_id}/knowledge-points" in route_paths
 
 
-def test_lvl1_to_section_mapping():
-    from app.api.public.v1.bridges import LVL1_TO_SECTION
-    assert LVL1_TO_SECTION["形制与技术"] == "structure"
-    assert LVL1_TO_SECTION["地域与环境"] == "geography"
-    assert LVL1_TO_SECTION["功能与社会"] == "society"
-    assert LVL1_TO_SECTION["历史与演变"] == "history"
+def test_bridge_sections_keyed_by_lvl1():
+    """Section keys are taxonomy lvl1 Chinese names directly, not a fixed mapping —
+    new lvl1 themes added to taxonomy automatically appear as new sections."""
+    from app.api.public.v1.bridges import get_bridge
+    import inspect
+    src = inspect.getsource(get_bridge)
+    assert "LVL1_TO_SECTION" not in src, "fixed lvl1->section mapping must be gone"
+    assert "TaxonomyNode" in src, "lvl1 themes must be loaded from DB taxonomy"
 
 
 def test_clusters_representative_is_object_not_array():

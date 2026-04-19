@@ -6,6 +6,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useApi } from "@/hooks/useApi"
+import { fetchTaxonomyTree } from "@/lib/api"
 
 interface ChunkFiltersProps {
   filters: {
@@ -17,6 +19,9 @@ interface ChunkFiltersProps {
 }
 
 export function ChunkFilters({ filters, onChange }: ChunkFiltersProps) {
+  const { data: taxTree } = useApi(fetchTaxonomyTree, [])
+  const lvl1Options = taxTree?.items ?? []
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Input
@@ -39,10 +44,11 @@ export function ChunkFilters({ filters, onChange }: ChunkFiltersProps) {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="__all__">全部</SelectItem>
-          <SelectItem value="形制与技术">形制与技术</SelectItem>
-          <SelectItem value="地域与环境">地域与环境</SelectItem>
-          <SelectItem value="功能与社会">功能与社会</SelectItem>
-          <SelectItem value="历史与演变">历史与演变</SelectItem>
+          {lvl1Options.map((item) => (
+            <SelectItem key={item.node_id} value={item.label}>
+              {item.label}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
 
