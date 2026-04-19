@@ -20,7 +20,8 @@ from app.api.v1.schemas.chunk import (
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.core.database import get_db
-from app.models import Bridge, Chunk, ChunkBridgeLink, KnowledgePoint, Source, TaxonomyNode, User
+from app.models import Bridge, Chunk, ChunkBridgeLink, KnowledgePoint, Source, TaxonomyNode
+from app.models.current_user import CurrentUser
 from app.services.audit_service import AuditService
 from app.services.chunk_editor import check_optimistic_lock, get_tokenizer
 from app.services.kp_resolver import resolve_knowledge_point_id
@@ -187,7 +188,7 @@ def update_chunk(
     body: ChunkUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> ChunkDetail:
     """Update a chunk's metadata."""
     # Fetch the chunk
@@ -297,7 +298,7 @@ def delete_chunk(
     request: Request,
     expected_updated_at: datetime | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> None:
     """Delete a chunk and its bridge links."""
     # Fetch the chunk
@@ -331,7 +332,7 @@ def merge_chunks_endpoint(
     body: ChunkMergeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> ChunkDetail:
     """Merge multiple chunks into one."""
     from app.services.chunk_editor import merge_chunks as do_merge
@@ -360,7 +361,7 @@ def batch_chunks(
     body: ChunkBatchRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> dict:
     """Batch update or delete chunks."""
     # Validate all chunk_ids exist
@@ -430,7 +431,7 @@ def split_chunk_endpoint(
     body: ChunkSplitRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> ChunkSplitResponse:
     """Split a chunk at the given character position."""
     from app.services.chunk_editor import split_chunk as do_split

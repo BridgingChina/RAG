@@ -24,7 +24,8 @@ from app.api.v1.schemas.ingest_task import (
     PresignResponse,
 )
 from app.core.database import get_db
-from app.models import Chunk, ChunkBridgeLink, Source, User
+from app.models import Chunk, ChunkBridgeLink, Source
+from app.models.current_user import CurrentUser
 from app.models.ingest_task import RUNNING_STATUSES, IngestTask
 from app.providers import get_provider
 from app.providers.file_parser import FileParserProvider
@@ -175,7 +176,7 @@ def _cleanup_task_data(db: Session, task: IngestTask) -> None:
 def presign(
     body: PresignRequest,
     r2: R2StorageService = Depends(_get_r2),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Generate a presigned URL for direct file upload to R2."""
@@ -217,7 +218,7 @@ def create_ingest_task(
     body: IngestTaskCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Confirm upload complete and start parsing.
 
@@ -265,7 +266,7 @@ def list_ingest_tasks(
     status: str | None = Query(default=None),
     file_name: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """List ingest tasks with optional filters."""
     query = db.query(IngestTask)
@@ -292,7 +293,7 @@ def batch_delete_ingest_tasks(
     body: BatchDeleteRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Soft-delete multiple ingest tasks.
 
@@ -344,7 +345,7 @@ def batch_delete_ingest_tasks(
 def get_ingest_task(
     task_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Get ingest task detail (used for polling status)."""
     task = db.get(IngestTask, task_id)
@@ -358,7 +359,7 @@ def confirm_ingest_task(
     task_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """User confirms chunks are ready -- enqueue for indexing.
 
@@ -396,7 +397,7 @@ def get_download_url(
     type: str = Query(..., pattern="^(raw|parsed)$"),
     r2: R2StorageService = Depends(_get_r2),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Generate a presigned download URL for task files."""
     task = db.get(IngestTask, task_id)
@@ -420,7 +421,7 @@ def retry_ingest_task(
     task_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Reset a failed/deleted task and re-enqueue the pipeline.
 
@@ -470,7 +471,7 @@ def delete_ingest_task(
     task_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Soft-delete an ingest task (keeps task record and R2 files)."""
     task = db.get(IngestTask, task_id)

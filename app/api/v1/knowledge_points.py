@@ -23,7 +23,8 @@ from app.api.v1.schemas.knowledge_point import (
     KeyPointItem,
 )
 from app.core.database import get_db
-from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode, User
+from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode
+from app.models.current_user import CurrentUser
 from app.providers import ChatMessage, get_provider
 from app.services.audit_service import AuditService
 from app.services.flashcard_generator import FlashcardBatchGenerator
@@ -93,7 +94,7 @@ def create_knowledge_point(
     body: KPCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> KPDetail:
     """Create a new knowledge point."""
     kp = KnowledgePoint(**body.model_dump())
@@ -123,7 +124,7 @@ async def auto_associate_chunks(
     kp_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> AutoAssociateResult:
     """Let the LLM decide which same-(lvl1, lvl2) chunks belong to this KP.
 
@@ -228,7 +229,7 @@ async def sync_bridges(
     request: Request,
     use_llm: bool = Query(default=False, description="Generate relevance notes via LLM"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> list[KPBridgeItem]:
     """Auto-derive bridge associations from chunk taxonomy tags."""
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
@@ -297,7 +298,7 @@ def replace_kp_bridges(
     body: KPBridgeReplaceRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> list[KPBridgeItem]:
     """Replace all bridge associations."""
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
@@ -344,7 +345,7 @@ async def generate_flashcards(
     kp_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Generate flashcards for a knowledge point using LLM."""
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
@@ -421,7 +422,7 @@ def update_knowledge_point(
     body: KPUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> KPDetail:
     """Update a knowledge point."""
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
@@ -452,7 +453,7 @@ def delete_knowledge_point(
     kp_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> None:
     """Delete a knowledge point.
 
@@ -505,7 +506,7 @@ async def generate_key_points(
     kp_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Generate key points for a knowledge point using LLM."""
     # 1. Find the KP and its taxonomy node

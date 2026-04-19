@@ -29,7 +29,8 @@ from app.api.v1.schemas.chunk import ChunkListItem
 from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.core.database import get_db
-from app.models import Bridge, Chunk, ChunkBridgeLink, Source, User
+from app.models import Bridge, Chunk, ChunkBridgeLink, Source
+from app.models.current_user import CurrentUser
 from app.services.audit_service import AuditService
 from app.services.bridge_resolver import invalidate_bridge_cache
 from app.services.bridge_image_service import BridgeImageService
@@ -72,7 +73,7 @@ def presign_image_upload(
     body: ImagePresignRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     svc: BridgeImageService = Depends(_get_image_service),
 ) -> ImagePresignResponse:
     """Generate presigned URL for uploading a bridge image to R2."""
@@ -107,7 +108,7 @@ def confirm_image_upload(
     body: ImageConfirmRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     svc: BridgeImageService = Depends(_get_image_service),
 ) -> BridgeImageResponse:
     """Confirm image upload and optionally set caption/type."""
@@ -176,7 +177,7 @@ def reorder_bridge_images(
     body: ImageReorderRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     svc: BridgeImageService = Depends(_get_image_service),
 ) -> None:
     """Reorder images for a bridge."""
@@ -205,7 +206,7 @@ def delete_bridge_image(
     image_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     svc: BridgeImageService = Depends(_get_image_service),
 ) -> None:
     """Delete a bridge image (record + R2 object)."""
@@ -237,7 +238,7 @@ async def batch_geocode(
     body: BatchGeocodeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> BatchGeocodeResponse:
     """Batch geocode bridges using Amap API. Blocking — awaits all geocoding inline."""
     svc = GeocodeService()
@@ -270,7 +271,7 @@ async def import_coordinates(
     file: UploadFile,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> CSVImportResponse:
     """Import bridge coordinates from a CSV file (columns: name, latitude, longitude)."""
     content = await file.read()
@@ -386,7 +387,7 @@ def create_bridge(
     body: BridgeCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> BridgeDetail:
     """Create a new bridge."""
     # Check for duplicate name
@@ -439,7 +440,7 @@ def update_bridge(
     body: BridgeUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> BridgeDetail:
     """Update a bridge's metadata."""
     # Fetch the bridge
@@ -477,7 +478,7 @@ def delete_bridge(
     bridge_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> None:
     """Delete a bridge if it has no associated chunks."""
     # Fetch the bridge
@@ -575,7 +576,7 @@ def merge_bridges(
     body: BridgeMergeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
     dry_run: bool = Query(False),
 ) -> BridgeDetail | BridgeMergePreview:
     """Merge source bridge into target bridge.
