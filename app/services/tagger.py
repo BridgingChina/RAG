@@ -3,7 +3,6 @@ import logging
 import re
 from dataclasses import dataclass
 
-from app.core.constants import get_taxonomy_lvl1, get_taxonomy_lvl2, get_taxonomy_lvl3, load_taxonomy
 from app.providers import ChatMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -18,9 +17,21 @@ class TagResult:
 
 
 class MetadataTagger:
-    def __init__(self, provider: LLMProvider, taxonomy_lvl2: dict[str, list[str]] | None = None):
+    """LLM-backed chunk metadata tagger.
+
+    The full taxonomy snapshot must be provided at construction time — the
+    tagger never reads YAML or touches the DB on its own. Callers (ingest
+    pipeline, scripts, tests) pass a fresh snapshot so admin-side taxonomy
+    edits propagate on the next task without any cache invalidation dance.
+    """
+
+    def __init__(
+        self,
+        provider: LLMProvider,
+        taxonomy: dict[str, dict[str, list[str]]],
+    ):
         self.provider = provider
-        self.taxonomy_lvl2 = taxonomy_lvl2 or {}
+        self.taxonomy = taxonomy
 
     async def tag(self, chunk_content: str) -> TagResult:
         """Tag a chunk with taxonomy metadata."""
@@ -51,23 +62,17 @@ class MetadataTagger:
 
     def _build_taxonomy_prompt(self) -> str:
         """Build a prompt section describing the 3-level taxonomy."""
-        taxonomy = load_taxonomy()
-        lvl1_list = get_taxonomy_lvl1()
-
-        lines: list[str] = []
-        lines.append("一级分类（必选其一）：")
-        for i, lvl1 in enumerate(lvl1_list, start=1):
+        lines: list[str] = ["一级分类（必选其一）："]
+        for i, lvl1 in enumerate(self.taxonomy.keys(), start=1):
             lines.append(f"{i}. {lvl1}")
 
         lines.append("")
         lines.append("二级/三级分类（可选，需与上级匹配）：")
-        for lvl1 in lvl1_list:
-            lvl2_list = self.taxonomy_lvl2.get(lvl1) or list(taxonomy.get(lvl1, {}).keys())
-            if not lvl2_list:
+        for lvl1, lvl2_dict in self.taxonomy.items():
+            if not lvl2_dict:
                 continue
             lines.append(f"- {lvl1}:")
-            for lvl2 in lvl2_list:
-                lvl3_list = taxonomy.get(lvl1, {}).get(lvl2, [])
+            for lvl2, lvl3_list in lvl2_dict.items():
                 if lvl3_list:
                     lines.append(f"  - {lvl2}: {', '.join(lvl3_list)}")
                 else:
@@ -103,17 +108,17 @@ class MetadataTagger:
             lvl3 = self._normalize_value(data.get("lvl3"))
             bridge_name = self._normalize_value(data.get("bridge_name"))
 
-            if lvl1 not in get_taxonomy_lvl1():
+            if lvl1 not in self.taxonomy:
                 lvl1 = None
                 lvl2 = None
                 lvl3 = None
             else:
-                allowed_lvl2 = self.taxonomy_lvl2.get(lvl1) or get_taxonomy_lvl2(lvl1)
-                if lvl2 not in allowed_lvl2:
+                lvl2_dict = self.taxonomy[lvl1]
+                if lvl2 not in lvl2_dict:
                     lvl2 = None
                     lvl3 = None
                 else:
-                    allowed_lvl3 = get_taxonomy_lvl3(lvl1, lvl2)
+                    allowed_lvl3 = lvl2_dict.get(lvl2, [])
                     if lvl3 not in allowed_lvl3:
                         lvl3 = None
 

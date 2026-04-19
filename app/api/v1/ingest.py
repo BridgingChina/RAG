@@ -11,7 +11,9 @@ from app.api.v1.schemas import (
     IngestResponse,
     IngestedChunkSummary,
 )
+from app.core.constants import EMBEDDING_DIM
 from app.core.database import get_db
+from app.core.taxonomy_loader import load_taxonomy_snapshot
 from app.models import Chunk, ChunkBridgeLink, Source, User
 from app.services.audit_service import AuditService
 from app.providers import get_provider
@@ -22,7 +24,6 @@ from app.services.kp_resolver import resolve_knowledge_point_id
 from app.services.markdown_parser import parse_markdown
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
-from app.core.constants import EMBEDDING_DIM, load_taxonomy
 
 router = APIRouter()
 
@@ -36,12 +37,6 @@ def _get_tokenizer() -> Tokenizer:
         tokenizer = Tokenizer(user_dict_path=key)
         _tokenizer_cache[key] = tokenizer
     return tokenizer
-
-
-def _get_taxonomy_lvl2_map() -> dict[str, list[str]]:
-    """Convert taxonomy to lvl1 -> [lvl2] mapping for tagger."""
-    taxonomy = load_taxonomy()
-    return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
 def _extract_bridge_hints(frontmatter: dict, request_candidates: list[str] | None) -> list[str]:
@@ -125,7 +120,7 @@ async def ingest(
         max_chunk_size=500,
         similarity_threshold=0.5,
     )
-    tagger = MetadataTagger(provider=provider, taxonomy_lvl2=_get_taxonomy_lvl2_map())
+    tagger = MetadataTagger(provider=provider, taxonomy=load_taxonomy_snapshot(db))
     bridge_linker = BridgeLinker(
         provider=provider,
         min_primary_confidence=body.min_primary_confidence,

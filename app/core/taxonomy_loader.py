@@ -61,3 +61,24 @@ def get_taxonomy_lvl3_from_db(db: Session, lvl1: str, lvl2: str) -> list[str]:
     if lvl1 in taxonomy and lvl2 in taxonomy[lvl1]:
         return taxonomy[lvl1][lvl2]
     return []
+
+
+def load_taxonomy_snapshot(db: Session) -> dict[str, dict[str, list[str]]]:
+    """Fresh SELECT of the taxonomy tree, bypassing ``_cache``.
+
+    Why a second reader: ingest tasks must see admin taxonomy edits the
+    instant they commit, even across worker boundaries where
+    ``invalidate_taxonomy_cache`` may not have fired. The cached
+    ``load_taxonomy_from_db`` remains appropriate for request handlers
+    where a slightly stale read is acceptable.
+    """
+    nodes = db.query(TaxonomyNode).all()
+    tree: dict[str, dict[str, list[str]]] = {}
+    for node in nodes:
+        if node.lvl1 not in tree:
+            tree[node.lvl1] = {}
+        if node.lvl2 and node.lvl2 not in tree[node.lvl1]:
+            tree[node.lvl1][node.lvl2] = []
+        if node.lvl2 and node.lvl3:
+            tree[node.lvl1][node.lvl2].append(node.lvl3)
+    return tree

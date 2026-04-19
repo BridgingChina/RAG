@@ -1,5 +1,16 @@
-# 三级知识分类体系
-# lvl1 -> lvl2 -> lvl3
+# 三级知识分类体系 — lvl1 -> lvl2 -> lvl3
+#
+# ⚠️  SEED ONLY — 运行期不要再改这个文件。
+#
+# 这份 YAML 只在首次启动时（database.py: init_database 空表判断）被灌入
+# ``taxonomy_nodes`` 表一次。之后所有读取路径（tagger、admin tree、tagger
+# 白名单、chunk batch-update 校验）都直接从 DB 读，YAML 不再被消费。
+#
+# 要调整分类：走 /api/v1/taxonomy/nodes 端点或管理后台 UI（这两条路径都
+# 写 DB + 失效缓存）。改这个文件只会影响**全新环境**的初始 seed。
+#
+# 背景：2026-04 之前，tagger 绕过 DB 直接读这里 + @lru_cache，导致管理员
+# 修改 taxonomy 后新入库仍用旧分类。修复见 tagger.py + taxonomy_loader.py。
 
 taxonomy:
   形制与技术:
