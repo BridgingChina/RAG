@@ -10,7 +10,8 @@ from unittest.mock import MagicMock
 from app.api.v1.schemas.taxonomy import TaxonomyBatchUpdate
 from app.api.v1.taxonomy import batch_update_chunks
 from app.core.constants import EMBEDDING_DIM
-from app.models import Chunk, KnowledgePoint, TaxonomyNode, User
+from app.models import Chunk, KnowledgePoint, TaxonomyNode
+from app.models.current_user import CurrentUser
 
 
 def _fake_request() -> MagicMock:
@@ -20,16 +21,15 @@ def _fake_request() -> MagicMock:
     return request
 
 
-def _make_admin(db_session) -> User:
-    user = User(
-        username=f"batch_admin_{uuid.uuid4().hex[:8]}",
-        hashed_password="$2b$12$placeholder",
-        display_name="Batch Admin",
-        is_active=True,
+def _make_admin(db_session) -> CurrentUser:
+    # db_session is unused now — kept for signature parity with pre-Phase-2
+    # callers. CurrentUser is a pydantic projection of a verified JWT, not
+    # an ORM row, so no DB insert is needed.
+    return CurrentUser(
+        id=f"batch_admin_{uuid.uuid4().hex[:8]}",
+        email="batch@test",
+        role="admin",
     )
-    db_session.add(user)
-    db_session.flush()
-    return user
 
 
 def test_batch_update_populates_knowledge_point_id(db_session, test_source):

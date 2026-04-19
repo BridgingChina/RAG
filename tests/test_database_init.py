@@ -112,14 +112,13 @@ class TestVerifySchemaCompatibility:
             "chunks",
             "chunk_bridge_links",
             "ingest_tasks",
-            "users",
             "audit_logs",
             "knowledge_points",
             "knowledge_point_key_points",
             "flashcards",
-            "device_favorites",
-            "device_review_progress",
-            "device_view_history",
+            "favorites",
+            "review_progress",
+            "view_history",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -160,6 +159,7 @@ class TestVerifySchemaCompatibility:
                 "needs_reindex",
                 "updated_at",
                 "created_at",
+                "knowledge_point_id",
             },
             "chunk_bridge_links": {
                 "id",
@@ -188,15 +188,6 @@ class TestVerifySchemaCompatibility:
                 "created_at",
                 "updated_at",
             },
-            "users": {
-                "id",
-                "username",
-                "hashed_password",
-                "display_name",
-                "is_active",
-                "created_at",
-                "updated_at",
-            },
             "audit_logs": {
                 "id",
                 "user_id",
@@ -217,6 +208,8 @@ class TestVerifySchemaCompatibility:
                 "l2_content",
                 "created_at",
                 "updated_at",
+                "lvl1",
+                "lvl2",
             },
             "knowledge_point_key_points": {
                 "id",
@@ -241,25 +234,25 @@ class TestVerifySchemaCompatibility:
                 "created_at",
                 "updated_at",
             },
-            "device_favorites": {
+            "favorites": {
                 "id",
-                "device_id",
+                "user_id",
                 "target_type",
                 "target_id",
                 "created_at",
             },
-            "device_review_progress": {
-                "id",
-                "device_id",
+            "review_progress": {
+                "user_id",
                 "flashcard_id",
                 "mastery",
                 "last_reviewed_at",
-                "interval",
+                "next_review_at",
+                "interval_days",
                 "ease_factor",
             },
-            "device_view_history": {
+            "view_history": {
                 "id",
-                "device_id",
+                "user_id",
                 "target_type",
                 "target_id",
                 "viewed_at",
@@ -305,14 +298,13 @@ class TestVerifySchemaCompatibility:
             "chunks",
             "chunk_bridge_links",
             "ingest_tasks",
-            "users",
             "audit_logs",
             "knowledge_points",
             "knowledge_point_key_points",
             "flashcards",
-            "device_favorites",
-            "device_review_progress",
-            "device_view_history",
+            "favorites",
+            "review_progress",
+            "view_history",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -353,6 +345,7 @@ class TestVerifySchemaCompatibility:
                 "needs_reindex",
                 "updated_at",
                 "created_at",
+                "knowledge_point_id",
             },
             "chunk_bridge_links": {
                 "id",
@@ -381,15 +374,6 @@ class TestVerifySchemaCompatibility:
                 "created_at",
                 "updated_at",
             },
-            "users": {
-                "id",
-                "username",
-                "hashed_password",
-                "display_name",
-                "is_active",
-                "created_at",
-                "updated_at",
-            },
             "audit_logs": {
                 "id",
                 "user_id",
@@ -410,6 +394,8 @@ class TestVerifySchemaCompatibility:
                 "l2_content",
                 "created_at",
                 "updated_at",
+                "lvl1",
+                "lvl2",
             },
             "knowledge_point_key_points": {
                 "id",
@@ -434,25 +420,25 @@ class TestVerifySchemaCompatibility:
                 "created_at",
                 "updated_at",
             },
-            "device_favorites": {
+            "favorites": {
                 "id",
-                "device_id",
+                "user_id",
                 "target_type",
                 "target_id",
                 "created_at",
             },
-            "device_review_progress": {
-                "id",
-                "device_id",
+            "review_progress": {
+                "user_id",
                 "flashcard_id",
                 "mastery",
                 "last_reviewed_at",
-                "interval",
+                "next_review_at",
+                "interval_days",
                 "ease_factor",
             },
-            "device_view_history": {
+            "view_history": {
                 "id",
-                "device_id",
+                "user_id",
                 "target_type",
                 "target_id",
                 "viewed_at",
@@ -534,7 +520,10 @@ class TestInitDatabase:
 
         # Verify version set to LATEST_SCHEMA_VERSION
         mock_set_version.assert_called_once_with(
-            mock_engine, LATEST_SCHEMA_VERSION, "Schema v3: flashcards + device tables", conn=mock_conn
+            mock_engine,
+            LATEST_SCHEMA_VERSION,
+            f"Initial schema at v{LATEST_SCHEMA_VERSION}",
+            conn=mock_conn,
         )
 
     @patch("app.core.database.verify_schema_compatibility")

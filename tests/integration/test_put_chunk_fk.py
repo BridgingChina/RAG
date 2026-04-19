@@ -10,7 +10,8 @@ from unittest.mock import MagicMock
 from app.api.v1.chunks import update_chunk
 from app.api.v1.schemas.chunk import ChunkUpdate
 from app.core.constants import EMBEDDING_DIM
-from app.models import Chunk, KnowledgePoint, TaxonomyNode, User
+from app.models import Chunk, KnowledgePoint, TaxonomyNode
+from app.models.current_user import CurrentUser
 
 
 def _fake_request() -> MagicMock:
@@ -20,16 +21,12 @@ def _fake_request() -> MagicMock:
     return request
 
 
-def _make_admin(db_session) -> User:
-    user = User(
-        username=f"put_admin_{uuid.uuid4().hex[:8]}",
-        hashed_password="$2b$12$placeholder",
-        display_name="Put Admin",
-        is_active=True,
+def _make_admin(db_session) -> CurrentUser:
+    return CurrentUser(
+        id=f"put_admin_{uuid.uuid4().hex[:8]}",
+        email="put@test",
+        role="admin",
     )
-    db_session.add(user)
-    db_session.flush()
-    return user
 
 
 def _seed_taxonomy_kp(db_session, lvl1: str, lvl2: str, lvl3: str) -> tuple[TaxonomyNode, KnowledgePoint]:

@@ -1,0 +1,56 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "桥知 BridgingChina" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - navigation [ref=e5]:
+        - link "知识图谱" [ref=e6] [cursor=pointer]:
+          - /url: /knowledge
+        - link "地图" [ref=e7] [cursor=pointer]:
+          - /url: /map
+        - link "识景" [ref=e8] [cursor=pointer]:
+          - /url: /recognize
+        - link "搜索" [ref=e9] [cursor=pointer]:
+          - /url: /search
+        - link "我的" [ref=e10] [cursor=pointer]:
+          - /url: /me
+      - generic [ref=e11]:
+        - link "搜索" [ref=e12] [cursor=pointer]:
+          - /url: /search
+          - button "搜索" [ref=e13]:
+            - img
+        - button "提问" [ref=e14]:
+          - img
+          - text: 提问
+  - main [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e27]:
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - generic [ref=e30]: 桥型
+            - button "全部" [ref=e31]
+          - generic [ref=e32]:
+            - generic [ref=e33]: 年代
+            - button "全部" [ref=e34]
+          - generic [ref=e35]:
+            - generic [ref=e36]: 地区
+            - button "全部" [ref=e37]
+        - generic [ref=e38]:
+          - iframe [ref=e39]:
+            
+          - generic [ref=e41]:
+            - generic:
+              - generic [ref=e44]: "7"
+              - generic [ref=e46]: "6"
+              - generic "十字桥" [ref=e47]:
+                - img [ref=e48]
+          - generic:
+            - img
+          - generic [ref=e49]: © 2026 AutoNavi - GS(2025)5996号
+        - generic: 地图来源：高德地图
+      - complementary [ref=e20]:
+        - generic [ref=e21]:
+          - heading "桥梁结果" [level=2] [ref=e22]
+          - paragraph [ref=e23]: 视野内 1 个点位 · 2 个聚类
+        - paragraph [ref=e25]: 点击地图上的标记查看桥梁详情。
+  - alert [ref=e26]

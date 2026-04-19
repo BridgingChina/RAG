@@ -13,7 +13,8 @@ from fastapi import HTTPException
 
 from app.api.v1.knowledge_points import delete_knowledge_point
 from app.core.constants import EMBEDDING_DIM
-from app.models import Chunk, KnowledgePoint, TaxonomyNode, User
+from app.models import Chunk, KnowledgePoint, TaxonomyNode
+from app.models.current_user import CurrentUser
 
 
 def _fake_request() -> MagicMock:
@@ -23,16 +24,12 @@ def _fake_request() -> MagicMock:
     return request
 
 
-def _make_admin(db_session) -> User:
-    user = User(
-        username=f"kpdel_admin_{uuid.uuid4().hex[:8]}",
-        hashed_password="$2b$12$placeholder",
-        display_name="KP Delete Admin",
-        is_active=True,
+def _make_admin(db_session) -> CurrentUser:
+    return CurrentUser(
+        id=f"kpdel_admin_{uuid.uuid4().hex[:8]}",
+        email="kpdel@test",
+        role="admin",
     )
-    db_session.add(user)
-    db_session.flush()
-    return user
 
 
 def test_delete_kp_blocked_by_chunk_reference(db_session, test_source):

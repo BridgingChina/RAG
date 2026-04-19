@@ -7,6 +7,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, UUIDMixin, TimestampMixin
 
+# ``created_by`` is a logical FK to ``auth.user.id`` (Better Auth) stored as
+# a string — see ``audit_log.py`` for the same pattern and rationale.
+
 
 # Canonical source of truth for the ingest task state machine (issue #152).
 # Multiple modules depend on these — import from here rather than duplicating.
@@ -37,9 +40,7 @@ class IngestTask(Base, UUIDMixin, TimestampMixin):
     chunk_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     image_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     __table_args__ = (
         Index("ix_ingest_tasks_status", "status"),

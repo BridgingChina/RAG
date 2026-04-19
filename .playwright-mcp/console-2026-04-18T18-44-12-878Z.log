@@ -1,0 +1,2 @@
+[    2826ms] [LOG] <AMap JSAPI> 使用 JSAPI 安全模式，代理服务请以_AMapService 作为一级路由 @ https://webapi.amap.com/maps?callback=___onAPILoaded&v=2.0&key=54c7c02104900d501598e5877dab922c&plugin=AMap.MarkerCluster:0
+[    3589ms] [WARNING] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently @ https://webapi.amap.com/maps?callback=___onAPILoaded&v=2.0&key=54c7c02104900d501598e5877dab922c&plugin=AMap.MarkerCluster:0

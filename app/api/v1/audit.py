@@ -1,6 +1,5 @@
 """Audit log API endpoints."""
 from datetime import datetime
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import desc
@@ -11,7 +10,6 @@ from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.core.database import get_db
 from app.models.audit_log import AuditLog
-from app.models.user import User
 
 router = APIRouter(prefix="/audit-logs", tags=["audit"])
 
@@ -20,25 +18,19 @@ router = APIRouter(prefix="/audit-logs", tags=["audit"])
 def list_audit_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    user_id: UUID | None = None,
+    user_id: str | None = None,
     action: str | None = None,
     resource_type: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
     db: Session = Depends(get_db),
 ) -> PaginatedResponse[AuditLogItem]:
-    """List audit logs with optional filters."""
-    query = db.query(
-        AuditLog.id,
-        AuditLog.user_id,
-        User.username,
-        AuditLog.action,
-        AuditLog.resource_type,
-        AuditLog.resource_id,
-        AuditLog.detail,
-        AuditLog.ip_address,
-        AuditLog.created_at,
-    ).outerjoin(User, AuditLog.user_id == User.id)
+    """List audit logs with optional filters.
+
+    Phase 2: ``user_id`` is a Better Auth id string; the JOIN to users is
+    gone because that table moved to the auth Worker.
+    """
+    query = db.query(AuditLog)
 
     if user_id is not None:
         query = query.filter(AuditLog.user_id == user_id)
@@ -58,7 +50,6 @@ def list_audit_logs(
         lambda row: AuditLogItem(
             id=row.id,
             user_id=row.user_id,
-            username=row.username,
             action=row.action,
             resource_type=row.resource_type,
             resource_id=row.resource_id,

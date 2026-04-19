@@ -1,28 +1,24 @@
-"""Public API: Favorites endpoints."""
-import uuid
+"""Public API: Favorites endpoints.
+
+Phase 2 (Task 2.D.1): ownership scoped by ``user_id`` from the verified
+Better Auth JWT instead of the legacy ``X-Device-Id`` header.
+"""
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.public.v1.dependencies import require_device_id
+from app.api.public.v1.dependencies import require_user
 from app.api.public.v1.schemas.common import PublicMeta, PublicPaginatedResponse, PublicResponse
 from app.core.database import get_db
-from app.models import Bridge, DeviceFavorite, Flashcard, KnowledgePoint
+from app.models import Bridge, Favorite, Flashcard, KnowledgePoint
+from app.models.current_user import CurrentUser
 
 router = APIRouter()
 
 VALID_TYPES = {"bridge", "knowledge_point", "flashcard"}
-
-# Name field mapping per target type
-_TARGET_MODELS = {
-    "bridge": (Bridge, Bridge.name),
-    "knowledge_point": (KnowledgePoint, KnowledgePoint.name),
-    "flashcard": (Flashcard, Flashcard.front_title),
-}
 
 
 class FavoriteAddRequest(BaseModel):
@@ -44,30 +40,26 @@ def list_favorites(
     type: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    device_id: uuid.UUID = Depends(require_device_id),
+    user: CurrentUser = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> PublicPaginatedResponse[dict]:
-    """List favorites for a device, with optional type filter."""
-    query = db.query(DeviceFavorite).filter(
-        DeviceFavorite.device_id == device_id
-    )
+    """List favorites for the signed-in user, with optional type filter."""
+    query = db.query(Favorite).filter(Favorite.user_id == user.id)
     if type:
         if type not in VALID_TYPES:
             raise HTTPException(400, detail=f"Invalid type: {type}")
-        query = query.filter(DeviceFavorite.target_type == type)
+        query = query.filter(Favorite.target_type == type)
 
     total = query.count()
     favs = (
-        query.order_by(DeviceFavorite.created_at.desc())
+        query.order_by(Favorite.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
 
-    # Batch-resolve target details (name, summary, thumbnail)
-    details: dict = {}  # target_id -> {name, summary, thumbnail}
+    details: dict = {}
 
-    # Bridges
     bridge_ids = [f.target_id for f in favs if f.target_type == "bridge"]
     if bridge_ids:
         rows = db.query(
@@ -81,7 +73,6 @@ def list_favorites(
                 "thumbnail": None,
             }
 
-    # Knowledge points
     kp_ids = [f.target_id for f in favs if f.target_type == "knowledge_point"]
     if kp_ids:
         rows = db.query(
@@ -94,7 +85,6 @@ def list_favorites(
                 "thumbnail": None,
             }
 
-    # Flashcards
     fc_ids = [f.target_id for f in favs if f.target_type == "flashcard"]
     if fc_ids:
         rows = db.query(
@@ -129,14 +119,13 @@ def list_favorites(
 @router.post("", status_code=201, response_model=PublicResponse[dict])
 def add_favorite(
     body: FavoriteAddRequest,
-    device_id: uuid.UUID = Depends(require_device_id),
+    user: CurrentUser = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> PublicResponse[dict]:
     """Add a favorite. Returns 409 on duplicate."""
     if body.target_type not in VALID_TYPES:
         raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}")
 
-    # Verify target exists
     _TARGET_MODELS_MAP = {
         "bridge": Bridge,
         "knowledge_point": KnowledgePoint,
@@ -146,8 +135,8 @@ def add_favorite(
     if model_cls and not db.query(model_cls.id).filter(model_cls.id == body.target_id).first():
         raise HTTPException(404, detail=f"{body.target_type} not found")
 
-    fav = DeviceFavorite(
-        device_id=device_id,
+    fav = Favorite(
+        user_id=user.id,
         target_type=body.target_type,
         target_id=body.target_id,
     )
@@ -156,7 +145,7 @@ def add_favorite(
         db.flush()
     except IntegrityError as e:
         db.rollback()
-        if "uq_device_fav" in str(e.orig):
+        if "uq_favorite" in str(e.orig):
             raise HTTPException(409, detail="Already favorited")
         raise
     db.commit()
@@ -173,14 +162,14 @@ def add_favorite(
 @router.delete("/{favorite_id}", status_code=204)
 def remove_favorite(
     favorite_id: UUID,
-    device_id: uuid.UUID = Depends(require_device_id),
+    user: CurrentUser = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> None:
-    """Remove a favorite. Verifies device_id ownership."""
-    fav = db.query(DeviceFavorite).filter(DeviceFavorite.id == favorite_id).first()
+    """Remove a favorite. Verifies user_id ownership."""
+    fav = db.query(Favorite).filter(Favorite.id == favorite_id).first()
     if not fav:
         raise HTTPException(404, detail="Favorite not found")
-    if fav.device_id != device_id:
+    if fav.user_id != user.id:
         raise HTTPException(404, detail="Favorite not found")
     db.delete(fav)
     db.commit()
@@ -198,30 +187,24 @@ def remove_favorite(
 )
 def check_favorites(
     body: FavoriteCheckRequest,
-    device_id: uuid.UUID = Depends(require_device_id),
+    user: CurrentUser = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> PublicResponse[dict]:
-    """Batch check which targets are favorited.
-
-    Uses POST to allow a JSON request body with multiple targets.
-    This is a read-only operation — no data is created or modified.
-    """
+    """Batch check which targets are favorited by the signed-in user."""
     if not body.targets:
         return PublicResponse(data={})
 
-    # Query all favorites for this device matching the requested targets
     target_ids = [t.id for t in body.targets]
     existing = (
-        db.query(DeviceFavorite)
+        db.query(Favorite)
         .filter(
-            DeviceFavorite.device_id == device_id,
-            DeviceFavorite.target_id.in_(target_ids),
+            Favorite.user_id == user.id,
+            Favorite.target_id.in_(target_ids),
         )
         .all()
     )
 
-    # Build lookup: (target_type, target_id) -> favorite
-    lookup: dict[tuple[str, UUID], DeviceFavorite] = {}
+    lookup: dict[tuple[str, UUID], Favorite] = {}
     for fav in existing:
         lookup[(fav.target_type, fav.target_id)] = fav
 

@@ -17,7 +17,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 10
+LATEST_SCHEMA_VERSION = 11
 
 
 def get_db():
@@ -118,10 +118,6 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         "chunk_bridge_links": {
             "id", "chunk_id", "bridge_id", "role", "confidence", "method", "created_at",
         },
-        "users": {
-            "id", "username", "hashed_password", "display_name", "is_active",
-            "created_at", "updated_at",
-        },
         "audit_logs": {
             "id", "user_id", "action", "resource_type", "resource_id",
             "detail", "ip_address", "created_at",
@@ -147,15 +143,15 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "back_answer", "back_key_features", "back_example_bridge_id",
             "created_at", "updated_at",
         },
-        "device_favorites": {
-            "id", "device_id", "target_type", "target_id", "created_at",
+        "favorites": {
+            "id", "user_id", "target_id", "target_type", "created_at",
         },
-        "device_review_progress": {
-            "id", "device_id", "flashcard_id", "mastery",
-            "last_reviewed_at", "interval", "ease_factor",
+        "review_progress": {
+            "user_id", "flashcard_id", "mastery",
+            "last_reviewed_at", "next_review_at", "interval_days", "ease_factor",
         },
-        "device_view_history": {
-            "id", "device_id", "target_type", "target_id", "viewed_at",
+        "view_history": {
+            "id", "user_id", "target_id", "target_type", "viewed_at",
         },
     }
 
@@ -333,7 +329,7 @@ def init_database() -> None:
             # Set initial version
             set_schema_version(
                 engine, LATEST_SCHEMA_VERSION,
-                "Schema v3: flashcards + device tables",
+                f"Initial schema at v{LATEST_SCHEMA_VERSION}",
                 conn=conn,
             )
 
