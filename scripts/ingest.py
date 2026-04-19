@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import text as sql_text
 
 from app.core.config import settings
-from app.core.constants import load_taxonomy
+from app.core.taxonomy_loader import load_taxonomy_snapshot
 from app.models import Base, Bridge, Chunk, Source
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
@@ -29,12 +29,6 @@ from app.services.context_enricher import ContextEnricher
 from app.services.markdown_parser import parse_markdown
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
-
-
-def get_taxonomy_lvl2_map() -> dict[str, list[str]]:
-    """Convert taxonomy to lvl1 -> [lvl2] mapping for tagger."""
-    taxonomy = load_taxonomy()
-    return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
 class IngestedChunk(TypedDict):
@@ -75,6 +69,11 @@ async def ingest_text(
     session: Session | None = None,
 ) -> list[IngestedChunk]:
     """Ingest text into the database."""
+    if session is None:
+        raise ValueError(
+            "ingest_text requires a Session: tagger taxonomy is loaded from DB"
+        )
+
     # Initialize provider and services
     from app.providers import get_provider
     provider = get_provider()
@@ -86,7 +85,7 @@ async def ingest_text(
         max_chunk_size=500,
         similarity_threshold=0.5,
     )
-    tagger = MetadataTagger(provider=provider, taxonomy_lvl2=get_taxonomy_lvl2_map())
+    tagger = MetadataTagger(provider=provider, taxonomy=load_taxonomy_snapshot(session))
 
     # Step 1: Parse and chunk the text
     print(f"正在切块...")

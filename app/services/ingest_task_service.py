@@ -18,6 +18,7 @@ from sqlalchemy.sql import text as sql_text
 from app.core.constants import EMBEDDING_DIM
 from app.core.database import SessionLocal
 from app.core.logging import logger
+from app.core.taxonomy_loader import load_taxonomy_snapshot
 from app.models import Chunk, ChunkBridgeLink, Source
 from app.models.ingest_task import RUNNING_STATUSES, IngestTask
 from app.providers.base import LLMProvider
@@ -31,13 +32,6 @@ from app.services.markdown_parser import parse_markdown
 from app.services.r2_storage import R2StorageService
 from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
-
-
-def _get_taxonomy_lvl2_map() -> dict[str, list[str]]:
-    from app.core.constants import load_taxonomy
-
-    taxonomy = load_taxonomy()
-    return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
 STALE_UPLOADING_HOURS = 2
@@ -444,8 +438,12 @@ class IngestTaskService:
                 raise ValueError(f"No chunks found for source {task.source_id}")
 
             context_enricher = ContextEnricher(provider=self.provider)
+            # Fresh taxonomy per task: admin edits committed before this call
+            # are visible immediately. Bypasses _cache so there is no cross-
+            # worker staleness window.
             tagger = MetadataTagger(
-                provider=self.provider, taxonomy_lvl2=_get_taxonomy_lvl2_map()
+                provider=self.provider,
+                taxonomy=load_taxonomy_snapshot(self.db),
             )
             bridge_linker = BridgeLinker(provider=self.provider)
             tokenizer = Tokenizer(user_dict_path=default_user_dict_path())

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.constants import EMBEDDING_DIM, load_taxonomy
+from app.core.taxonomy_loader import load_taxonomy_snapshot
 from app.models import Base, Bridge, Chunk, ChunkBridgeLink, Source, TaxonomyNode
 from app.providers import ZhipuProvider
 from app.services.chunker import SemanticChunker
@@ -20,12 +21,6 @@ from app.services.tagger import MetadataTagger
 from app.services.tokenizer import Tokenizer, default_user_dict_path
 
 SEED_DIR = Path(__file__).parent.parent / "data" / "seed"
-
-
-def get_taxonomy_lvl2_map() -> dict[str, list[str]]:
-    """Convert taxonomy to lvl1 -> [lvl2] mapping for tagger."""
-    taxonomy = load_taxonomy()
-    return {lvl1: list(lvl2_dict.keys()) for lvl1, lvl2_dict in taxonomy.items()}
 
 
 def seed_taxonomy(session: Session) -> None:
@@ -100,7 +95,12 @@ async def seed_documents(
             max_chunk_size=500,
             similarity_threshold=0.5,
         )
-        tagger = MetadataTagger(provider=provider, taxonomy_lvl2=get_taxonomy_lvl2_map())
+        # Tagger reads the taxonomy snapshot from DB — seed_taxonomy() must
+        # have flushed before this call (auto-flush on the first query below
+        # handles the in-session case too).
+        tagger = MetadataTagger(
+            provider=provider, taxonomy=load_taxonomy_snapshot(session)
+        )
         enricher = ContextEnricher(provider=provider)
     else:
         # Simple splitting (fast for testing)
