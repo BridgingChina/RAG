@@ -1,6 +1,9 @@
 # Worktrees
 .worktrees/
 
+# Playwright MCP session logs
+.playwright-mcp/
+
 # Environment
 .env
 .env.local
