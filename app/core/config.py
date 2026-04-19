@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     access_token_expire_hours: int = 4
 
+    # External JWKS-based auth (Phase 2 — Better Auth via auth.bridgingchina.net)
+    auth_jwks_url: str = "https://auth.bridgingchina.net/api/auth/jwks"
+    jwt_issuer: str = "https://auth.bridgingchina.net"
+    jwt_audience: str = "fastapi"
+
     # R2 storage settings
     r2_account_id: str = ""
     r2_access_key_id: str = ""
