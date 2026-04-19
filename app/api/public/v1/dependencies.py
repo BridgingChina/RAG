@@ -1,5 +1,15 @@
 """Public API dependencies.
 
+Phase 2 introduces optional JWT auth on the C-side (``/v1/*``). Endpoints
+that want per-user state can ``Depends(get_optional_user)`` for "auth if
+present, anonymous otherwise" or ``Depends(require_user)`` for "401 unless
+authenticated".
+
+The legacy ``require_device_id`` dependency is kept for backward
+compatibility with favorites / review / history endpoints, which Phase 2
+Group D migrates to ``require_user``. **Do not remove until then**, or those
+endpoints will break their import graph.
+
 Threat model for X-Device-Id
 -----------------------------
 X-Device-Id is a client-generated UUID v4 sent via HTTP header. It is NOT
@@ -21,8 +31,58 @@ database WHERE clauses so that a request can only read/write rows belonging
 to the presented device_id (ownership scoping).
 """
 import uuid
+from typing import Optional
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.models.current_user import CurrentUser
+from app.services.jwt_verifier import verify_jwt
+
+_bearer_optional = HTTPBearer(auto_error=False)
+
+
+async def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_optional),
+) -> Optional[CurrentUser]:
+    """Return a CurrentUser if a valid JWT is present, else ``None``.
+
+    An invalid / expired token is treated as anonymous rather than an error,
+    because these endpoints are public and should keep serving data to
+    signed-out callers. Deactivated users are also anonymised.
+    """
+    if credentials is None:
+        return None
+    try:
+        payload = await verify_jwt(credentials.credentials)
+    except HTTPException:
+        # Invalid token on an optional endpoint -> treat as anonymous.
+        return None
+    user = CurrentUser.from_payload(payload)
+    if not user.is_active:
+        return None
+    return user
+
+
+async def require_user(
+    user: Optional[CurrentUser] = Depends(get_optional_user),
+) -> CurrentUser:
+    """Require a signed-in user — raise 401 if none is present."""
+    if user is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Authentication required"
+        )
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Legacy: X-Device-Id header (DEPRECATED).
+#
+# ``require_device_id`` is used by favorites.py / review.py / history.py which
+# are still on the old code path. Phase 2 Group D migrates those endpoints to
+# ``require_user`` and then removes this helper. Until then, **do not delete**
+# — removing it will break imports in the three modules above.
+# ---------------------------------------------------------------------------
 
 
 def require_device_id(x_device_id: str = Header(...)) -> uuid.UUID:
