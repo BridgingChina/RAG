@@ -19,11 +19,12 @@ from app.api.v1.dependencies import get_current_user
 
 router = APIRouter()
 
-# Public routes (no auth required)
-router.include_router(auth_router)
-
-# Protected routes (auth required)
+# Protected routes (auth required).
+# Phase 2: ``auth_router`` now only exposes ``/auth/me`` and requires a
+# verified JWT just like every other admin endpoint, so it moves from the
+# public group into the protected group.
 protected = APIRouter(dependencies=[Depends(get_current_user)])
+protected.include_router(auth_router)
 protected.include_router(audit_router)
 protected.include_router(ask_router)
 protected.include_router(bridges_router)
