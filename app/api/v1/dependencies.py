@@ -1,14 +1,10 @@
 """Shared API dependencies for the admin /api/v1 surface.
 
-Phase 2 refactor: ``get_current_user`` now verifies an EdDSA JWT issued by
-``auth.bridgingchina.net`` via ``app.services.jwt_verifier`` instead of the
-legacy HS256 self-signed tokens from ``auth_service.py``. The returned
+Phase 2 Group A+B: ``get_current_user`` verifies an EdDSA JWT issued by
+``auth.bridgingchina.net`` via ``app.services.jwt_verifier``. The returned
 principal is a ``CurrentUser`` pydantic model — **not** a SQLAlchemy ``User``
-— so callers that used ``user.id: uuid.UUID`` / ``user.username`` must update
-to the new field names and string ``id``.
-
-Callers that are currently broken by this change are migrated in Phase 2
-Group B.
+— so callers read ``.id: str`` (Better Auth base64url id, not a UUID) and
+``.email`` / ``.role`` / ``.username`` off the projection.
 """
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

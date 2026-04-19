@@ -7,10 +7,6 @@ Why PyJWT (not python-jose)?
 PyJWT 2.8+ supports EdDSA natively via the ``cryptography`` backend and its
 ``OKPAlgorithm.from_jwk`` helper reconstructs the public key from the
 ``kty=OKP`` / ``crv=Ed25519`` JWK entries that the Better Auth Worker serves.
-
-The legacy HS256 self-signed tokens continue to live in
-``app/services/auth_service.py`` (still on python-jose) until Phase 2 Group B
-removes it.
 """
 from __future__ import annotations
 
