@@ -20,6 +20,7 @@ import type {
   IngestResponse,
   IngestTaskCreateRequest,
   IngestTaskItem,
+  KeyPointItem,
   KnowledgePointDetail,
   KnowledgePointListItem,
   KPBridgeItem,
@@ -550,6 +551,53 @@ export function generateKeyPoints(
   id: string,
 ): Promise<{ generated: number }> {
   return post<{ generated: number }>(`/knowledge-points/${id}/generate-key-points`, {})
+}
+
+export interface KeyPointCreateBody {
+  summary: string
+  explanation?: string | null
+  chunk_ids?: string[]
+  order_index?: number
+}
+
+export interface KeyPointUpdateBody {
+  summary?: string
+  explanation?: string | null
+  chunk_ids?: string[]
+}
+
+export function createKeyPoint(
+  kpId: string,
+  body: KeyPointCreateBody,
+): Promise<KeyPointItem> {
+  return post<KeyPointItem>(`/knowledge-points/${kpId}/key-points`, body)
+}
+
+export function updateKeyPoint(
+  kpId: string,
+  kpkpId: string,
+  body: KeyPointUpdateBody,
+): Promise<KeyPointItem> {
+  return put<KeyPointItem>(
+    `/knowledge-points/${kpId}/key-points/${kpkpId}`,
+    body,
+  )
+}
+
+export function deleteKeyPoint(
+  kpId: string,
+  kpkpId: string,
+): Promise<void> {
+  return del(`/knowledge-points/${kpId}/key-points/${kpkpId}`)
+}
+
+export function reorderKeyPoints(
+  kpId: string,
+  items: Array<{ id: string; order_index: number }>,
+): Promise<KeyPointItem[]> {
+  return put<KeyPointItem[]>(`/knowledge-points/${kpId}/key-points/reorder`, {
+    items,
+  })
 }
 
 export function generateFlashcards(

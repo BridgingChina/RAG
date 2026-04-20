@@ -35,8 +35,12 @@ import {
   fetchKPBridges,
   replaceKPBridges,
   fetchTaxonomyTree,
+  createKeyPoint,
+  updateKeyPoint,
+  deleteKeyPoint,
+  reorderKeyPoints,
 } from "@/lib/api"
-import type { L2Content, KPBridgeItem } from "@/lib/types"
+import type { L2Content, KPBridgeItem, KeyPointItem } from "@/lib/types"
 
 const DIFFICULTY_OPTIONS = [
   { value: "basic", label: "基础" },
@@ -66,6 +70,17 @@ export function Component() {
   const [generatingFC, setGeneratingFC] = useState(false)
   const [fcError, setFcError] = useState<string | null>(null)
   const [fcSuccess, setFcSuccess] = useState<string | null>(null)
+
+  // Key point manual CRUD
+  const [keyPointDialogOpen, setKeyPointDialogOpen] = useState(false)
+  const [editingKeyPoint, setEditingKeyPoint] = useState<KeyPointItem | null>(null)
+  const [kpFormSummary, setKpFormSummary] = useState("")
+  const [kpFormExplanation, setKpFormExplanation] = useState("")
+  const [kpFormSaving, setKpFormSaving] = useState(false)
+  const [kpFormError, setKpFormError] = useState<string | null>(null)
+  const [kpDeletingId, setKpDeletingId] = useState<string | null>(null)
+  const [generateConfirmOpen, setGenerateConfirmOpen] = useState(false)
+  const [reordering, setReordering] = useState(false)
 
   // Auto-associate chunks
   const [associating, setAssociating] = useState(false)
@@ -161,8 +176,21 @@ export function Component() {
     }
   }
 
-  const handleGenerateKeyPoints = async () => {
+  const handleGenerateKeyPointsClick = () => {
+    setKpError(null)
+    setKpSuccess(null)
+    // If there are existing key points, warn the caller — generate-key-points
+    // deletes-then-inserts, wiping any manual edits.
+    if (kp && kp.key_points.length > 0) {
+      setGenerateConfirmOpen(true)
+    } else {
+      void confirmGenerateKeyPoints()
+    }
+  }
+
+  const confirmGenerateKeyPoints = async () => {
     if (!id) return
+    setGenerateConfirmOpen(false)
     setGeneratingKP(true)
     setKpError(null)
     setKpSuccess(null)
@@ -174,6 +202,97 @@ export function Component() {
       setKpError(e instanceof Error ? e.message : String(e))
     } finally {
       setGeneratingKP(false)
+    }
+  }
+
+  const openCreateKeyPointDialog = () => {
+    setEditingKeyPoint(null)
+    setKpFormSummary("")
+    setKpFormExplanation("")
+    setKpFormError(null)
+    setKeyPointDialogOpen(true)
+  }
+
+  const openEditKeyPointDialog = (item: KeyPointItem) => {
+    setEditingKeyPoint(item)
+    setKpFormSummary(item.summary)
+    setKpFormExplanation(item.explanation || "")
+    setKpFormError(null)
+    setKeyPointDialogOpen(true)
+  }
+
+  const handleSaveKeyPoint = async () => {
+    if (!id) return
+    const summary = kpFormSummary.trim()
+    if (!summary) {
+      setKpFormError("要点摘要不能为空")
+      return
+    }
+    setKpFormSaving(true)
+    setKpFormError(null)
+    try {
+      if (editingKeyPoint) {
+        await updateKeyPoint(id, editingKeyPoint.id, {
+          summary,
+          explanation: kpFormExplanation.trim() || null,
+        })
+      } else {
+        await createKeyPoint(id, {
+          summary,
+          explanation: kpFormExplanation.trim() || null,
+        })
+      }
+      setKeyPointDialogOpen(false)
+      setKpSuccess(editingKeyPoint ? "要点已更新" : "要点已新增")
+      refetch()
+      setTimeout(() => setKpSuccess(null), 2000)
+    } catch (e) {
+      setKpFormError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setKpFormSaving(false)
+    }
+  }
+
+  const handleDeleteKeyPoint = async (item: KeyPointItem) => {
+    if (!id) return
+    if (!window.confirm(`确定删除要点「${item.summary}」吗？`)) return
+    setKpDeletingId(item.id)
+    setKpError(null)
+    setKpSuccess(null)
+    try {
+      await deleteKeyPoint(id, item.id)
+      setKpSuccess("要点已删除")
+      refetch()
+      setTimeout(() => setKpSuccess(null), 2000)
+    } catch (e) {
+      setKpError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setKpDeletingId(null)
+    }
+  }
+
+  const handleMoveKeyPoint = async (item: KeyPointItem, direction: -1 | 1) => {
+    if (!id || !kp) return
+    const sorted = [...kp.key_points].sort(
+      (a, b) => a.order_index - b.order_index,
+    )
+    const idx = sorted.findIndex((k) => k.id === item.id)
+    const target = idx + direction
+    if (idx < 0 || target < 0 || target >= sorted.length) return
+    // Swap positions and renormalize to 0..n-1 so gaps from prior deletes
+    // don't accumulate.
+    const next = [...sorted]
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    const payload = next.map((k, i) => ({ id: k.id, order_index: i }))
+    setReordering(true)
+    setKpError(null)
+    try {
+      await reorderKeyPoints(id, payload)
+      refetch()
+    } catch (e) {
+      setKpError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setReordering(false)
     }
   }
 
@@ -516,12 +635,14 @@ export function Component() {
           </CardHeader>
           <CardContent className="space-y-4">
             {kp.key_points.length === 0 ? (
-              <p className="text-sm text-muted-foreground">暂无要点，点击下方按钮生成</p>
+              <p className="text-sm text-muted-foreground">
+                暂无要点，点击下方"新增要点"手动录入，或用"生成要点"让 AI 起草
+              </p>
             ) : (
               <div className="space-y-3">
-                {kp.key_points
+                {[...kp.key_points]
                   .sort((a, b) => a.order_index - b.order_index)
-                  .map((point, idx) => (
+                  .map((point, idx, arr) => (
                     <div key={point.id} className="rounded-lg border p-3">
                       <div className="flex items-start gap-2">
                         <Badge variant="outline" className="mt-0.5 shrink-0">
@@ -540,12 +661,53 @@ export function Component() {
                             </p>
                           )}
                         </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={reordering || idx === 0}
+                              onClick={() => handleMoveKeyPoint(point, -1)}
+                              title="上移"
+                            >
+                              ↑
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={reordering || idx === arr.length - 1}
+                              onClick={() => handleMoveKeyPoint(point, 1)}
+                              title="下移"
+                            >
+                              ↓
+                            </Button>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditKeyPointDialog(point)}
+                            >
+                              编辑
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              disabled={kpDeletingId === point.id}
+                              onClick={() => handleDeleteKeyPoint(point)}
+                            >
+                              {kpDeletingId === point.id ? "删除中..." : "删除"}
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))}
               </div>
             )}
             <div className="flex flex-wrap gap-2">
+              <Button onClick={openCreateKeyPointDialog}>新增要点</Button>
               <Button
                 variant="outline"
                 onClick={handleAutoAssociate}
@@ -556,10 +718,10 @@ export function Component() {
               </Button>
               <Button
                 variant="outline"
-                onClick={handleGenerateKeyPoints}
+                onClick={handleGenerateKeyPointsClick}
                 disabled={generatingKP}
               >
-                {generatingKP ? "生成中..." : "生成要点"}
+                {generatingKP ? "生成中..." : "AI 生成要点"}
               </Button>
               <Button
                 variant="outline"
@@ -806,6 +968,81 @@ export function Component() {
               disabled={isDeleting}
             >
               {isDeleting ? "删除中..." : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Key Point Create / Edit Dialog */}
+      <Dialog open={keyPointDialogOpen} onOpenChange={setKeyPointDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingKeyPoint ? "编辑要点" : "新增要点"}
+            </DialogTitle>
+            <DialogDescription>
+              摘要为必填项。关联知识块由 AI 生成或手动编辑现有要点时保留，此处不做手动编辑。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>摘要 *</Label>
+              <Input
+                value={kpFormSummary}
+                onChange={(e) => setKpFormSummary(e.target.value)}
+                placeholder="一句话说明该要点（20-40字）"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>展开解释</Label>
+              <Textarea
+                value={kpFormExplanation}
+                onChange={(e) => setKpFormExplanation(e.target.value)}
+                placeholder="80-200 字的展开解释（选填）"
+                rows={5}
+              />
+            </div>
+            {kpFormError && (
+              <p className="text-sm text-destructive">{kpFormError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setKeyPointDialogOpen(false)}
+              disabled={kpFormSaving}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={handleSaveKeyPoint}
+              disabled={kpFormSaving || !kpFormSummary.trim()}
+            >
+              {kpFormSaving ? "保存中..." : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate-key-points overwrite confirmation */}
+      <Dialog open={generateConfirmOpen} onOpenChange={setGenerateConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>覆盖现有要点？</DialogTitle>
+            <DialogDescription>
+              AI 生成会先删除当前全部 {kp.key_points.length} 条要点再重新写入，
+              手动编辑的内容将丢失。确认继续？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setGenerateConfirmOpen(false)}
+            >
+              取消
+            </Button>
+            <Button variant="destructive" onClick={confirmGenerateKeyPoints}>
+              确认覆盖
             </Button>
           </DialogFooter>
         </DialogContent>

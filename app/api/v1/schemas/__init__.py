@@ -61,7 +61,11 @@ from .knowledge_point import (
     KPDetail,
     KPListItem,
     KPUpdate,
+    KeyPointCreate,
     KeyPointItem,
+    KeyPointReorderItem,
+    KeyPointReorderRequest,
+    KeyPointUpdate,
 )
 
 # Ingest schemas
@@ -156,6 +160,7 @@ __all__ = [
     "ChunkUpdate",
     "ReindexResponse",
     # Knowledge point
+    "GenerateKeyPointsResponse",
     "KPBridgeItem",
     "KPBridgeReplaceItem",
     "KPBridgeReplaceRequest",
@@ -163,6 +168,11 @@ __all__ = [
     "KPDetail",
     "KPListItem",
     "KPUpdate",
+    "KeyPointCreate",
+    "KeyPointItem",
+    "KeyPointReorderItem",
+    "KeyPointReorderRequest",
+    "KeyPointUpdate",
     # Ingest
     "BridgeBindingStatus",
     "IngestRequest",
