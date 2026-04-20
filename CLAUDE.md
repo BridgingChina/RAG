@@ -80,13 +80,13 @@ claim on the verified JWT.
 
 ## Environment Setup
 
-Copy `.env.example` to `.env` and set `ZHIPU_API_KEY` and `SECRET_KEY`. `USE_CODING_PLAN` (bool, default false) routes chat calls through the Coding Plan endpoint (`/api/coding/paas/v4`). The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). `SECRET_KEY` is used for JWT token signing — change it in production. `CORS_ORIGINS` accepts a JSON list of allowed origins (default: `["http://localhost:3000", "http://localhost:5173"]`); set to `["https://your-domain.com"]` in production.
+Copy `.env.example` to `.env` and set `ZHIPU_API_KEY`. `USE_CODING_PLAN` (bool, default false) routes chat calls through the Coding Plan endpoint (`/api/coding/paas/v4`). The database URL defaults to `postgresql+psycopg://bridge:bridge@localhost:5433/bridge_rag` (matching docker-compose.yml). Phase 2 moved JWT signing out of FastAPI — tokens are now EdDSA-signed by the auth Worker (`auth.bridgingchina.net`) and FastAPI only verifies via JWKS. `AUTH_WORKER_BASE_URL` defaults to `https://auth.bridgingchina.net`; override only for staging. `INTERNAL_API_SECRET` gates `POST /internal/users/{id}/purge` (shared with the auth Worker's `wrangler secret` of the same name) — absent value fails every internal request with 503. `CORS_ORIGINS` accepts a JSON list of allowed origins; default includes localhost dev ports plus the three Phase 2 production domains (`bridgingchina.net`, `console.bridgingchina.net`, `auth.bridgingchina.net`).
 
 ## Database Schema Management
 
 The system uses automatic schema versioning:
 - Schema version is tracked in the `schema_version` table（列: `version, description, created_at`，无 `id` 列。查询用 `get_current_schema_version(engine)`）
-- Current version: 8 — Adds sources.updated_at column
+- Current version: 11 — Phase 2 identity migration: drops `users` + `device_*`, adds user-id-keyed `favorites` / `review_progress` / `view_history`
 - Database auto-initializes on first startup if no version exists
 - For development, use `python scripts/reset_db.py --force` to recreate from scratch
 - Schema migration: `python scripts/migrate_db.py`（支持增量迁移，`MIGRATIONS` dict 定义版本间迁移函数）
@@ -164,17 +164,18 @@ The system uses automatic schema versioning:
 - Ingest tasks: `/api/v1/ingest-tasks`（presign, create, list, detail, confirm, delete, retry, batch-delete, download-url）— 异步入库流水线，软删除（status="deleted"）
 - Tree CRUD: `/api/v1/taxonomy`（`GET tree`, `POST/PUT/DELETE nodes`, `POST batch-update`）
 - `POST /api/v1/bridges/{target_id}/merge` — 桥梁合并（将源桥 chunks 迁移到目标桥）
-- Auth: `POST /api/v1/auth/login`, `GET /api/v1/auth/me`, `PUT /api/v1/auth/password`
+- Auth: `GET /api/v1/auth/me` only. Login / sign-up / password-reset live on the auth Worker (`auth.bridgingchina.net`); FastAPI is a JWKS-only resource server post-Phase-2.
 - Audit: `GET /api/v1/audit-logs`（分页+筛选：user_id/action/resource_type/start/end）
 - Knowledge Points CRUD: `GET/POST /api/v1/knowledge-points`, `GET/PUT/DELETE /api/v1/knowledge-points/{id}`, `POST /api/v1/knowledge-points/{id}/generate-key-points`（LLM 生成 key_points），`POST /{id}/generate-flashcards`，`POST /{id}/sync-bridges`，`GET/PUT /{id}/bridges`
 - Bridge Images: `POST /api/v1/bridges/{id}/images/presign`, `POST /images`, `GET /images`, `PUT /images/reorder`, `DELETE /images/{image_id}`
 - Batch Operations: `POST /api/v1/bridges/batch-geocode`（高德 API），`POST /bridges/import-coordinates`（CSV），`POST /api/v1/flashcards/batch-generate`
 - Public API (no auth): `GET /v1/config`, `GET /v1/bridges`, `GET /v1/bridges/clusters`, `GET /v1/bridges/{id}`, `GET /v1/bridges/{id}/knowledge-points`, `GET /v1/knowledge/tree`, `GET /v1/knowledge/points/{id}`, `GET /v1/knowledge/points/{id}/bridges`, `GET /v1/knowledge/points/{id}/flashcards`, `POST /v1/qa/ask` (SSE), `GET /v1/search`
-- Public favorites (X-Device-Id): `GET/POST /v1/favorites`, `DELETE /v1/favorites/{id}`, `POST /v1/favorites/check`
-- Public review (X-Device-Id): `GET /v1/review/today`, `GET /v1/review/cards`, `PUT /v1/review/progress/{id}`
-- Public history (X-Device-Id): `GET/POST /v1/history`
+- Public favorites (JWT required): `GET/POST /v1/favorites`, `DELETE /v1/favorites/{id}`, `POST /v1/favorites/check`
+- Public review (JWT required): `GET /v1/review/today`, `GET /v1/review/cards`, `PUT /v1/review/progress/{id}`
+- Public history (JWT required): `GET/POST /v1/history`
+- Internal webhook: `POST /internal/users/{user_id}/purge` — called by auth Worker after user deletion, gated by `X-Internal-Token` + `INTERNAL_API_SECRET`
 - Public endpoints use `PublicResponse`/`PublicPaginatedResponse` wrappers (not `PaginatedResponse`)
-- 除 `/health`、`/auth/login` 和 `/v1/*` 外，所有端点均需 JWT Bearer token 认证。Public 端点中 favorites/review/history 需要 `X-Device-Id` header（UUID v4），其余 public 端点完全公开
+- 除 `/health` 和匿名可读的 `/v1/*`（bridges/knowledge/config/search/qa）外，所有端点均需 auth Worker 签发的 EdDSA JWT Bearer token 认证。Public 端点中 favorites/review/history 也需要 JWT —— user_id 从 token payload 的 `sub` 字段取，Phase 2 之前的 `X-Device-Id` 机制已拆除
 - 所有写操作自动记录审计日志（含登录成功/失败）
 
 ## Testing
