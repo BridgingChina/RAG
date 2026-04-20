@@ -213,23 +213,16 @@ def test_cleanup_task_data_raises_cleanup_error_on_db_failure(
 @pytest.fixture
 def client(db_session):
     from app.api.v1.dependencies import get_current_user
-    from app.models import User
+    from app.models.current_user import CurrentUser
 
-    # Persist a real user row so AuditService.log() can write a row referencing
-    # it (audit_logs.user_id has a FK to users.id).
-    db_session.execute(sql_text("DELETE FROM audit_logs WHERE user_id IS NOT NULL"))
-    db_session.execute(
-        sql_text("DELETE FROM users WHERE username = 'cleanup_test_user'")
+    # Phase 2: users table is gone; CurrentUser is a JWT projection, not an
+    # ORM row. audit_logs.user_id is now a plain TEXT column with no FK, so
+    # no DB insert is needed before a write that references this id.
+    test_user = CurrentUser(
+        id="cleanup_test_user",
+        email="cleanup@test",
+        role="admin",
     )
-    db_session.flush()
-    test_user = User(
-        username="cleanup_test_user",
-        hashed_password="x",
-        display_name="Cleanup Tester",
-        is_active=True,
-    )
-    db_session.add(test_user)
-    db_session.flush()
 
     def override_get_db():
         yield db_session

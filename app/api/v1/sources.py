@@ -11,7 +11,8 @@ from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.pagination import paginate
 from app.api.v1.schemas.source import SourceDetail, SourceListItem
 from app.core.database import get_db
-from app.models import Chunk, Source, User
+from app.models import Chunk, Source
+from app.models.current_user import CurrentUser
 from app.services.audit_service import AuditService
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -86,7 +87,7 @@ async def reindex_source(
     request: Request,
     force: bool = False,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> ReindexResponse:
     """Reindex chunks for a source (recompute search_text, tsv, embedding)."""
     from app.providers import get_provider

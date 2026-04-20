@@ -1,6 +1,9 @@
-"""Audit logging service for tracking write operations."""
+"""Audit logging service for tracking write operations.
 
-import uuid
+Phase 2: ``user_id`` is a Better Auth user id string (base64url, not a UUID).
+Login / change_password events no longer originate here — they happen in the
+auth Worker — but the action constants are kept for historical audit rows.
+"""
 
 from sqlalchemy.orm import Session
 
@@ -30,7 +33,7 @@ class AuditService:
         *,
         action: str,
         resource_type: str,
-        user_id: uuid.UUID | None = None,
+        user_id: str | None = None,
         resource_id: str | None = None,
         detail: dict | None = None,
         ip_address: str | None = None,

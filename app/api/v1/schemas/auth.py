@@ -1,29 +1,24 @@
-"""Authentication schemas."""
-from datetime import datetime
-from uuid import UUID
+"""Authentication schemas.
 
-from pydantic import BaseModel, Field
+Phase 2: login/logout/password/JWT-issue moved to auth.bridgingchina.net.
+FastAPI only projects the verified JWT payload via ``/api/v1/auth/me``; the
+legacy ``LoginRequest``/``LoginResponse``/``ChangePasswordRequest`` models
+were deleted alongside the endpoints that consumed them.
+"""
+from typing import Optional
 
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: "UserInfo"
+from pydantic import BaseModel
 
 
 class UserInfo(BaseModel):
-    id: UUID
-    username: str
-    display_name: str | None
-    is_active: bool
-    created_at: datetime
+    """Projection of the verified Better Auth JWT payload.
 
+    ``id`` is the Better Auth user.id (base64url string), NOT a UUID —
+    mirrors ``CurrentUser`` in ``app.models.current_user``.
+    """
 
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(min_length=12)
+    id: str
+    email: str
+    role: str = "user"
+    username: Optional[str] = None
+    name: Optional[str] = None

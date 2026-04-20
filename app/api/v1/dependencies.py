@@ -1,50 +1,39 @@
-"""Shared API dependencies."""
-import uuid
+"""Shared API dependencies for the admin /api/v1 surface.
 
+Phase 2 Group A+B: ``get_current_user`` verifies an EdDSA JWT issued by
+``auth.bridgingchina.net`` via ``app.services.jwt_verifier``. The returned
+principal is a ``CurrentUser`` pydantic model — **not** a SQLAlchemy ``User``
+— so callers read ``.id: str`` (Better Auth base64url id, not a UUID) and
+``.email`` / ``.role`` / ``.username`` off the projection.
+"""
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
 
-from app.core.database import get_db
-from app.models import User
-from app.services.auth_service import decode_access_token, is_token_valid_for_user
+from app.models.current_user import CurrentUser
+from app.services.jwt_verifier import verify_jwt
 
-bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_required = HTTPBearer(auto_error=True)
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    if credentials is None:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_required),
+) -> CurrentUser:
+    """Verify the JWT and enforce admin-only access on the /api/v1 surface.
+
+    Raises:
+        HTTPException 401 — missing/invalid/expired token (via ``verify_jwt``
+            or ``HTTPBearer`` auto_error).
+        HTTPException 403 — token valid but user is not admin or is
+            deactivated.
+    """
+    payload = await verify_jwt(credentials.credentials)
+    user = CurrentUser.from_payload(payload)
+    if user.role != "admin":
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
+            status.HTTP_403_FORBIDDEN, "Admin access required"
         )
-    payload = decode_access_token(credentials.credentials)
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-    try:
-        user_id = uuid.UUID(payload["sub"])
-    except (ValueError, KeyError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token format — please log in again",
-        )
-    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
-        )
-    if not is_token_valid_for_user(payload, user.password_changed_at):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalidated by password change — please log in again",
-        )
+    if not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "User deactivated")
     return user
 
 

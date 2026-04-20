@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.dependencies import get_client_ip, get_current_user
 from app.core.database import get_db
-from app.models import Flashcard, KnowledgePoint, User
+from app.models import Flashcard, KnowledgePoint
+from app.models.current_user import CurrentUser
 from app.providers import ZhipuProvider
 from app.services.audit_service import AuditService
 from app.services.flashcard_generator import FlashcardBatchGenerator
@@ -52,7 +53,7 @@ async def batch_generate_flashcards(
     body: BatchFlashcardRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> BatchFlashcardResponse:
     """Batch generate flashcards for multiple knowledge points via LLM."""
     if not body.knowledge_point_ids:

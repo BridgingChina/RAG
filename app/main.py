@@ -18,15 +18,18 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler for startup/shutdown tasks."""
     # Startup: Initialize database
     logger.info("Starting application...")
-    if settings.secret_key == "change-me-in-production":
-        if os.getenv("ENV") != "development":
-            raise RuntimeError(
-                "SECRET_KEY must be set before starting in production"
+
+    # Phase 2 production sanity: auth Worker URL must be set unless running
+    # in dev (where unit tests accept the default). The JWT verifier will
+    # fail closed if auth_jwks_url can't be fetched, but an earlier fast-fail
+    # is friendlier to ops.
+    if settings.auth_jwks_url.startswith("https://auth.bridgingchina.net"):
+        if os.getenv("ENV") == "production" and not settings.internal_api_secret:
+            logger.warning(
+                "INTERNAL_API_SECRET is empty — /internal/* endpoints will "
+                "refuse every request. Set it before routing the auth "
+                "Worker webhook here."
             )
-        logger.warning(
-            "SECRET_KEY is using the default value! "
-            "Set SECRET_KEY in .env for production use."
-        )
 
     try:
         init_database()
@@ -37,9 +40,11 @@ async def lifespan(app: FastAPI):
 
     import asyncio as _asyncio
     from app.services.ingest_scheduler import ingest_scheduler_loop
+    from app.services.reconcile_orphans import reconcile_orphans_loop
     from app.services.reindex_cron import reindex_cron_loop, uploading_cleanup_loop
     _asyncio.get_event_loop().create_task(reindex_cron_loop())
     _asyncio.get_event_loop().create_task(uploading_cleanup_loop())
+    _asyncio.get_event_loop().create_task(reconcile_orphans_loop())
 
     # Scheduler loop: wire a done-callback so a silent coroutine death
     # surfaces as a CRITICAL log (instead of the entire ingest pipeline
@@ -62,6 +67,7 @@ async def lifespan(app: FastAPI):
     logger.info("Reindex cron task scheduled")
     logger.info("Uploading cleanup task scheduled")
     logger.info("Ingest scheduler task scheduled")
+    logger.info("Reconcile orphans task scheduled")
 
     yield
 
@@ -94,9 +100,14 @@ app.add_middleware(
 # API v1 routes
 app.include_router(v1_router, prefix="/api/v1", tags=["v1"])
 
-# Public API routes (no auth required)
+# Public API routes (no auth required for anonymous reads; per-user endpoints
+# require a JWT via require_user)
 from app.api.public import router as public_router
 app.include_router(public_router, prefix="/v1", tags=["public"])
+
+# Internal API routes (auth Worker webhook calls; X-Internal-Token gated)
+from app.api.internal import router as internal_router
+app.include_router(internal_router, prefix="/internal", tags=["internal"])
 
 
 @app.get("/health")

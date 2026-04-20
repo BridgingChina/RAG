@@ -7,7 +7,7 @@ from .common import PaginatedResponse
 from .audit import AuditLogItem
 
 # Auth schemas
-from .auth import ChangePasswordRequest, LoginRequest, LoginResponse, UserInfo
+from .auth import UserInfo
 
 # Ask schemas
 from .ask import (
@@ -121,9 +121,6 @@ __all__ = [
     # Common
     "PaginatedResponse",
     # Auth
-    "ChangePasswordRequest",
-    "LoginRequest",
-    "LoginResponse",
     "UserInfo",
     # Ask
     "AskContext",

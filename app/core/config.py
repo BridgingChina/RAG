@@ -50,9 +50,15 @@ class Settings(BaseSettings):
     # Retrieval settings
     top_k: int = 5
 
-    # Auth settings
-    secret_key: str = "change-me-in-production"
-    access_token_expire_hours: int = 4
+    # External JWKS-based auth (Phase 2 — Better Auth via auth.bridgingchina.net)
+    auth_jwks_url: str = "https://auth.bridgingchina.net/api/auth/jwks"
+    auth_worker_base_url: str = "https://auth.bridgingchina.net"
+    jwt_issuer: str = "https://auth.bridgingchina.net"
+    jwt_audience: str = "fastapi"
+
+    # Internal API (auth Worker → FastAPI webhook calls). Empty string
+    # disables all /internal/* endpoints with a 503 for defense-in-depth.
+    internal_api_secret: str = ""
 
     # R2 storage settings
     r2_account_id: str = ""
@@ -64,8 +70,17 @@ class Settings(BaseSettings):
     # Zhipu file parser settings
     zhipu_parser_tool_type: str = "expert"  # lite / expert / prime
 
-    # CORS settings
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    # CORS settings — dev hosts + the three Phase 2 production subdomains.
+    # Anything matching the bridgingchina.net regex in main.py also passes,
+    # but listing explicit origins first means preflight responses are stable
+    # for Origin header debugging.
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://auth.bridgingchina.net",
+        "https://console.bridgingchina.net",
+        "https://bridgingchina.net",
+    ]
 
     # Build info (injected via Docker build args)
     git_commit: str = "dev"

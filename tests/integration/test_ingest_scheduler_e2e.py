@@ -30,7 +30,7 @@ from app.api.v1.dependencies import get_current_user
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.main import app
-from app.models import User
+from app.models.current_user import CurrentUser
 from app.models.ingest_task import IngestTask
 
 
@@ -74,12 +74,12 @@ def real_db(db_engine):
         )
 
     def _wipe(db):
-        # Audit logs first (FK to users), then tasks, then user.
+        # Phase 2: users table is gone; audit_logs.user_id is a plain TEXT
+        # column. Clean up by the synthetic CurrentUser id so we don't wipe
+        # rows created by parallel tests.
         db.execute(
             sql_text(
-                "DELETE FROM audit_logs WHERE user_id IN ("
-                "  SELECT id FROM users WHERE username = 'scheduler_e2e_user'"
-                ")"
+                "DELETE FROM audit_logs WHERE user_id = 'scheduler_e2e_user'"
             )
         )
         db.execute(
@@ -87,9 +87,6 @@ def real_db(db_engine):
                 "DELETE FROM ingest_tasks WHERE file_name LIKE :p"
             ),
             {"p": f"{_TASK_PREFIX}%"},
-        )
-        db.execute(
-            sql_text("DELETE FROM users WHERE username = 'scheduler_e2e_user'")
         )
         db.commit()
 
@@ -103,17 +100,12 @@ def real_db(db_engine):
 
 @pytest.fixture
 def test_user(real_db):
-    """Persist a minimal User so audit_logs FK doesn't blow up."""
-    user = User(
-        username="scheduler_e2e_user",
-        hashed_password="x",
-        display_name="Scheduler E2E",
-        is_active=True,
+    """CurrentUser projection — Phase 2 has no ORM users table."""
+    return CurrentUser(
+        id="scheduler_e2e_user",
+        email="scheduler@test",
+        role="admin",
     )
-    real_db.add(user)
-    real_db.commit()
-    real_db.refresh(user)
-    return user
 
 
 @pytest.fixture

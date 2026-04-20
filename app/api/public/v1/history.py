@@ -1,5 +1,8 @@
-"""Public API: View history endpoints."""
-import uuid
+"""Public API: View history endpoints.
+
+Phase 2 (Task 2.D.3): ownership scoped by ``user_id`` from the verified
+Better Auth JWT instead of the legacy ``X-Device-Id`` header.
+"""
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -8,16 +11,17 @@ from pydantic import BaseModel
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
-from app.api.public.v1.dependencies import require_device_id
+from app.api.public.v1.dependencies import require_user
 from app.api.public.v1.schemas.common import PublicMeta, PublicPaginatedResponse, PublicResponse
 from app.core.database import get_db
-from app.models import Bridge, DeviceViewHistory, KnowledgePoint
+from app.models import Bridge, KnowledgePoint, ViewHistory
+from app.models.current_user import CurrentUser
 
 router = APIRouter()
 
 VALID_HISTORY_TYPES = {"bridge", "knowledge_point"}
 DEDUP_WINDOW_MINUTES = 5
-MAX_HISTORY_PER_DEVICE = 500
+MAX_HISTORY_PER_USER = 500
 
 
 class HistoryRecordRequest(BaseModel):
@@ -27,24 +31,21 @@ class HistoryRecordRequest(BaseModel):
 
 @router.get("", response_model=PublicPaginatedResponse[dict])
 def list_history(
-    device_id: uuid.UUID = Depends(require_device_id),
+    user: CurrentUser = Depends(require_user),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> PublicPaginatedResponse[dict]:
-    """List view history for a device, ordered by viewed_at DESC."""
-    query = db.query(DeviceViewHistory).filter(
-        DeviceViewHistory.device_id == device_id
-    )
+    """List view history for the signed-in user, ordered by viewed_at DESC."""
+    query = db.query(ViewHistory).filter(ViewHistory.user_id == user.id)
     total = query.count()
     rows = (
-        query.order_by(desc(DeviceViewHistory.viewed_at))
+        query.order_by(desc(ViewHistory.viewed_at))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
 
-    # Batch-resolve target names
     bridge_ids = [r.target_id for r in rows if r.target_type == "bridge"]
     kp_ids = [r.target_id for r in rows if r.target_type == "knowledge_point"]
 
@@ -80,14 +81,19 @@ def list_history(
 @router.post("", status_code=201, response_model=PublicResponse[dict])
 def record_view(
     body: HistoryRecordRequest,
-    device_id: uuid.UUID = Depends(require_device_id),
+    user: CurrentUser = Depends(require_user),
     db: Session = Depends(get_db),
 ) -> PublicResponse[dict]:
-    """Record a view history entry with 5-min dedup and 500-record per-device cap."""
+    """Record a view history entry with 5-min dedup and per-user cap."""
     if body.target_type not in VALID_HISTORY_TYPES:
-        raise HTTPException(400, detail=f"Invalid target_type: {body.target_type}. Must be one of: {', '.join(sorted(VALID_HISTORY_TYPES))}")
+        raise HTTPException(
+            400,
+            detail=(
+                f"Invalid target_type: {body.target_type}. Must be one of: "
+                + ", ".join(sorted(VALID_HISTORY_TYPES))
+            ),
+        )
 
-    # Verify target exists
     _HISTORY_TARGET_MODELS = {
         "bridge": Bridge,
         "knowledge_point": KnowledgePoint,
@@ -96,17 +102,16 @@ def record_view(
     if model_cls and not db.query(model_cls.id).filter(model_cls.id == body.target_id).first():
         raise HTTPException(404, detail=f"{body.target_type} not found")
 
-    # Dedup: if same target viewed within DEDUP_WINDOW_MINUTES, update viewed_at
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=DEDUP_WINDOW_MINUTES)
     existing = (
-        db.query(DeviceViewHistory)
+        db.query(ViewHistory)
         .filter(
-            DeviceViewHistory.device_id == device_id,
-            DeviceViewHistory.target_type == body.target_type,
-            DeviceViewHistory.target_id == body.target_id,
-            DeviceViewHistory.viewed_at >= cutoff,
+            ViewHistory.user_id == user.id,
+            ViewHistory.target_type == body.target_type,
+            ViewHistory.target_id == body.target_id,
+            ViewHistory.viewed_at >= cutoff,
         )
-        .order_by(desc(DeviceViewHistory.viewed_at))
+        .order_by(desc(ViewHistory.viewed_at))
         .first()
     )
 
@@ -116,8 +121,8 @@ def record_view(
         db.refresh(existing)
         record = existing
     else:
-        record = DeviceViewHistory(
-            device_id=device_id,
+        record = ViewHistory(
+            user_id=user.id,
             target_type=body.target_type,
             target_id=body.target_id,
         )
@@ -125,25 +130,23 @@ def record_view(
         db.commit()
         db.refresh(record)
 
-        # Enforce per-device limit
         total = (
-            db.query(func.count(DeviceViewHistory.id))
-            .filter(DeviceViewHistory.device_id == device_id)
+            db.query(func.count(ViewHistory.id))
+            .filter(ViewHistory.user_id == user.id)
             .scalar()
         )
-        if total and total > MAX_HISTORY_PER_DEVICE:
-            # Delete oldest records exceeding the cap
+        if total and total > MAX_HISTORY_PER_USER:
             oldest_ids = (
-                db.query(DeviceViewHistory.id)
-                .filter(DeviceViewHistory.device_id == device_id)
-                .order_by(desc(DeviceViewHistory.viewed_at))
-                .offset(MAX_HISTORY_PER_DEVICE)
+                db.query(ViewHistory.id)
+                .filter(ViewHistory.user_id == user.id)
+                .order_by(desc(ViewHistory.viewed_at))
+                .offset(MAX_HISTORY_PER_USER)
                 .all()
             )
             if oldest_ids:
                 ids_to_delete = [r[0] for r in oldest_ids]
-                db.query(DeviceViewHistory).filter(
-                    DeviceViewHistory.id.in_(ids_to_delete)
+                db.query(ViewHistory).filter(
+                    ViewHistory.id.in_(ids_to_delete)
                 ).delete(synchronize_session=False)
                 db.commit()
 

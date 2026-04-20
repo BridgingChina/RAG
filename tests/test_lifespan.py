@@ -63,21 +63,31 @@ class TestLifespan:
         )
 
     @pytest.mark.asyncio
-    @patch.dict("os.environ", {}, clear=False)
+    @patch.dict("os.environ", {"ENV": "production"}, clear=False)
     @patch("app.main.init_database")
     @patch("app.main.logger")
-    async def test_lifespan_rejects_default_secret_key_in_production(
+    async def test_lifespan_warns_when_internal_secret_unset_in_production(
         self, mock_logger, mock_init_db
     ):
-        """Should raise RuntimeError if SECRET_KEY is default and ENV is not development."""
-        import os
+        """Should log a warning when INTERNAL_API_SECRET is empty in production.
 
-        os.environ.pop("ENV", None)
-
+        Phase 2 replaced the SECRET_KEY hard-fail with a soft warning on
+        INTERNAL_API_SECRET — missing it doesn't prevent startup (the
+        endpoint fails closed with a 503 per request), but operators should
+        see a startup log if they forgot to set the secret.
+        """
         from app.main import lifespan
+        from app.core.config import settings
 
-        mock_app = MagicMock()
-
-        with pytest.raises(RuntimeError, match="SECRET_KEY must be set"):
+        # Override for this test only
+        original = settings.internal_api_secret
+        settings.internal_api_secret = ""
+        try:
+            mock_app = MagicMock()
             async with lifespan(mock_app):
                 pass
+        finally:
+            settings.internal_api_secret = original
+
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("INTERNAL_API_SECRET" in c for c in warning_calls), warning_calls

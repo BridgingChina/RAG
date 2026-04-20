@@ -13,7 +13,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.taxonomy import delete_taxonomy_node
-from app.models import TaxonomyNode, User
+from app.models import TaxonomyNode
+from app.models.current_user import CurrentUser
 from app.models.knowledge_point import KnowledgePoint
 
 
@@ -24,16 +25,12 @@ def _fake_request() -> MagicMock:
     return request
 
 
-def _make_admin(db_session) -> User:
-    user = User(
-        username=f"tax_admin_{uuid.uuid4().hex[:8]}",
-        hashed_password="$2b$12$placeholder.hash.not.used",
-        display_name="Taxonomy Test Admin",
-        is_active=True,
+def _make_admin(db_session) -> CurrentUser:
+    return CurrentUser(
+        id=f"tax_admin_{uuid.uuid4().hex[:8]}",
+        email="tax@test",
+        role="admin",
     )
-    db_session.add(user)
-    db_session.flush()
-    return user
 
 
 def test_delete_taxonomy_node_blocked_by_knowledge_point(db_session):

@@ -246,6 +246,89 @@ def migrate_v8_to_v9(conn) -> None:
     )
 
 
+def migrate_v10_to_v11(conn) -> None:
+    """Phase 2 identity migration — users + device_* out, user_id TEXT in.
+
+    1. DROP device_favorites / device_review_progress / device_view_history
+       (per-device state is replaced by per-user state).
+    2. DROP users CASCADE (identity moved to ``auth.bridgingchina.net``).
+       CASCADE also drops the FKs ``audit_logs.user_id -> users(id)`` and
+       ``ingest_tasks.created_by -> users(id)``.
+    3. ALTER the now-dangling columns to TEXT so they can hold Better Auth
+       base64url ``user.id`` strings.
+    4. CREATE ``favorites`` / ``review_progress`` / ``view_history`` with
+       ``user_id TEXT`` and the same functional surface as the dropped
+       device_* tables, minus ``device_id``.
+    """
+    # 1. Drop device-scoped state tables
+    conn.execute(text("DROP TABLE IF EXISTS device_favorites CASCADE"))
+    conn.execute(text("DROP TABLE IF EXISTS device_review_progress CASCADE"))
+    conn.execute(text("DROP TABLE IF EXISTS device_view_history CASCADE"))
+
+    # 2. Drop users (cascades to FK holders audit_logs.user_id + ingest_tasks.created_by)
+    conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
+
+    # 3. Flip dangling user_id / created_by columns to TEXT
+    conn.execute(text(
+        "ALTER TABLE audit_logs ALTER COLUMN user_id TYPE TEXT USING user_id::text"
+    ))
+    conn.execute(text(
+        "ALTER TABLE ingest_tasks ALTER COLUMN created_by TYPE TEXT USING created_by::text"
+    ))
+
+    # 4. New user-scoped tables
+    conn.execute(text("""
+        CREATE TABLE favorites (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id TEXT NOT NULL,
+            target_id UUID NOT NULL,
+            target_type TEXT NOT NULL CHECK (
+                target_type IN ('bridge','knowledge_point','flashcard')
+            ),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_favorite UNIQUE (user_id, target_id, target_type)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX idx_favorites_user ON favorites (user_id)"
+    ))
+
+    conn.execute(text("""
+        CREATE TABLE review_progress (
+            user_id TEXT NOT NULL,
+            flashcard_id UUID NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
+            mastery SMALLINT NOT NULL DEFAULT 0,
+            last_reviewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            next_review_at TIMESTAMPTZ,
+            interval_days INTEGER NOT NULL DEFAULT 1,
+            ease_factor NUMERIC(4,2) NOT NULL DEFAULT 2.5,
+            CONSTRAINT pk_review_progress PRIMARY KEY (user_id, flashcard_id)
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE view_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id TEXT NOT NULL,
+            target_id UUID NOT NULL,
+            target_type TEXT NOT NULL CHECK (
+                target_type IN ('bridge','knowledge_point')
+            ),
+            viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX idx_view_history_user_time "
+        "ON view_history (user_id, viewed_at DESC)"
+    ))
+
+    set_schema_version(
+        engine, 11,
+        "Phase 2 identity migration: drop users + device_*, create user_id-based tables",
+        conn=conn,
+    )
+
+
 def migrate_v9_to_v10(conn) -> None:
     """Add knowledge_points.lvl1 / lvl2 + backfill from taxonomy_node join.
 
@@ -288,6 +371,7 @@ MIGRATIONS = {
     7: migrate_v7_to_v8,
     8: migrate_v8_to_v9,
     9: migrate_v9_to_v10,
+    10: migrate_v10_to_v11,
 }
 
 

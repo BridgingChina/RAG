@@ -68,10 +68,15 @@ python scripts/seed_test_data.py
 
 # Reset database (drop all tables and recreate)
 python scripts/reset_db.py
-
-# Create a user account
-python3 scripts/create_user.py --username admin --password <password>
 ```
+
+## Creating admin users
+
+Phase 2 moves identity to `auth.bridgingchina.net` (Better Auth + D1). There
+is no longer a FastAPI-side `create_user.py`. Admin accounts are created
+inside the auth Worker (see `../auth/scripts/export_admins_sql.ts` or the
+auth admin UI) with `role='admin'`, and FastAPI simply trusts the `role`
+claim on the verified JWT.
 
 ## Environment Setup
 
@@ -208,7 +213,6 @@ title: 资料标题
 ## Gotchas
 
 - `AuditService.log()` 只做 `db.flush()` 不 commit — 调用者必须自行 `db.commit()`，否则审计记录静默丢失。delete 端点除外（audit+delete 在同一事务内原子提交）
-- `passlib[bcrypt]` 在 pyproject.toml 中声明但未使用 — `auth_service.py` 直接用 `bcrypt` 库（passlib 1.7.4 与 bcrypt 5.0.0 不兼容）
 - `get_db()` 的 session 是 `autocommit=False` — 不显式 commit 则所有写入在 session close 时丢失
 - `SemanticChunker.chunk()` 接收 `list[Section]`（非 `str`）— 调用方必须先 `parse_markdown()` 再传 `doc.sections`
 - `ask` 端点自动从问题文本匹配桥梁名（`_resolve_bridge_from_question`），无需调用方传 `target_bridge_id`

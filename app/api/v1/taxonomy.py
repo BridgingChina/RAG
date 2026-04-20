@@ -18,7 +18,8 @@ from app.api.v1.schemas.taxonomy import (
 )
 from app.core.database import get_db
 from app.core.taxonomy_loader import invalidate_taxonomy_cache
-from app.models import Chunk, KnowledgePoint, TaxonomyNode, User
+from app.models import Chunk, KnowledgePoint, TaxonomyNode
+from app.models.current_user import CurrentUser
 from app.services.audit_service import AuditService
 from app.services.kp_resolver import resolve_knowledge_point_id
 
@@ -111,7 +112,7 @@ def create_taxonomy_node(
     body: TaxonomyNodeCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TaxonomyNodeDetail:
     """Create a new taxonomy node (lvl1 or lvl2 only post-Phase 3)."""
     # Phase 3: lvl3 taxonomy rows no longer exist — concrete knowledge lives
@@ -178,7 +179,7 @@ def update_taxonomy_node(
     body: TaxonomyNodeUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TaxonomyNodeDetail:
     """Update a taxonomy node's description."""
     node = db.query(TaxonomyNode).filter(TaxonomyNode.id == node_id).first()
@@ -220,7 +221,7 @@ def delete_taxonomy_node(
     node_id: UUID,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> None:
     """Delete a taxonomy node if no chunks reference it."""
     node = db.query(TaxonomyNode).filter(TaxonomyNode.id == node_id).first()
@@ -290,7 +291,7 @@ def batch_update_chunks(
     body: TaxonomyBatchUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TaxonomyBatchUpdateResult:
     """Batch-update taxonomy labels (lvl1/lvl2/lvl3) on multiple chunks.
 

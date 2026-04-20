@@ -14,7 +14,8 @@ from app.api.v1.schemas import (
 from app.core.constants import EMBEDDING_DIM
 from app.core.database import get_db
 from app.core.taxonomy_loader import load_taxonomy_snapshot
-from app.models import Chunk, ChunkBridgeLink, Source, User
+from app.models import Chunk, ChunkBridgeLink, Source
+from app.models.current_user import CurrentUser
 from app.services.audit_service import AuditService
 from app.providers import get_provider
 from app.services.bridge_linker import BridgeLinker
@@ -79,7 +80,7 @@ async def ingest(
     db: Session = Depends(get_db),
     provider=Depends(get_provider),
     tokenizer: Tokenizer = Depends(_get_tokenizer),
-    current_user: User = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Ingest a Markdown document.
 
