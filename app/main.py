@@ -83,10 +83,11 @@ from app.api.public.v1.error_handlers import register_public_error_handlers
 register_public_error_handlers(app)
 
 # Locale middleware — parses Accept-Language + NEXT_LOCALE cookie into
-# request.state.locale. Ordered before CORS so locale is available to
-# downstream middleware/routes (added last here runs first per Starlette's
-# stack semantics). JWT.preferred_locale override happens inside the
-# get_current_user / require_user dependencies.
+# request.state.locale. Added first so it becomes the innermost middleware
+# (Starlette wraps LIFO: later add_middleware calls run earlier on requests),
+# which means the route handler always observes request.state.locale after
+# CORS / cache have already inspected the request. JWT.preferred_locale
+# override happens inside the get_current_user / require_user dependencies.
 from app.core.locale_middleware import LocaleMiddleware
 app.add_middleware(LocaleMiddleware)
 
