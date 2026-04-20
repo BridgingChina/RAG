@@ -14,6 +14,7 @@ from app.models.review_progress import ReviewProgress
 from app.models.schema_version import SchemaVersion
 from app.models.source import Source
 from app.models.taxonomy import TaxonomyNode
+from app.models.translation_review import TranslationReview
 from app.models.view_history import ViewHistory
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "SchemaVersion",
     "Source",
     "TaxonomyNode",
+    "TranslationReview",
     "ViewHistory",
 ]

@@ -20,6 +20,11 @@ class Bridge(Base, UUIDMixin, TimestampMixin):
     latitude: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
     longitude: Mapped[Optional[float]] = mapped_column(Double, nullable=True)
     geocode_source: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # i18n (schema v12, 2026-04-21) — English-translated display fields. Populated
+    # through the translation_reviews審校 workflow; NULL means C-end falls back to
+    # the Chinese value with response meta.translation_fallback=true.
+    name_en: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    description_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_bridges_geo", "latitude", "longitude",

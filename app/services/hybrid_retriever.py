@@ -287,6 +287,58 @@ class HybridRetriever:
 
         return result
 
+    async def search_by_english_embedding(
+        self,
+        db: Session,
+        query_en: str,
+        *,
+        top_k: int = 10,
+    ) -> list[RetrievedChunk]:
+        """Vector-only retrieval against the English query's multilingual
+        embedding.
+
+        Used by the translate-around QA path (i18n Phase 4) as the "Path A"
+        保底 channel, joined with the Chinese-query hybrid search via RRF at
+        the caller.  We skip FTS entirely because ``chunks.tsv`` is populated
+        by jieba-tokenised Chinese text — running an English ``to_tsquery``
+        against it would produce near-zero recall.
+
+        Returns ``RetrievedChunk`` objects (same shape as :meth:`retrieve`)
+        ordered by cosine similarity. Degraded channels (e.g. vector search
+        failure) return an empty list; callers downgrade gracefully rather
+        than erroring out.
+        """
+        if not query_en or not query_en.strip():
+            return []
+        try:
+            embeddings = await self.provider.embed([query_en])
+        except Exception:
+            logger.error("search_by_english_embedding: embedding failed", exc_info=True)
+            self._mark_degraded("english_embed")
+            return []
+
+        if not embeddings:
+            return []
+
+        chunk_ids = self._vector_search(
+            db,
+            embeddings[0],
+            bridge_filter=None,
+            require_no_bridge_id=False,
+            limit=top_k,
+            taxonomy_filter=None,
+        )
+        if not chunk_ids:
+            return []
+
+        details = self._fetch_chunk_details(db, chunk_ids)
+        # Manufacture a descending-rank pseudo score so rrf_merge can treat
+        # this list the same way it treats FTS / vector result lists.
+        scored: list[tuple[uuid.UUID, float]] = [
+            (cid, 1.0 / (i + 1)) for i, cid in enumerate(chunk_ids)
+        ]
+        return self._build_retrieved_chunks(chunk_ids, scored, details)
+
     async def _retrieve_channel(
         self,
         db: Session,

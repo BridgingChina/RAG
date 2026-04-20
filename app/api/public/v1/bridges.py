@@ -5,13 +5,14 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.orm import Session
 
 from app.api.public.v1.schemas.bridge import BridgeSectionLevel, PublicBridgeDetail, PublicBridgeListItem
 from app.api.public.v1.schemas.common import PublicMeta, PublicPaginatedResponse, PublicResponse
+from app.api.public.v1.serializers import localized_meta
 from app.api.public.v1.utils import escape_like as _escape_like
 from app.core.database import get_db
 from app.models import Bridge, Chunk, Source
@@ -24,8 +25,15 @@ from app.services.bridge_image_service import BridgeImageService
 router = APIRouter()
 
 
+def _request_locale(request: Request) -> str:
+    """Best-effort locale lookup — defaults to zh-CN if the middleware didn't
+    run (e.g. TestClient routes that bypass middleware during unit tests)."""
+    return getattr(request.state, "locale", "zh-CN")
+
+
 @router.get("", response_model=PublicPaginatedResponse[dict])
 def list_bridges(
+    request: Request,
     bridge_type: str | None = None,
     era: str | None = None,
     region: str | None = None,
@@ -85,6 +93,8 @@ def list_bridges(
 
     bridges = query.offset((page - 1) * page_size).limit(page_size).all()
 
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
     items = []
     for b in bridges:
         dist = None
@@ -92,13 +102,17 @@ def list_bridges(
             dlat = (b.latitude - near_lat) * 111000
             dlng = (b.longitude - near_lng) * 111000 * cos_lat
             dist = round(math.sqrt(dlat**2 + dlng**2), 1)
-        items.append(
-            PublicBridgeListItem(
-                id=b.id, name=b.name, aliases=b.aliases, bridge_type=b.bridge_type,
-                era=b.era, region=b.region, latitude=b.latitude, longitude=b.longitude,
-                distance=dist,
-            ).model_dump()
-        )
+        display_name = b.name_en if (use_en and b.name_en) else b.name
+        fell_back = use_en and not b.name_en
+        item = PublicBridgeListItem(
+            id=b.id, name=display_name, aliases=b.aliases, bridge_type=b.bridge_type,
+            era=b.era, region=b.region, latitude=b.latitude, longitude=b.longitude,
+            distance=dist,
+        ).model_dump()
+        meta = localized_meta(fell_back, locale)
+        if meta is not None:
+            item["_meta"] = meta
+        items.append(item)
 
     return PublicPaginatedResponse(
         data={"bridges": items},
@@ -186,11 +200,17 @@ def get_bridge_clusters(
 
 
 @router.get("/{bridge_id}", response_model=PublicResponse[dict])
-def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse[dict]:
+def get_bridge(
+    bridge_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PublicResponse[dict]:
     """Get bridge detail with sections aggregated from chunks."""
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
     if not bridge:
         raise HTTPException(404, detail="桥梁不存在")
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
 
     # Pull all known lvl1 themes from taxonomy (lvl2 IS NULL marks a top-level row).
     # Order is the canonical taxonomy order, used both to filter chunks and to seed
@@ -277,12 +297,18 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse
         .all()
     )
     related_kps = [
-        {"id": str(kp.id), "name": kp.name, "relevance": link.relevance_note}
+        {
+            "id": str(kp.id),
+            "name": (kp.name_en if (use_en and kp.name_en) else kp.name),
+            "relevance": link.relevance_note,
+        }
         for link, kp in kp_links
     ]
 
+    display_name = bridge.name_en if (use_en and bridge.name_en) else bridge.name
+    fell_back = use_en and (not bridge.name_en or (bridge.summary and not bridge.description_en))
     detail = PublicBridgeDetail(
-        id=bridge.id, name=bridge.name, aliases=bridge.aliases,
+        id=bridge.id, name=display_name, aliases=bridge.aliases,
         bridge_type=bridge.bridge_type, era=bridge.era, region=bridge.region,
         latitude=bridge.latitude, longitude=bridge.longitude,
         tags=tags,
@@ -292,16 +318,26 @@ def get_bridge(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse
         sources=sources_list,
         sources_count=len(sources_list),
     )
-    return PublicResponse(data=detail.model_dump())
+    payload = detail.model_dump()
+    meta = localized_meta(fell_back, locale)
+    if meta is not None:
+        payload["_meta"] = meta
+    return PublicResponse(data=payload)
 
 
 @router.get("/{bridge_id}/knowledge-points", response_model=PublicResponse[dict])
-def get_bridge_knowledge_points(bridge_id: UUID, db: Session = Depends(get_db)) -> PublicResponse[dict]:
+def get_bridge_knowledge_points(
+    bridge_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PublicResponse[dict]:
     """Get knowledge points associated with a bridge."""
     bridge = db.query(Bridge).filter(Bridge.id == bridge_id).first()
     if not bridge:
         raise HTTPException(404, detail="桥梁不存在")
 
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
     kp_links = (
         db.query(KnowledgePointBridge, KnowledgePoint)
         .join(KnowledgePoint, KnowledgePointBridge.knowledge_point_id == KnowledgePoint.id)
@@ -310,7 +346,11 @@ def get_bridge_knowledge_points(bridge_id: UUID, db: Session = Depends(get_db)) 
         .all()
     )
     knowledge_points = [
-        {"id": str(kp.id), "name": kp.name, "relevance": link.relevance_note}
+        {
+            "id": str(kp.id),
+            "name": (kp.name_en if (use_en and kp.name_en) else kp.name),
+            "relevance": link.relevance_note,
+        }
         for link, kp in kp_links
     ]
     return PublicResponse(data={"knowledge_points": knowledge_points})

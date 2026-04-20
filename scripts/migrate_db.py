@@ -361,6 +361,80 @@ def migrate_v9_to_v10(conn) -> None:
     )
 
 
+def migrate_v11_to_v12(conn) -> None:
+    """i18n Phase 3 — add *_en translation columns + translation_reviews table.
+
+    All new columns are NULLABLE so Postgres ``ALTER TABLE ADD COLUMN`` does not
+    rewrite rows — migration is O(catalog), not O(row). Runs a single transaction
+    (``engine.begin()`` in :func:`main`), so rollback on failure is atomic.
+
+    See ``docs/plans/2026-04-20-i18n-phase3-db-review.md`` task 3.A.1.
+    """
+    # Business-table _en display columns (read path).
+    conn.execute(text(
+        "ALTER TABLE bridges ADD COLUMN IF NOT EXISTS name_en VARCHAR(200)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE bridges ADD COLUMN IF NOT EXISTS description_en TEXT"
+    ))
+    conn.execute(text(
+        "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS name_en VARCHAR(200)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS summary_en TEXT"
+    ))
+    conn.execute(text(
+        "ALTER TABLE flashcards ADD COLUMN IF NOT EXISTS front_title_en VARCHAR(200)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE flashcards ADD COLUMN IF NOT EXISTS back_answer_en TEXT"
+    ))
+    conn.execute(text(
+        "ALTER TABLE taxonomy_nodes ADD COLUMN IF NOT EXISTS name_en VARCHAR(200)"
+    ))
+
+    # chunks: deliberately NOT adding content_en (translate-around策略 — see
+    # design §2.3 path B).  Only the per-chunk English summary cache lands.
+    conn.execute(text(
+        "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS cached_en_summary TEXT"
+    ))
+    conn.execute(text(
+        "ALTER TABLE chunks ADD COLUMN IF NOT EXISTS cached_en_summary_at TIMESTAMP"
+    ))
+
+    # Translation审校 state-machine table (write path).
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS translation_reviews (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          table_name VARCHAR(50) NOT NULL,
+          row_id UUID NOT NULL,
+          field_name VARCHAR(50) NOT NULL,
+          source_text TEXT NOT NULL,
+          ai_translation TEXT,
+          reviewed_translation TEXT,
+          status VARCHAR(20) NOT NULL DEFAULT 'pending_ai',
+          reviewed_by TEXT,
+          reviewed_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW(),
+          CONSTRAINT uq_translation UNIQUE (table_name, row_id, field_name)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_translation_reviews_status "
+        "ON translation_reviews(status)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_translation_reviews_table_field "
+        "ON translation_reviews(table_name, field_name)"
+    ))
+
+    set_schema_version(
+        engine, 12,
+        "i18n Phase 3: add _en columns + translation_reviews audit table",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -372,6 +446,7 @@ MIGRATIONS = {
     8: migrate_v8_to_v9,
     9: migrate_v9_to_v10,
     10: migrate_v10_to_v11,
+    11: migrate_v11_to_v12,
 }
 
 
