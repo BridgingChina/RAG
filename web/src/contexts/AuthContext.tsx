@@ -1,21 +1,21 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
-import type { UserInfo } from "@/lib/types"
+import { redirectToLogin, signOut, type SessionUser } from "@/lib/auth"
 
 interface AuthContextType {
-  user: UserInfo | null
-  setUser: (user: UserInfo | null) => void
-  logout: () => void
+  user: SessionUser | null
+  setUser: (user: SessionUser | null) => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserInfo | null>(null)
+  const [user, setUser] = useState<SessionUser | null>(null)
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("auth-token")
+  const logout = useCallback(async () => {
+    await signOut()
     setUser(null)
-    window.location.href = "/login"
+    redirectToLogin()
   }, [])
 
   const value = useMemo(() => ({ user, setUser, logout }), [user, logout])

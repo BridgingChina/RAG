@@ -440,29 +440,9 @@ export interface SystemStatus {
 }
 
 // Auth
-export interface LoginRequest {
-  username: string
-  password: string
-}
-
-export interface LoginResponse {
-  access_token: string
-  token_type: string
-  user: UserInfo
-}
-
-export interface UserInfo {
-  id: string
-  username: string
-  display_name: string | null
-  is_active: boolean
-  created_at: string
-}
-
-export interface ChangePasswordRequest {
-  current_password: string
-  new_password: string
-}
+// Phase 2+3: the shape of the authenticated user is owned by the auth
+// Worker (Better Auth). See `src/lib/auth.ts` -> `SessionUser`. Login /
+// password flows live on auth.bridgingchina.net, not here.
 
 // --- Knowledge Points ---
 
@@ -518,10 +498,12 @@ export interface KPBridgeItem {
 }
 
 // Audit
+// Phase 2: `username` is no longer sent by the backend — auth data lives
+// in the auth Worker (`auth.bridgingchina.net`). Display user_id as-is
+// until a follow-up wires up name resolution via the auth Worker.
 export interface AuditLogItem {
   id: string
   user_id: string | null
-  username: string | null
   action: string
   resource_type: string
   resource_id: string | null

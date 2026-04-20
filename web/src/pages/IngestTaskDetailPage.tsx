@@ -161,9 +161,9 @@ function AuditTimeline({ entries }: { entries: AuditLogItem[] }) {
               <span className="text-sm font-medium">
                 {auditActionLabel(entry.action)}
               </span>
-              {entry.username && (
-                <span className="text-xs text-muted-foreground">
-                  by {entry.username}
+              {entry.user_id && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  by {entry.user_id.slice(0, 8)}
                 </span>
               )}
             </div>

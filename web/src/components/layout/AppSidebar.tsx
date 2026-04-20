@@ -101,7 +101,7 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="sm" className="text-muted-foreground">
-              {user?.display_name || user?.username || ""}
+              {user?.name || user?.email || ""}
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

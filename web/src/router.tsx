@@ -3,7 +3,6 @@ import { AuthGuard } from "@/components/auth/AuthGuard"
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
 
 export const router = createBrowserRouter([
-  { path: "login", lazy: () => import("@/pages/LoginPage") },
   {
     element: <AuthGuard />,
     children: [
