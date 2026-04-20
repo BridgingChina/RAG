@@ -12,6 +12,10 @@ def test_knowledge_point_model_structure():
     assert columns == {
         "id", "taxonomy_node_id", "name", "aliases", "difficulty",
         "summary", "l2_content", "created_at", "updated_at",
+        # v10: lvl3→KP merge moved lvl1/lvl2 onto the KP row
+        "lvl1", "lvl2",
+        # v12: i18n translation pair for the display name + summary
+        "name_en", "summary_en",
     }
 
 

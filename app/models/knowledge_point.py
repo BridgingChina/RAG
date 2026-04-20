@@ -21,6 +21,9 @@ class KnowledgePoint(Base, UUIDMixin, TimestampMixin):
     difficulty: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     l2_content: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # i18n (schema v12, 2026-04-21)
+    name_en: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    summary_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_kp_taxonomy", "taxonomy_node_id"),

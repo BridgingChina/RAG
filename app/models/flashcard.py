@@ -26,6 +26,9 @@ class Flashcard(Base, UUIDMixin, TimestampMixin):
         ForeignKey("bridges.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # i18n (schema v12, 2026-04-21)
+    front_title_en: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    back_answer_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_flashcards_kp", "knowledge_point_id"),

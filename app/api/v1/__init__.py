@@ -15,6 +15,7 @@ from app.api.v1.system import router as system_router
 from app.api.v1.taxonomy import router as taxonomy_router
 from app.api.v1.ingest_tasks import router as ingest_tasks_router
 from app.api.v1.knowledge_points import router as knowledge_points_router
+from app.api.v1.translations import router as translations_router
 from app.api.v1.dependencies import get_current_user
 
 router = APIRouter()
@@ -37,6 +38,7 @@ protected.include_router(sources_router)
 protected.include_router(stats_router)
 protected.include_router(system_router)
 protected.include_router(taxonomy_router)
+protected.include_router(translations_router)
 
 router.include_router(protected)
 

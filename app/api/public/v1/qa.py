@@ -2,6 +2,14 @@
 
 Single LLM call + structured JSON split into sequential SSE events
 (started -> outline -> detail* -> sources -> done). Not real token streaming.
+
+i18n Phase 4 — when ``request.state.locale == 'en-US'`` the handler takes the
+translate-around branch: query → ``translate_query_zh`` → Chinese hybrid search
+∥ English embedding保底 search → RRF merge → ``translate_answer_with_evidence``
+for a JSON-structured English answer + per-chunk English summaries. The
+summaries are written back to ``chunks.cached_en_summary`` in an async task so
+they don't block the SSE stream. On parse failure we degrade to the original
+Chinese pipeline and mark ``done`` with ``degraded=true``.
 """
 import asyncio
 import json
@@ -9,15 +17,15 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.public.v1.schemas.qa import QARequest
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.core.rate_limit import limiter
-from app.models import TaxonomyNode
+from app.models import Chunk, TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
 from app.providers import get_provider
 from app.services.facet_extractor import FacetExtractor
@@ -25,9 +33,15 @@ from app.services.generator import Generator
 from app.services.hybrid_retriever import (
     HybridRetriever,
     HybridRetrievalResult,
+    RetrievedChunk,
     TaxonomyFilter,
 )
 from app.services.tokenizer import Tokenizer, default_user_dict_path
+from app.services.translation_service import (
+    cache_evidence_summaries,
+    translate_answer_with_evidence,
+    translate_query_zh,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,16 +97,60 @@ async def _safe_extract_facet(extractor: FacetExtractor, question: str):
         return None
 
 
+def _rrf_merge_retrieved(
+    zh_chunks: list[RetrievedChunk],
+    en_chunks: list[RetrievedChunk],
+    *,
+    zh_weight: float = 0.7,
+    en_weight: float = 0.3,
+    limit: int = 10,
+) -> list[RetrievedChunk]:
+    """Weighted reciprocal-rank fusion over two ``RetrievedChunk`` lists.
+
+    Preserves the chunk object from whichever list saw it first so downstream
+    code retains the original ``content`` / ``bridge_name`` fields. Dedup by
+    ``chunk_id``.
+    """
+    scores: dict[uuid.UUID, float] = {}
+    objects: dict[uuid.UUID, RetrievedChunk] = {}
+    for rank, chunk in enumerate(zh_chunks, 1):
+        scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0.0) + zh_weight / (60 + rank)
+        objects.setdefault(chunk.chunk_id, chunk)
+    for rank, chunk in enumerate(en_chunks, 1):
+        scores[chunk.chunk_id] = scores.get(chunk.chunk_id, 0.0) + en_weight / (60 + rank)
+        objects.setdefault(chunk.chunk_id, chunk)
+
+    ordered_ids = sorted(scores, key=lambda cid: scores[cid], reverse=True)
+    return [objects[cid] for cid in ordered_ids[:limit]]
+
+
+def _persist_en_summaries_in_background(summaries: list[dict]) -> None:
+    """Run ``cache_evidence_summaries`` against a fresh ``SessionLocal`` so we
+    don't race the request-scoped session, and swallow errors."""
+    if not summaries:
+        return
+    db = SessionLocal()
+    try:
+        cache_evidence_summaries(db, summaries=summaries)
+    except Exception:
+        logger.exception("Failed to persist evidence summaries")
+    finally:
+        db.close()
+
+
 @router.post("/ask")
 @limiter.limit("10/minute")
 async def ask_sse(
     request: Request,
     body: QARequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """SSE streaming QA endpoint.
     TODO: Upgrade to real LLM streaming.
     """
+    locale = getattr(request.state, "locale", "zh-CN")
+
     async def event_stream():
         qa_id = str(uuid.uuid4())
         start_time = time.monotonic()
@@ -112,7 +170,8 @@ async def ask_sse(
             nonlocal last_event_time
             last_event_time = time.monotonic()
 
-        yield _sse_event("started", {"qa_id": qa_id})
+        started_payload: dict = {"qa_id": qa_id, "locale": locale}
+        yield _sse_event("started", started_payload)
         _mark_event()
 
         try:
@@ -124,6 +183,26 @@ async def ask_sse(
             retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
             generator = Generator(provider=provider)
             facet_extractor = FacetExtractor(provider=provider)
+
+            # ── English translate-around branch (i18n Phase 4) ──
+            if locale == "en-US":
+                en_events, degraded, reason = await _run_en_qa_flow(
+                    db=db,
+                    body=body,
+                    retriever=retriever,
+                    provider=provider,
+                    background_tasks=background_tasks,
+                )
+                for evt_type, evt_data in en_events:
+                    yield _sse_event(evt_type, evt_data)
+                    _mark_event()
+                yield _sse_event("done", {
+                    "qa_id": qa_id,
+                    "locale": "en-US",
+                    "degraded": degraded,
+                    "reason": reason,
+                })
+                return
 
             target_bridge_id, taxonomy_filter = _resolve_context(db, body)
 
@@ -226,12 +305,12 @@ async def ask_sse(
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_seconds:
                     yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
-                    yield _sse_event("done", {"qa_id": qa_id})
+                    yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
                     return
                 yield _sse_event(event_type, data)
                 _mark_event()
 
-            yield _sse_event("done", {"qa_id": qa_id})
+            yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
 
         except Exception:
             logger.error("SSE QA stream failed", exc_info=True)
@@ -239,6 +318,153 @@ async def ask_sse(
                 "code": "INTERNAL_ERROR",
                 "message": "服务端内部错误，请稍后重试",
             })
-            yield _sse_event("done", {"qa_id": qa_id})
+            yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+async def _run_en_qa_flow(
+    *,
+    db: Session,
+    body: QARequest,
+    retriever: HybridRetriever,
+    provider,
+    background_tasks: BackgroundTasks,
+) -> tuple[list[tuple[str, dict]], bool, str | None]:
+    """Run the translate-around English QA flow.
+
+    Returns ``(events, degraded, reason)`` — ``events`` is the list of
+    ``(event_type, payload)`` tuples the caller should emit, ``degraded`` is
+    whether the JSON answer fell back, ``reason`` is the short string code
+    when degraded.
+    """
+    events: list[tuple[str, dict]] = []
+    question_en = body.question
+
+    # Step 1 — query translation ∥ English保底 embedding retrieval
+    try:
+        zh_query, english_chunks = await asyncio.wait_for(
+            asyncio.gather(
+                translate_query_zh(question_en, zhipu_client=provider),
+                retriever.search_by_english_embedding(db, question_en, top_k=10),
+                return_exceptions=False,
+            ),
+            timeout=12,
+        )
+    except (asyncio.TimeoutError, Exception):
+        logger.exception("en-US translate_query_zh / english保底 failed")
+        events.append(("error", {
+            "code": "TIMEOUT",
+            "message": "Query translation failed; please retry.",
+        }))
+        return events, True, "query_translation_failed"
+
+    events.append(("translated_query", {"zh": zh_query}))
+
+    # Step 2 — Chinese hybrid search on translated query
+    try:
+        target_bridge_id, taxonomy_filter = _resolve_context(db, body)
+        if not target_bridge_id and not taxonomy_filter:
+            from app.services.bridge_resolver import resolve_bridge_from_question
+            target_bridge_id = resolve_bridge_from_question(db, zh_query)
+        zh_result = await asyncio.wait_for(
+            retriever.retrieve(
+                db,
+                zh_query,
+                target_bridge_id=target_bridge_id,
+                taxonomy_filter=taxonomy_filter,
+            ),
+            timeout=_RETRIEVE_TIMEOUT,
+        )
+    except Exception:
+        logger.exception("en-US Chinese-query retrieval failed")
+        zh_result = HybridRetrievalResult(
+            anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
+        )
+
+    merged = _rrf_merge_retrieved(
+        zh_result.all_chunks(),
+        english_chunks,
+        zh_weight=0.7,
+        en_weight=0.3,
+        limit=10,
+    )
+
+    if not merged:
+        events.append(("error", {
+            "code": "INSUFFICIENT_EVIDENCE",
+            "message": "No relevant evidence found. Try rephrasing.",
+        }))
+        return events, True, "no_evidence"
+
+    # Step 3 — English answer generation (reuses cached_en_summary where
+    # available to keep prompt size sane).
+    cached_by_id = {
+        chunk.chunk_id: db.query(Chunk.cached_en_summary).filter(
+            Chunk.id == chunk.chunk_id
+        ).scalar()
+        for chunk in merged
+    }
+
+    answer_result = await translate_answer_with_evidence(
+        question_en, merged, zhipu_client=provider,
+    )
+    if answer_result.get("degraded"):
+        # Degrade to a Chinese answer via existing generator.
+        logger.info("Falling back to Chinese answer (en-US generation degraded)")
+        try:
+            zh_answer_events = await asyncio.wait_for(
+                Generator(provider=provider).generate_streaming(question_en, zh_result),
+                timeout=_GENERATE_TIMEOUT,
+            )
+        except Exception:
+            logger.exception("en-US Chinese fallback also failed")
+            events.append(("error", {
+                "code": "ANSWER_FAILED",
+                "message": "English answer generation failed.",
+            }))
+            return events, True, "translate_answer_failed"
+        events.extend(zh_answer_events)
+        return events, True, "translate_answer_failed"
+
+    answer_text = answer_result.get("answer", "")
+    summaries = answer_result.get("evidence_summaries", [])
+
+    # Merge cache hits into summaries for chunks the LLM skipped.
+    summary_by_chunk = {s["chunk_id"]: s["text_en"] for s in summaries if s.get("chunk_id")}
+    for chunk in merged:
+        cid_str = str(chunk.chunk_id)
+        if cid_str not in summary_by_chunk and cached_by_id.get(chunk.chunk_id):
+            summary_by_chunk[cid_str] = cached_by_id[chunk.chunk_id]
+
+    sources_payload = []
+    for chunk in merged:
+        cid_str = str(chunk.chunk_id)
+        sources_payload.append({
+            "chunk_id": cid_str,
+            "text_en": summary_by_chunk.get(cid_str, ""),
+            "text_zh": chunk.content[:400] if chunk.content else "",
+            "source_title": chunk.bridge_name or "",
+        })
+
+    # Single-outline rendering of the English answer (伪流式).
+    outline_id = str(uuid.uuid4())
+    events.append(("outline", {
+        "key_points": [{
+            "id": outline_id,
+            "summary": answer_text[:200] if answer_text else "",
+            "order": 1,
+        }],
+    }))
+    events.append(("detail", {
+        "key_point_id": outline_id,
+        "explanation": answer_text,
+        "citations": list(range(1, len(sources_payload) + 1)),
+    }))
+    events.append(("sources", {"sources": sources_payload}))
+
+    # Background: persist evidence summaries so future requests cache-hit.
+    if summaries:
+        background_tasks.add_task(_persist_en_summaries_in_background, summaries)
+
+    return events, False, None

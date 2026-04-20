@@ -13,6 +13,9 @@ class TaxonomyNode(Base, UUIDMixin):
     lvl2: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     lvl3: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # i18n (schema v12, 2026-04-21) — English display name for the current node's
+    # level label (lvl1/lvl2/lvl3 depending on which column is non-NULL for the row).
+    name_en: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
     __table_args__ = (
         Index(

@@ -43,6 +43,14 @@ class Chunk(Base, UUIDMixin, CreatedAtMixin):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
     )
+    # i18n (schema v12, 2026-04-21) — Translate-around RAG evidence summary cache.
+    # Populated by translate_answer_with_evidence as a side-effect of English QA
+    # generation. Reset (set NULL) when chunk.content changes so the next en-US
+    # request regenerates. chunks themselves deliberately stay Chinese-only.
+    cached_en_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cached_en_summary_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index("ix_chunks_taxonomy", "lvl1", "lvl2", "lvl3"),

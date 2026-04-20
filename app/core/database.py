@@ -17,7 +17,10 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
-LATEST_SCHEMA_VERSION = 11
+# v12 (2026-04-21): i18n Phase 3 — *_en translation columns on bridges /
+# knowledge_points / flashcards / taxonomy_nodes, chunks.cached_en_summary for
+# Phase 4 translate-around evidence cache, and translation_reviews审校 table.
+LATEST_SCHEMA_VERSION = 12
 
 
 def get_db():
@@ -105,8 +108,10 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "material", "function", "summary",
             "latitude", "longitude",
             "created_at", "updated_at",
+            # v12 i18n columns
+            "name_en", "description_en",
         },
-        "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description"},
+        "taxonomy_nodes": {"id", "lvl1", "lvl2", "lvl3", "description", "name_en"},
         "chunks": {
             "id", "source_id", "content", "section_title",
             "lvl1", "lvl2", "lvl3",
@@ -114,6 +119,8 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "embedding", "contextual_text", "search_text", "tsv",
             "needs_reindex", "updated_at", "created_at",
             "knowledge_point_id",
+            # v12 i18n: translate-around evidence summary cache
+            "cached_en_summary", "cached_en_summary_at",
         },
         "chunk_bridge_links": {
             "id", "chunk_id", "bridge_id", "role", "confidence", "method", "created_at",
@@ -132,6 +139,8 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "id", "taxonomy_node_id", "name", "aliases", "difficulty",
             "summary", "l2_content", "created_at", "updated_at",
             "lvl1", "lvl2",
+            # v12 i18n columns
+            "name_en", "summary_en",
         },
         "knowledge_point_key_points": {
             "id", "knowledge_point_id", "summary", "explanation",
@@ -142,6 +151,13 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
             "id", "knowledge_point_id", "card_type", "front_title", "front_hint",
             "back_answer", "back_key_features", "back_example_bridge_id",
             "created_at", "updated_at",
+            # v12 i18n columns
+            "front_title_en", "back_answer_en",
+        },
+        "translation_reviews": {
+            "id", "table_name", "row_id", "field_name", "source_text",
+            "ai_translation", "reviewed_translation", "status",
+            "reviewed_by", "reviewed_at", "created_at",
         },
         "favorites": {
             "id", "user_id", "target_id", "target_type", "created_at",

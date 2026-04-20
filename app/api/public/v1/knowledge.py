@@ -1,10 +1,11 @@
 """Public API: Knowledge tree and knowledge point detail endpoints."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.public.v1.schemas.common import PublicMeta, PublicPaginatedResponse, PublicResponse
+from app.api.public.v1.serializers import localized_meta
 from app.core.database import get_db
 from app.models import Bridge, TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
@@ -15,8 +16,13 @@ from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
 router = APIRouter()
 
 
+def _request_locale(request: Request) -> str:
+    return getattr(request.state, "locale", "zh-CN")
+
+
 @router.get("/tree", response_model=PublicResponse[dict])
 def get_knowledge_tree(
+    request: Request,
     depth: int | None = Query(default=None, ge=0, le=3),
     db: Session = Depends(get_db),
 ) -> PublicResponse[dict]:
@@ -29,6 +35,9 @@ def get_knowledge_tree(
     Public clients that previously walked 4 layers must drop the lvl3
     wrapper (see EchoBridgeCQU/web#2, EchoBridgeCQU/app#3).
     """
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
+
     # 1. Skeleton: lvl1 + lvl2 rows (lvl3 rows are ignored — being retired).
     nodes = db.query(TaxonomyNode).filter(TaxonomyNode.lvl3.is_(None)).order_by(
         TaxonomyNode.lvl1,
@@ -39,10 +48,12 @@ def get_knowledge_tree(
     lvl2_nodes: dict[tuple[str, str], dict] = {}
 
     for node in nodes:
+        name_en = node.name_en
         if node.lvl2 is None:
+            lvl1_display = name_en if (use_en and name_en) else node.lvl1
             if node.lvl1 not in lvl1_nodes:
                 lvl1_nodes[node.lvl1] = {
-                    "id": str(node.id), "name": node.lvl1,
+                    "id": str(node.id), "name": lvl1_display,
                     "icon_url": None, "children": [],
                 }
             continue
@@ -56,7 +67,8 @@ def get_knowledge_tree(
 
         key2 = (node.lvl1, node.lvl2)
         if key2 not in lvl2_nodes:
-            lvl2_node = {"id": str(node.id), "name": node.lvl2, "children": []}
+            lvl2_display = name_en if (use_en and name_en) else node.lvl2
+            lvl2_node = {"id": str(node.id), "name": lvl2_display, "children": []}
             lvl2_nodes[key2] = lvl2_node
             lvl1_nodes[node.lvl1]["children"].append(lvl2_node)
 
@@ -72,12 +84,14 @@ def get_knowledge_tree(
         key2 = (kp.lvl1, kp.lvl2)
         if key2 not in lvl2_nodes:
             continue
+        kp_name = kp.name_en if (use_en and kp.name_en) else kp.name
+        kp_summary = kp.summary_en if (use_en and kp.summary_en) else kp.summary
         lvl2_nodes[key2]["children"].append({
             "id": str(kp.id),
-            "name": kp.name,
+            "name": kp_name,
             "type": "knowledge_point",
             "tags": [],
-            "summary": kp.summary,
+            "summary": kp_summary,
         })
 
     lines = list(lvl1_nodes.values())
@@ -97,6 +111,7 @@ def get_knowledge_tree(
 @router.get("/points/{point_id}", response_model=PublicResponse[dict])
 def get_knowledge_point(
     point_id: UUID,
+    request: Request,
     level: str = Query(default="all", pattern="^(L0|L1|L2|all)$"),
     db: Session = Depends(get_db),
 ) -> PublicResponse[dict]:
@@ -104,6 +119,8 @@ def get_knowledge_point(
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == point_id).first()
     if not kp:
         raise HTTPException(404, detail="知识点不存在")
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
 
     # Phase 3: KP carries lvl1 / lvl2 directly; resolve the corresponding
     # lvl1-only and lvl2-only taxonomy_nodes rows for their UUIDs.
@@ -143,15 +160,20 @@ def get_knowledge_point(
         KnowledgePointBridge.knowledge_point_id == point_id
     ).count()
 
+    display_name = kp.name_en if (use_en and kp.name_en) else kp.name
     result: dict = {
         "id": str(kp.id),
-        "name": kp.name,
+        "name": display_name,
         "aliases": kp.aliases.split(",") if kp.aliases else [],
         "line": line_info,
         "category": category_info,
         "tags": tags,
         "difficulty": kp.difficulty,
     }
+    fell_back = use_en and (not kp.name_en or (kp.summary and not kp.summary_en))
+    meta = localized_meta(fell_back, locale)
+    if meta is not None:
+        result["_meta"] = meta
 
     if level in ("L0", "L1", "all"):
         result["l0"] = {
@@ -225,6 +247,7 @@ def get_knowledge_point(
 @router.get("/points/{point_id}/bridges", response_model=PublicPaginatedResponse[dict])
 def get_knowledge_point_bridges(
     point_id: UUID,
+    request: Request,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -233,6 +256,9 @@ def get_knowledge_point_bridges(
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == point_id).first()
     if not kp:
         raise HTTPException(404, detail="知识点不存在")
+
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
 
     base_query = db.query(KnowledgePointBridge).filter(
         KnowledgePointBridge.knowledge_point_id == point_id
@@ -250,7 +276,9 @@ def get_knowledge_point_bridges(
     )
     bridges = [
         {
-            "id": str(b.id), "name": b.name, "bridge_type": b.bridge_type,
+            "id": str(b.id),
+            "name": (b.name_en if (use_en and b.name_en) else b.name),
+            "bridge_type": b.bridge_type,
             "era": b.era, "region": b.region,
             "latitude": b.latitude, "longitude": b.longitude,
             "relevance": link.relevance_note,
@@ -266,6 +294,7 @@ def get_knowledge_point_bridges(
 @router.get("/points/{point_id}/flashcards", response_model=PublicResponse[dict])
 def get_knowledge_point_flashcards(
     point_id: UUID,
+    request: Request,
     card_type: str = Query(default="all", pattern="^(all|concept|identification)$"),
     db: Session = Depends(get_db),
 ) -> PublicResponse[dict]:
@@ -273,6 +302,9 @@ def get_knowledge_point_flashcards(
     kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == point_id).first()
     if not kp:
         raise HTTPException(404, detail="知识点不存在")
+
+    locale = _request_locale(request)
+    use_en = locale == "en-US"
 
     query = db.query(Flashcard).filter(Flashcard.knowledge_point_id == point_id)
     if card_type != "all":
@@ -283,29 +315,39 @@ def get_knowledge_point_flashcards(
     # Batch-resolve bridge names for example_bridge
     from app.models import Bridge
     bridge_ids = {fc.back_example_bridge_id for fc in flashcards if fc.back_example_bridge_id}
-    bridge_names: dict = {}
+    bridge_info: dict = {}
     if bridge_ids:
-        name_rows = db.query(Bridge.id, Bridge.name).filter(Bridge.id.in_(bridge_ids)).all()
-        bridge_names = {r.id: r.name for r in name_rows}
+        name_rows = db.query(Bridge.id, Bridge.name, Bridge.name_en).filter(
+            Bridge.id.in_(bridge_ids)
+        ).all()
+        bridge_info = {r.id: (r.name, r.name_en) for r in name_rows}
 
     cards = []
     for fc in flashcards:
         example_bridge = None
         if fc.back_example_bridge_id:
+            zh_name, en_name = bridge_info.get(fc.back_example_bridge_id, (None, None))
             example_bridge = {
                 "id": str(fc.back_example_bridge_id),
-                "name": bridge_names.get(fc.back_example_bridge_id),
+                "name": (en_name if (use_en and en_name) else zh_name),
             }
-        cards.append({
+        front_title = fc.front_title_en if (use_en and fc.front_title_en) else fc.front_title
+        back_answer = fc.back_answer_en if (use_en and fc.back_answer_en) else fc.back_answer
+        fell_back = use_en and (not fc.front_title_en or not fc.back_answer_en)
+        card: dict = {
             "id": str(fc.id),
             "knowledge_point_id": str(fc.knowledge_point_id),
             "card_type": fc.card_type,
-            "front": {"title": fc.front_title, "hint": fc.front_hint},
+            "front": {"title": front_title, "hint": fc.front_hint},
             "back": {
-                "answer": fc.back_answer,
+                "answer": back_answer,
                 "key_features": fc.back_key_features or [],
                 "example_bridge": example_bridge,
             },
-        })
+        }
+        meta = localized_meta(fell_back, locale)
+        if meta is not None:
+            card["_meta"] = meta
+        cards.append(card)
 
     return PublicResponse(data={"cards": cards})

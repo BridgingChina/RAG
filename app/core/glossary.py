@@ -33,3 +33,41 @@ def load_glossary(context: str | None = None) -> list[Term]:
     if context:
         return [t for t in terms if t.context == context]
     return terms
+
+
+# Alias for consumers (translation_service.py) written before Phase 1 landed
+# the canonical `Term` name. Both refer to the same frozen dataclass.
+GlossaryTerm = Term
+
+
+def pick_relevant_terms(text: str, limit: int = 10) -> list[Term]:
+    """Pick glossary terms whose zh or en token appears in `text`.
+
+    Simple substring match — good enough for LLM few-shot seeding. Returns at
+    most `limit` hits in glossary order; falls back to first `limit` terms
+    when `text` has no matches so the prompt always carries some context.
+    """
+    terms = _load_raw()
+    hits = [t for t in terms if t.zh in text or (t.en and t.en.lower() in text.lower())]
+    if hits:
+        return hits[:limit]
+    return terms[:limit]
+
+
+def format_glossary_for_prompt(terms: list[Term]) -> str:
+    """Render terms as a compact LLM-facing reference block.
+
+    Format: `- 中文 → English  (context)  [notes]` per line. Empty input
+    returns empty string so callers can unconditionally concatenate.
+    """
+    if not terms:
+        return ""
+    lines = []
+    for t in terms:
+        line = f"- {t.zh} → {t.en}"
+        if t.context:
+            line += f"  ({t.context})"
+        if t.notes:
+            line += f"  [{t.notes}]"
+        lines.append(line)
+    return "\n".join(lines)

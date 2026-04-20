@@ -95,6 +95,11 @@ app.add_middleware(LocaleMiddleware)
 from app.core.cache_middleware import PublicCacheMiddleware
 app.add_middleware(PublicCacheMiddleware)
 
+# Locale middleware — resolves request.state.locale for C-end /v1/* requests
+# (i18n Phase 3). Admin / internal / health default to zh-CN.
+from app.core.locale_middleware import LocaleMiddleware
+app.add_middleware(LocaleMiddleware)
+
 # CORS middleware — explicit list (settings.cors_origins) + regex for prod web domains
 # regex matches: bridgingchina.net (+ any subdomain) and bridge-web.user-unauthorized.workers.dev (+ any subdomain)
 app.add_middleware(

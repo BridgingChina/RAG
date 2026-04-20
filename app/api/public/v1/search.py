@@ -2,7 +2,7 @@
 import html
 import re
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,10 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.taxonomy import TaxonomyNode
 
 router = APIRouter()
+
+
+def _request_locale(request: Request) -> str:
+    return getattr(request.state, "locale", "zh-CN")
 
 
 def _highlight(text: str, keyword: str) -> str:
@@ -61,14 +65,16 @@ def _build_kp_query(db: Session, like_pattern: str, line: str | None, category: 
     return stmt
 
 
-def _bridge_to_item(b: Bridge, q: str) -> SearchResultItem:
-    highlight_text = _highlight(b.name, q)
+def _bridge_to_item(b: Bridge, q: str, *, locale: str = "zh-CN") -> SearchResultItem:
+    use_en = locale == "en-US"
+    display_name = b.name_en if (use_en and b.name_en) else b.name
+    highlight_text = _highlight(display_name, q)
     if b.aliases and q.lower() in b.aliases.lower():
         highlight_text = _highlight(b.aliases, q)
     return SearchResultItem(
         type="bridge",
         id=b.id,
-        name=b.name,
+        name=display_name,
         aliases=b.aliases,
         highlight=highlight_text,
         bridge_type=b.bridge_type,
@@ -79,14 +85,16 @@ def _bridge_to_item(b: Bridge, q: str) -> SearchResultItem:
     )
 
 
-def _kp_to_item(kp: KnowledgePoint, q: str) -> SearchResultItem:
-    highlight_text = _highlight(kp.name, q)
+def _kp_to_item(kp: KnowledgePoint, q: str, *, locale: str = "zh-CN") -> SearchResultItem:
+    use_en = locale == "en-US"
+    display_name = kp.name_en if (use_en and kp.name_en) else kp.name
+    highlight_text = _highlight(display_name, q)
     if kp.aliases and q.lower() in kp.aliases.lower():
         highlight_text = _highlight(kp.aliases, q)
     return SearchResultItem(
         type="knowledge_point",
         id=kp.id,
-        name=kp.name,
+        name=display_name,
         aliases=kp.aliases,
         highlight=highlight_text,
     )
@@ -94,6 +102,7 @@ def _kp_to_item(kp: KnowledgePoint, q: str) -> SearchResultItem:
 
 @router.get("/search", response_model=PublicPaginatedResponse[dict])
 def search(
+    request: Request,
     q: str = Query(..., min_length=1),
     type: str = Query(default="all", pattern="^(all|bridge|knowledge_point)$"),
     bridge_type: str | None = Query(default=None),
@@ -108,13 +117,14 @@ def search(
     """Unified search across bridges and knowledge points."""
     like_pattern = f"%{_escape_like(q)}%"
     offset = (page - 1) * page_size
+    locale = _request_locale(request)
 
     # --- Single-type search: use SQL LIMIT/OFFSET directly ---
     if type == "bridge":
         bridge_q = _build_bridge_query(db, like_pattern, bridge_type, era, region)
         total = bridge_q.count()
         bridges = bridge_q.order_by(Bridge.name).offset(offset).limit(page_size).all()
-        results = [_bridge_to_item(b, q) for b in bridges]
+        results = [_bridge_to_item(b, q, locale=locale) for b in bridges]
         return PublicPaginatedResponse(
             data={"results": [r.model_dump() for r in results], "suggestions": []},
             meta=PublicMeta(total=total, page=page, page_size=page_size),
@@ -124,7 +134,7 @@ def search(
         kp_q = _build_kp_query(db, like_pattern, line, category)
         total = kp_q.count()
         kps = kp_q.order_by(KnowledgePoint.name).offset(offset).limit(page_size).all()
-        results = [_kp_to_item(kp, q) for kp in kps]
+        results = [_kp_to_item(kp, q, locale=locale) for kp in kps]
         return PublicPaginatedResponse(
             data={"results": [r.model_dump() for r in results], "suggestions": []},
             meta=PublicMeta(total=total, page=page, page_size=page_size),
@@ -145,17 +155,17 @@ def search(
     if offset < bridge_total:
         # Page starts in bridges
         b_items = bridge_q.order_by(Bridge.name).offset(offset).limit(page_size).all()
-        results.extend(_bridge_to_item(b, q) for b in b_items)
+        results.extend(_bridge_to_item(b, q, locale=locale) for b in b_items)
         remaining = page_size - len(results)
         if remaining > 0:
             # Fill rest from KPs (from the start)
             kp_items = kp_q.order_by(KnowledgePoint.name).limit(remaining).all()
-            results.extend(_kp_to_item(kp, q) for kp in kp_items)
+            results.extend(_kp_to_item(kp, q, locale=locale) for kp in kp_items)
     else:
         # Page is entirely in KPs
         kp_offset = offset - bridge_total
         kp_items = kp_q.order_by(KnowledgePoint.name).offset(kp_offset).limit(page_size).all()
-        results.extend(_kp_to_item(kp, q) for kp in kp_items)
+        results.extend(_kp_to_item(kp, q, locale=locale) for kp in kp_items)
 
     return PublicPaginatedResponse(
         data={"results": [r.model_dump() for r in results], "suggestions": []},
