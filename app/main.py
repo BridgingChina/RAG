@@ -82,6 +82,14 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 from app.api.public.v1.error_handlers import register_public_error_handlers
 register_public_error_handlers(app)
 
+# Locale middleware — parses Accept-Language + NEXT_LOCALE cookie into
+# request.state.locale. Ordered before CORS so locale is available to
+# downstream middleware/routes (added last here runs first per Starlette's
+# stack semantics). JWT.preferred_locale override happens inside the
+# get_current_user / require_user dependencies.
+from app.core.locale_middleware import LocaleMiddleware
+app.add_middleware(LocaleMiddleware)
+
 # Public cache middleware (must be added before CORS so it runs after CORS in the response chain)
 from app.core.cache_middleware import PublicCacheMiddleware
 app.add_middleware(PublicCacheMiddleware)
