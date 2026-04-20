@@ -149,7 +149,9 @@ export function Component() {
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(log.created_at).toLocaleString("zh-CN")}
                       </TableCell>
-                      <TableCell>{log.username || "-"}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {log.user_id ? log.user_id.slice(0, 8) : "-"}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={log.action === "login_failure" ? "destructive" : "secondary"}>
                           {log.action}

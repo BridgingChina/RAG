@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react"
-import { Outlet, useNavigate } from "react-router"
-import { fetchMe } from "@/lib/api"
+import { Outlet } from "react-router"
+import { getSession, redirectToLogin } from "@/lib/auth"
 import { useAuth } from "@/contexts/AuthContext"
 
+/**
+ * Phase 2+3: the console no longer hosts a login form. Unauthenticated
+ * visitors (or non-admin sessions) are sent straight to the auth Worker
+ * at auth.bridgingchina.net, which handles the whole login / MFA /
+ * magic-link flow and redirects them back here.
+ */
 export function AuthGuard() {
-  const navigate = useNavigate()
   const { setUser } = useAuth()
   const [checking, setChecking] = useState(true)
   const checkedRef = useRef(false)
@@ -13,21 +18,25 @@ export function AuthGuard() {
     if (checkedRef.current) return
     checkedRef.current = true
 
-    const token = localStorage.getItem("auth-token")
-    if (!token) {
-      navigate("/login", { replace: true })
-      return
-    }
-    fetchMe()
-      .then((user) => {
-        setUser(user)
+    getSession()
+      .then((session) => {
+        if (!session) {
+          redirectToLogin()
+          return
+        }
+        if (session.user.role !== "admin") {
+          // Signed-in non-admin: treat as no access, bounce to auth UI
+          // so they can sign out / switch account if needed.
+          redirectToLogin()
+          return
+        }
+        setUser(session.user)
         setChecking(false)
       })
       .catch(() => {
-        localStorage.removeItem("auth-token")
-        navigate("/login", { replace: true })
+        redirectToLogin()
       })
-  }, [navigate, setUser])
+  }, [setUser])
 
   if (checking) {
     return (

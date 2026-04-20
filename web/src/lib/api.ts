@@ -8,7 +8,6 @@ import type {
   BridgeListItem,
   BridgeMergeRequest,
   BridgeUpdateRequest,
-  ChangePasswordRequest,
   ChunkBatchRequest,
   ChunkDetail,
   ChunkListItem,
@@ -24,8 +23,6 @@ import type {
   KnowledgePointDetail,
   KnowledgePointListItem,
   KPBridgeItem,
-  LoginRequest,
-  LoginResponse,
   PaginatedResponse,
   PresignRequest,
   PresignResponse,
@@ -38,17 +35,22 @@ import type {
   TaxonomyNodeCreate,
   TaxonomyNodeDetail,
   TaxonomyTree,
-  UserInfo,
 } from "./types"
+import { clearJWTCache, getJWT, redirectToLogin } from "./auth"
 
 const BASE = "/api/v1"
 
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("auth-token")
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getJWT()
   if (token) {
     return { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
   }
   return { "Content-Type": "application/json" }
+}
+
+function handleUnauthorized(): void {
+  clearJWTCache()
+  redirectToLogin()
 }
 
 export class ConflictError extends Error {
@@ -121,15 +123,12 @@ async function get<T>(
 
   const res = await fetch(fullUrl, {
     method: "GET",
-    headers: authHeaders(),
+    headers: await authHeaders(),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    if (res.status === 401) {
-      localStorage.removeItem("auth-token")
-      window.location.href = "/login"
-    }
+    if (res.status === 401) handleUnauthorized()
     throw new Error(text || `HTTP ${res.status}`)
   }
 
@@ -139,16 +138,13 @@ async function get<T>(
 async function post<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    if (res.status === 401) {
-      localStorage.removeItem("auth-token")
-      window.location.href = "/login"
-    }
+    if (res.status === 401) handleUnauthorized()
     throw parseHttpError(res.status, text)
   }
 
@@ -158,16 +154,13 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 async function put<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "PUT",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    if (res.status === 401) {
-      localStorage.removeItem("auth-token")
-      window.location.href = "/login"
-    }
+    if (res.status === 401) handleUnauthorized()
     throw parseHttpError(res.status, text)
   }
 
@@ -177,15 +170,12 @@ async function put<T>(url: string, body: unknown): Promise<T> {
 async function del(url: string): Promise<void> {
   const res = await fetch(`${BASE}${url}`, {
     method: "DELETE",
-    headers: authHeaders(),
+    headers: await authHeaders(),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    if (res.status === 401) {
-      localStorage.removeItem("auth-token")
-      window.location.href = "/login"
-    }
+    if (res.status === 401) handleUnauthorized()
     throw parseHttpError(res.status, text)
   }
 }
@@ -193,16 +183,13 @@ async function del(url: string): Promise<void> {
 async function patch<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "PATCH",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    if (res.status === 401) {
-      localStorage.removeItem("auth-token")
-      window.location.href = "/login"
-    }
+    if (res.status === 401) handleUnauthorized()
     throw parseHttpError(res.status, text)
   }
 
@@ -510,28 +497,8 @@ export function fetchSystemStatus(): Promise<SystemStatus> {
 }
 
 // --- Auth ---
-
-export function login(data: LoginRequest): Promise<LoginResponse> {
-  return fetch(`${BASE}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  }).then(async (res) => {
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(text || `HTTP ${res.status}`)
-    }
-    return res.json()
-  })
-}
-
-export function fetchMe(): Promise<UserInfo> {
-  return get<UserInfo>("/auth/me")
-}
-
-export function changePassword(data: ChangePasswordRequest): Promise<void> {
-  return put<void>("/auth/password", data)
-}
+// Phase 2: login/logout/password flows live on auth.bridgingchina.net now.
+// The console only consumes the JWT via `src/lib/auth.ts`.
 
 // --- Audit ---
 
@@ -629,7 +596,7 @@ export function batchGeocode(bridgeIds?: string[]) {
 export async function importCoordinatesCsv(file: File) {
   const formData = new FormData()
   formData.append("file", file)
-  const token = localStorage.getItem("auth-token")
+  const token = await getJWT()
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
   const resp = await fetch(`${BASE}/bridges/import-coordinates`, {
@@ -638,10 +605,7 @@ export async function importCoordinatesCsv(file: File) {
     body: formData,
   })
   if (!resp.ok) {
-    if (resp.status === 401) {
-      localStorage.removeItem("auth-token")
-      window.location.href = "/login"
-    }
+    if (resp.status === 401) handleUnauthorized()
     const text = await resp.text()
     throw new Error(text || `HTTP ${resp.status}`)
   }
