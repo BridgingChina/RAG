@@ -20,7 +20,10 @@ from app.api.v1.schemas.knowledge_point import (
     KPDetail,
     KPListItem,
     KPUpdate,
+    KeyPointCreate,
     KeyPointItem,
+    KeyPointReorderRequest,
+    KeyPointUpdate,
 )
 from app.core.database import get_db
 from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode
@@ -646,3 +649,218 @@ async def generate_key_points(
             for kpkp in new_key_points
         ],
     }
+
+
+def _to_key_point_item(kpkp: KnowledgePointKeyPoint) -> KeyPointItem:
+    return KeyPointItem(
+        id=kpkp.id,
+        summary=kpkp.summary,
+        explanation=kpkp.explanation,
+        order_index=kpkp.order_index,
+        chunk_ids=[str(cid) for cid in (kpkp.chunk_ids or [])],
+    )
+
+
+def _get_kp_or_404(db: Session, kp_id: UUID) -> KnowledgePoint:
+    kp = db.query(KnowledgePoint).filter(KnowledgePoint.id == kp_id).first()
+    if not kp:
+        raise HTTPException(status_code=404, detail="Knowledge point not found")
+    return kp
+
+
+def _get_key_point_or_404(
+    db: Session, kp_id: UUID, kpkp_id: UUID
+) -> KnowledgePointKeyPoint:
+    kpkp = (
+        db.query(KnowledgePointKeyPoint)
+        .filter(
+            KnowledgePointKeyPoint.id == kpkp_id,
+            KnowledgePointKeyPoint.knowledge_point_id == kp_id,
+        )
+        .first()
+    )
+    if not kpkp:
+        raise HTTPException(status_code=404, detail="Key point not found")
+    return kpkp
+
+
+@router.post(
+    "/{kp_id}/key-points",
+    response_model=KeyPointItem,
+    status_code=201,
+)
+def create_key_point(
+    kp_id: UUID,
+    body: KeyPointCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> KeyPointItem:
+    """Manually create a single key point under the KP."""
+    _get_kp_or_404(db, kp_id)
+
+    if body.order_index is None:
+        current_max = (
+            db.query(func.coalesce(func.max(KnowledgePointKeyPoint.order_index), -1))
+            .filter(KnowledgePointKeyPoint.knowledge_point_id == kp_id)
+            .scalar()
+        )
+        order_index = int(current_max) + 1
+    else:
+        order_index = body.order_index
+
+    kpkp = KnowledgePointKeyPoint(
+        knowledge_point_id=kp_id,
+        summary=body.summary,
+        explanation=body.explanation,
+        order_index=order_index,
+        chunk_ids=list(body.chunk_ids) if body.chunk_ids else None,
+    )
+    db.add(kpkp)
+    db.flush()
+
+    AuditService.log(
+        db,
+        action="create_key_point",
+        resource_type="knowledge_point_key_point",
+        user_id=current_user.id,
+        resource_id=str(kpkp.id),
+        detail={"knowledge_point_id": str(kp_id)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    db.refresh(kpkp)
+
+    return _to_key_point_item(kpkp)
+
+
+# NOTE: literal "/reorder" must be registered BEFORE the parametric
+# "/{kpkp_id}" routes, otherwise FastAPI matches "reorder" as a UUID path
+# param and returns 422. Same pattern as /bridges/clusters vs /{bridge_id}.
+@router.put(
+    "/{kp_id}/key-points/reorder",
+    response_model=list[KeyPointItem],
+)
+def reorder_key_points(
+    kp_id: UUID,
+    body: KeyPointReorderRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> list[KeyPointItem]:
+    """Replace order_index for all key points under the KP.
+
+    Payload must cover every existing key point id for the KP. Partial
+    reorders are rejected to avoid silently leaving some rows in stale
+    positions relative to the new ordering.
+    """
+    _get_kp_or_404(db, kp_id)
+
+    existing = (
+        db.query(KnowledgePointKeyPoint)
+        .filter(KnowledgePointKeyPoint.knowledge_point_id == kp_id)
+        .all()
+    )
+    existing_ids = {kpkp.id for kpkp in existing}
+    payload_ids = {item.id for item in body.items}
+
+    if existing_ids != payload_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Reorder payload must include every existing key point id exactly once",
+        )
+
+    order_map = {item.id: item.order_index for item in body.items}
+    for kpkp in existing:
+        kpkp.order_index = order_map[kpkp.id]
+    db.flush()
+
+    AuditService.log(
+        db,
+        action="reorder_key_points",
+        resource_type="knowledge_point",
+        user_id=current_user.id,
+        resource_id=str(kp_id),
+        detail={"count": len(existing)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+    existing.sort(key=lambda k: k.order_index)
+    return [_to_key_point_item(kpkp) for kpkp in existing]
+
+
+@router.put(
+    "/{kp_id}/key-points/{kpkp_id}",
+    response_model=KeyPointItem,
+)
+def update_key_point(
+    kp_id: UUID,
+    kpkp_id: UUID,
+    body: KeyPointUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> KeyPointItem:
+    """Partial update of a single key point (summary / explanation / chunk_ids).
+
+    order_index is intentionally NOT updatable here — use the reorder endpoint
+    to move key points, which forces callers to submit a coherent full ordering.
+    """
+    _get_kp_or_404(db, kp_id)
+    kpkp = _get_key_point_or_404(db, kp_id, kpkp_id)
+
+    data = body.model_dump(exclude_unset=True)
+    if "summary" in data and data["summary"] is not None:
+        kpkp.summary = data["summary"]
+    if "explanation" in data:
+        kpkp.explanation = data["explanation"]
+    if "chunk_ids" in data:
+        chunk_ids = data["chunk_ids"]
+        kpkp.chunk_ids = list(chunk_ids) if chunk_ids else None
+
+    db.flush()
+
+    AuditService.log(
+        db,
+        action="update_key_point",
+        resource_type="knowledge_point_key_point",
+        user_id=current_user.id,
+        resource_id=str(kpkp_id),
+        detail={"knowledge_point_id": str(kp_id)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+    db.refresh(kpkp)
+
+    return _to_key_point_item(kpkp)
+
+
+@router.delete(
+    "/{kp_id}/key-points/{kpkp_id}",
+    status_code=204,
+)
+def delete_key_point(
+    kp_id: UUID,
+    kpkp_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> None:
+    """Delete a single key point. Leaves order_index gaps on purpose — call
+    the reorder endpoint afterwards if the caller wants a compact sequence."""
+    _get_kp_or_404(db, kp_id)
+    kpkp = _get_key_point_or_404(db, kp_id, kpkp_id)
+
+    db.delete(kpkp)
+
+    AuditService.log(
+        db,
+        action="delete_key_point",
+        resource_type="knowledge_point_key_point",
+        user_id=current_user.id,
+        resource_id=str(kpkp_id),
+        detail={"knowledge_point_id": str(kp_id)},
+        ip_address=get_client_ip(request),
+    )
+    db.commit()

@@ -38,6 +38,28 @@ class KeyPointItem(BaseModel):
     chunk_ids: list[str] = []
 
 
+class KeyPointCreate(BaseModel):
+    summary: str = Field(min_length=1)
+    explanation: str | None = None
+    chunk_ids: list[UUID] = []
+    order_index: int | None = None
+
+
+class KeyPointUpdate(BaseModel):
+    summary: str | None = Field(default=None, min_length=1)
+    explanation: str | None = None
+    chunk_ids: list[UUID] | None = None
+
+
+class KeyPointReorderItem(BaseModel):
+    id: UUID
+    order_index: int
+
+
+class KeyPointReorderRequest(BaseModel):
+    items: list[KeyPointReorderItem]
+
+
 class KPDetail(BaseModel):
     id: UUID
     taxonomy_node_id: UUID | None
