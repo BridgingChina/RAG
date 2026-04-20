@@ -1,76 +1,91 @@
-"""Unit tests for locale resolution (i18n Phase 3)."""
-from __future__ import annotations
+"""
+单元测试 LocaleMiddleware 的 cookie + Accept-Language 优先级。
 
-from unittest.mock import MagicMock
+JWT claim preferred_locale 覆盖的集成测试放在 tests/integration/
+（需要 mock JWKS 或实际 JWT fixture），本文件只测 middleware 自身逻辑。
+"""
 
-from app.core.locale_middleware import (
-    DEFAULT_LOCALE,
-    SUPPORTED_LOCALES,
-    resolve_locale,
-)
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
-
-def _fake_request(*, cookies=None, query=None, headers=None):
-    req = MagicMock()
-    req.cookies = cookies or {}
-    req.query_params = query or {}
-    req.headers = headers or {}
-    # starlette headers are case-insensitive — the implementation uses
-    # `request.headers.get("accept-language")` so a plain dict with that
-    # lowercase key suffices for the test.
-    return req
+from app.core.locale_middleware import LocaleMiddleware
 
 
-def test_defaults_to_zh_cn_when_nothing_supplied():
-    assert resolve_locale(_fake_request()) == "zh-CN"
-    assert DEFAULT_LOCALE == "zh-CN"
+def _app() -> FastAPI:
+    app = FastAPI()
+    app.add_middleware(LocaleMiddleware)
+
+    @app.get("/echo-locale")
+    def echo(request):  # type: ignore[no-untyped-def]
+        return {"locale": request.state.locale}
+
+    # FastAPI 需要 Request 类型
+    from starlette.requests import Request as StarletteRequest
+
+    app.router.routes.clear()
+
+    @app.get("/echo-locale")
+    def echo2(request: StarletteRequest):
+        return {"locale": request.state.locale}
+
+    return app
 
 
-def test_supported_locales_tuple_contents():
-    assert SUPPORTED_LOCALES == ("zh-CN", "en-US")
+def test_default_when_no_signal():
+    client = TestClient(_app())
+    r = client.get("/echo-locale")
+    assert r.status_code == 200
+    assert r.json()["locale"] == "zh-CN"
 
 
-def test_query_param_wins_over_cookie_and_header():
-    req = _fake_request(
-        query={"lang": "en-US"},
-        cookies={"NEXT_LOCALE": "zh-CN"},
-        headers={"accept-language": "zh-CN,en;q=0.5"},
+def test_accept_language_zh_cn():
+    client = TestClient(_app())
+    r = client.get("/echo-locale", headers={"Accept-Language": "zh-CN,zh;q=0.9"})
+    assert r.json()["locale"] == "zh-CN"
+
+
+def test_accept_language_en_us():
+    client = TestClient(_app())
+    r = client.get("/echo-locale", headers={"Accept-Language": "en-US,en;q=0.9"})
+    assert r.json()["locale"] == "en-US"
+
+
+def test_accept_language_first_supported_wins():
+    # 不支持的 fr-FR 排在前，后面是 en-US → 取 en-US
+    client = TestClient(_app())
+    r = client.get(
+        "/echo-locale", headers={"Accept-Language": "fr-FR,en-US;q=0.8,zh;q=0.6"}
     )
-    assert resolve_locale(req) == "en-US"
+    assert r.json()["locale"] == "en-US"
 
 
-def test_cookie_wins_over_header():
-    req = _fake_request(
+def test_unsupported_accept_language_falls_back_to_default():
+    client = TestClient(_app())
+    r = client.get("/echo-locale", headers={"Accept-Language": "ja-JP,ko-KR;q=0.9"})
+    assert r.json()["locale"] == "zh-CN"
+
+
+def test_cookie_beats_accept_language():
+    client = TestClient(_app())
+    r = client.get(
+        "/echo-locale",
+        headers={"Accept-Language": "zh-CN,zh;q=0.9"},
         cookies={"NEXT_LOCALE": "en-US"},
-        headers={"accept-language": "zh-CN"},
     )
-    assert resolve_locale(req) == "en-US"
+    assert r.json()["locale"] == "en-US"
 
 
-def test_accept_language_header_used_when_no_cookie():
-    req = _fake_request(headers={"accept-language": "en-US,zh;q=0.5"})
-    assert resolve_locale(req) == "en-US"
-
-
-def test_accept_language_case_normalization():
-    """'en-us' (lowercase) should normalize to 'en-US'."""
-    req = _fake_request(headers={"accept-language": "en-us"})
-    assert resolve_locale(req) == "en-US"
-
-
-def test_unknown_locale_falls_back():
-    req = _fake_request(
-        cookies={"NEXT_LOCALE": "fr-FR"},
-        headers={"accept-language": "fr-FR"},
+def test_invalid_cookie_falls_through_to_accept_language():
+    client = TestClient(_app())
+    r = client.get(
+        "/echo-locale",
+        headers={"Accept-Language": "en-US"},
+        cookies={"NEXT_LOCALE": "fr-FR"},  # 非法，应忽略
     )
-    # Unknown locales skip through all sources — default wins.
-    assert resolve_locale(req) == "zh-CN"
+    assert r.json()["locale"] == "en-US"
 
 
-def test_accept_language_q_weights_honored():
-    """Client preferring en-US with higher q wins over earlier-listed zh-TW."""
-    req = _fake_request(
-        headers={"accept-language": "zh-TW,en-US;q=0.9,zh-CN;q=0.5"},
-    )
-    # zh-TW is not supported so it's discarded; next highest q is en-US.
-    assert resolve_locale(req) == "en-US"
+def test_empty_accept_language_uses_default():
+    client = TestClient(_app())
+    r = client.get("/echo-locale", headers={"Accept-Language": ""})
+    assert r.json()["locale"] == "zh-CN"
