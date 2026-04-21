@@ -15,6 +15,7 @@ from app.api.v1.system import router as system_router
 from app.api.v1.taxonomy import router as taxonomy_router
 from app.api.v1.ingest_tasks import router as ingest_tasks_router
 from app.api.v1.knowledge_points import router as knowledge_points_router
+from app.api.v1.llm import router as llm_router
 from app.api.v1.translations import router as translations_router
 from app.api.v1.dependencies import get_current_user
 
@@ -34,6 +35,7 @@ protected.include_router(flashcards_router)
 protected.include_router(ingest_router)
 protected.include_router(ingest_tasks_router)
 protected.include_router(knowledge_points_router)
+protected.include_router(llm_router)
 protected.include_router(sources_router)
 protected.include_router(stats_router)
 protected.include_router(system_router)
