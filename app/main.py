@@ -13,11 +13,37 @@ from app.core.logging import logger
 from app.core.rate_limit import limiter
 
 
+async def on_startup_register_keys() -> None:
+    """Seed the sanitizer blacklist with currently-configured API keys.
+
+    Runs at FastAPI startup. When Phase B lands and DB `llm_providers`
+    is the source of truth, this seed list will expand to iterate over
+    the configured providers — for now it covers the Phase A-existing
+    env variables.
+
+    The sanitizer's register_sensitive_key is itself idempotent and
+    len-guarded (>= 16 chars), so missing or short env values silently
+    no-op.
+    """
+    from app.providers._sanitize import register_sensitive_key
+
+    # Phase A seed list. Phase B will read this from llm_providers table.
+    # Keep this list small and explicit — one entry per known env name.
+    _PHASE_A_SEED_ENVS = ["ZHIPU_API_KEY"]
+    for env in _PHASE_A_SEED_ENVS:
+        register_sensitive_key(env)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler for startup/shutdown tasks."""
     # Startup: Initialize database
     logger.info("Starting application...")
+
+    # Seed sanitizer blacklist with known env API keys so later exception
+    # messages can redact them even if they leak. Split out as a module-level
+    # function so tests can call it without the full app lifecycle.
+    await on_startup_register_keys()
 
     # Phase 2 production sanity: auth Worker URL must be set unless running
     # in dev (where unit tests accept the default). The JWT verifier will

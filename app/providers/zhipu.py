@@ -13,7 +13,8 @@ from tenacity import (
 
 from app.core.config import settings
 from app.core.constants import EMBEDDING_DIM
-from app.providers.base import ChatMessage, ChatResponse, LLMProvider
+from app.providers.base import ChatMessage, ChatResponse, LLMProvider, ModelInfo
+from app.providers.errors import ProviderUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 _zhipu_semaphore = asyncio.Semaphore(3)
 
 
+# NOTE: `app/providers/openai_compat.py` duplicates this helper + `_rate_limit_aware_wait`
+# verbatim. Keep in sync until `app/providers/_retry.py` consolidates both (follow-up).
 def _is_retryable_http_error(exc: BaseException) -> bool:
     """Return True for transient upstream/network errors worth retrying.
 
@@ -137,11 +140,21 @@ class ZhipuProvider(LLMProvider):
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed(
+        self,
+        texts: list[str],
+        *,
+        model: str | None = None,
+    ) -> list[list[float]]:
         """Generate embeddings for the given texts.
+
+        An empty-string model is treated as unspecified (falls back to the
+        provider default) — pass None explicitly if that is the intent.
 
         Args:
             texts: List of text strings to embed
+            model: Override the configured embedding model. When None
+                falls back to ``self.embedding_model`` (settings default).
 
         Returns:
             List of embedding vectors (dimension determined by EMBEDDING_DIM constant)
@@ -149,6 +162,7 @@ class ZhipuProvider(LLMProvider):
         if not texts:
             return []
 
+        actual_model = model or self.embedding_model
         async with httpx.AsyncClient() as client:
             embeddings: list[list[float]] = []
             for start in range(0, len(texts), self.MAX_EMBED_BATCH):
@@ -158,7 +172,7 @@ class ZhipuProvider(LLMProvider):
                         f"{self.BASE_URL}/embeddings",
                         headers=self._headers(),
                         json={
-                            "model": self.embedding_model,
+                            "model": actual_model,
                             "input": batch,
                             "dimensions": EMBEDDING_DIM,
                         },
@@ -195,7 +209,18 @@ class ZhipuProvider(LLMProvider):
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
     )
-    async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
+    async def chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str | None = None,
+    ) -> ChatResponse:
+        """Issue a chat completion against the Zhipu upstream.
+
+        An empty-string model is treated as unspecified (falls back to the
+        provider default) — pass None explicitly if that is the intent.
+        """
+        actual_model = model or self.chat_model
         base = self.CHAT_BASE_URL or self.BASE_URL
         async with _zhipu_semaphore:
             async with httpx.AsyncClient() as client:
@@ -203,7 +228,7 @@ class ZhipuProvider(LLMProvider):
                     f"{base}/chat/completions",
                     headers=self._headers(),
                     json={
-                        "model": self.chat_model,
+                        "model": actual_model,
                         "messages": [{"role": m.role, "content": m.content} for m in messages],
                     },
                     timeout=_chat_timeout(),
@@ -219,4 +244,53 @@ class ZhipuProvider(LLMProvider):
         return ChatResponse(
             content=content,
             usage=data.get("usage", {}),
+            model=actual_model,  # A5: fill so downstream audit/metrics have truth
         )
+
+    async def list_models(self) -> list[ModelInfo]:
+        """Fetch the Zhipu upstream model list.
+
+        Endpoint: GET {BASE_URL}/models
+
+        Zhipu's response does not tag model kind explicitly, so every
+        model gets ``kind="chat"`` by default. Callers relying on
+        kind-aware filtering (Phase D UI model picker) will need a
+        heuristic refinement later — tracked in A5 follow-up.
+
+        Raises:
+            ProviderUnavailableError: on HTTP 4xx/5xx or transport
+                failure, so the admin API can surface a sanitized
+                reason.
+
+        No automatic retry on 429/5xx is applied (unlike chat/embed): failures
+        are mapped 1:1 to ProviderUnavailableError so the admin "refresh models"
+        button surfaces them immediately. Router/DB caches a successful list,
+        so transient admin-path failures are non-critical.
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{self.BASE_URL}/models",
+                    headers=self._headers(),
+                    timeout=httpx.Timeout(
+                        connect=10.0, read=20.0, write=10.0, pool=10.0
+                    ),
+                )
+                resp.raise_for_status()
+            except (httpx.HTTPStatusError, httpx.TransportError) as e:
+                raise ProviderUnavailableError(
+                    f"zhipu list_models failed: {e}"
+                ) from e
+        data = resp.json()
+        rows = data.get("data") or []
+        return [
+            ModelInfo(
+                id=row["id"],
+                display_name=row["id"],
+                kind="chat",
+                context_window=row.get("context_window"),
+                extra={k: v for k, v in row.items() if k != "id"},
+            )
+            for row in rows
+            if "id" in row
+        ]

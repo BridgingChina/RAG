@@ -290,3 +290,134 @@ async def test_chat_retries_on_pool_timeout(fast_retry_provider):
 
     # Exhaust all attempts -- proves transport errors use the same budget
     assert call_count["n"] == max_attempts
+
+
+# --- A5: list_models + model= kwarg + ChatResponse.model fill ---
+
+
+@pytest.mark.asyncio
+async def test_list_models_parses_response(provider):
+    """list_models() should GET /models and map rows into ModelInfo."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [
+            {"id": "glm-4.7", "object": "model"},
+            {"id": "glm-4-flash", "object": "model"},
+        ]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.get = mock_get
+
+        models = await provider.list_models()
+
+        # Confirm URL shape
+        call_args = mock_get.call_args
+        assert call_args.args[0] == "https://open.bigmodel.cn/api/paas/v4/models"
+
+    assert {m.id for m in models} == {"glm-4.7", "glm-4-flash"}
+    # Zhipu doesn't tag kind → default "chat" is fine for now
+    assert all(m.kind == "chat" for m in models)
+
+
+@pytest.mark.asyncio
+async def test_chat_uses_passed_model(provider):
+    """chat(model='glm-4-custom') should pass that model in the request body
+    and surface it on ChatResponse.model."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "hi"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        resp = await provider.chat(
+            [ChatMessage(role="user", content="hello")], model="glm-4-custom"
+        )
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        assert json_payload["model"] == "glm-4-custom"
+
+    assert resp.model == "glm-4-custom"
+
+
+@pytest.mark.asyncio
+async def test_chat_falls_back_to_self_chat_model_when_model_none(provider):
+    """Without model=, chat() should fall back to self.chat_model
+    (settings.chat_model, default 'glm-4.7')."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "hi"}}],
+        "usage": {},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.chat([ChatMessage(role="user", content="hello")])
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        # should fall back to settings.chat_model (default "glm-4.7")
+        assert json_payload["model"] == provider.chat_model
+
+
+@pytest.mark.asyncio
+async def test_embed_uses_passed_model(provider):
+    """embed(model='embedding-custom') should pass that model in the request
+    body and hit the /embeddings endpoint.
+
+    Symmetric to test_chat_uses_passed_model — locks the kwarg contract so
+    A6's OpenAICompatProvider can't accidentally ignore the passed model.
+    """
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [{"index": 0, "embedding": [0.1] * EMBEDDING_DIM}]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.embed(["hello"], model="embedding-custom")
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        assert json_payload["model"] == "embedding-custom"
+        # Confirm the embeddings endpoint is hit (not chat/completions)
+        assert call_args.args[0].endswith("/embeddings")
+
+
+@pytest.mark.asyncio
+async def test_embed_falls_back_to_self_embedding_model_when_model_none(provider):
+    """Without model=, embed() should fall back to self.embedding_model
+    (settings.embedding_model, default 'embedding-3').
+
+    Symmetric to test_chat_falls_back_to_self_chat_model_when_model_none.
+    """
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [{"index": 0, "embedding": [0.1] * EMBEDDING_DIM}]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.embed(["hello"])
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        # should fall back to settings.embedding_model (default "embedding-3")
+        assert json_payload["model"] == provider.embedding_model

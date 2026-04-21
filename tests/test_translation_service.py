@@ -55,6 +55,11 @@ class _FakeProvider(LLMProvider):
             reply = self.default_content
         return ChatResponse(content=reply, usage={})
 
+    async def list_models(self):
+        # A4 added list_models as an abstract method on LLMProvider. This stub
+        # returns empty to satisfy the ABC without pretending to know models.
+        return []
+
 
 # --- translate_query_zh ---------------------------------------------------
 
