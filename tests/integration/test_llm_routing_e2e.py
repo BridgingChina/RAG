@@ -102,3 +102,85 @@ async def test_chat_for_task_unknown_key_raises():
             "__definitely_not_a_real_task_key__",
             [ChatMessage(role="user", content="ping")],
         )
+
+
+@pytest.mark.asyncio
+async def test_switching_task_route_propagates_to_chat_for_task(monkeypatch):
+    """Whole-pipeline smoke: UI-equivalent PATCH of a task route surfaces
+    on the next :func:`chat_for_task` call after cache invalidation.
+
+    This proves Phase D's admin API actually changes Phase C's runtime
+    routing without a service restart — the connective tissue test.
+    """
+    if not _db_available():
+        pytest.skip("PostgreSQL test DB not available")
+
+    db = SessionLocal()
+    try:
+        row = db.execute(
+            sql_text(
+                "SELECT model_id FROM llm_task_routes "
+                "WHERE task_key = 'qa_generation'"
+            )
+        ).first()
+        if row is None:
+            pytest.skip(
+                "qa_generation task route not seeded (run migrate_db.py)"
+            )
+        original_model = row[0]
+    finally:
+        db.close()
+
+    captured_models: list[str | None] = []
+
+    async def _fake_chat(self, messages, *, model=None):
+        captured_models.append(model)
+        return ChatResponse(content="stub", usage={}, model=model or "")
+
+    monkeypatch.setattr(ZhipuProvider, "chat", _fake_chat)
+
+    # 1. First call — hits the originally seeded model.
+    await chat_for_task(
+        "qa_generation", [ChatMessage(role="user", content="ping")]
+    )
+    assert captured_models[-1] == original_model
+
+    # 2. Simulate admin PATCH: flip qa_generation's model_id.
+    new_model = "glm-4-flash" if original_model != "glm-4-flash" else "glm-4.7"
+    db = SessionLocal()
+    try:
+        db.execute(
+            sql_text(
+                "UPDATE llm_task_routes SET model_id = :m "
+                "WHERE task_key = 'qa_generation'"
+            ),
+            {"m": new_model},
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    # 3. Invalidate the task route cache — exactly what Phase D's PUT does.
+    router.invalidate("qa_generation")
+
+    # 4. Next call should route to the new model.
+    try:
+        await chat_for_task(
+            "qa_generation", [ChatMessage(role="user", content="ping")]
+        )
+        assert captured_models[-1] == new_model
+    finally:
+        # 5. Cleanup — restore the original seed so other tests see a fresh DB.
+        db = SessionLocal()
+        try:
+            db.execute(
+                sql_text(
+                    "UPDATE llm_task_routes SET model_id = :m "
+                    "WHERE task_key = 'qa_generation'"
+                ),
+                {"m": original_model},
+            )
+            db.commit()
+        finally:
+            db.close()
+        router.invalidate("qa_generation")
