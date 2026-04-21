@@ -118,6 +118,39 @@ Markdown → Parse → Chunk → Enrich → Tag → Embed → Store
 - `config/taxonomy.yaml` - 三级知识分类体系
 - `config/facets.yaml` - Facet 枚举值
 
+## LLM 路由 (Phase A–F, 2026-04-21)
+
+Multi-provider + task-level model routing — admins can swap the model powering
+any LLM-consuming task (`qa_generation`, `ingest_tagger`, `translation_qa`, …)
+at runtime via the admin console, without redeploying. Full design lives in
+`docs/plans/2026-04-21-multi-provider-model-routing-design.md`; the summary
+diagram from §3.1:
+
+```
+调用方（tagger.py / generator.py / translation_service.py / ...）
+  │ from app.llm import chat_for_task, embed
+  │ await chat_for_task("ingest_tagger", messages)
+  ▼
+app/llm/router.py  (new)
+  1. 读 llm_task_routes 表 → (provider_id, model_id)
+  2. 读 llm_providers 表   → (kind, base_url, api_key_env, extra_headers, timeout_read)
+  3. ProviderRegistry.get(provider_id) → Provider 实例
+  4. 返回 (provider, model_id) → 调用方做 provider.chat(messages, model=model_id)
+  · 30s TTL threading.Lock 缓存（router 层 + registry 层两级）
+  ▼
+app/providers/  (existing, extended)
+  LLMProvider (ABC) ── embed / chat / list_models
+  ├─ ZhipuProvider         (保留；embedding 永锁；chat 兼容老路径)
+  ├─ OpenAICompatProvider  (new；覆盖 DeepSeek/Moonshot/阿里/OpenRouter/自定义)
+  └─ MiniMaxProvider       (new；特殊响应格式)
+  ▼
+HTTPS → 供应商 API（密钥仅在 _headers() 闭包内从 os.environ[api_key_env] 读出即用即丢）
+```
+
+Embedding stays locked to Zhipu `embedding-3` (1024-d) — the vector space of
+the existing corpus is an architectural invariant; allowing a runtime switch
+would invalidate every row in `chunks.embedding` without a concurrent reindex.
+
 ## 技术选型
 
 | 组件 | 技术 | 理由 |
