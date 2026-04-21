@@ -160,6 +160,33 @@ def test_en_qa_flow_degrades_on_no_evidence():
     assert any(t == "error" for t, _ in events)
 
 
+def test_en_qa_flow_emits_structured_metrics_log(caplog):
+    """Phase 4.F.1: success-path flow emits a `qa.en_metrics` log line with
+    stage timings + cache hit rate, for offline P50/P95 aggregation."""
+    import logging
+
+    zh_chunks = [_make_retrieved_chunk()]
+    chunk_id = zh_chunks[0].chunk_id
+    answer_json = json.dumps({
+        "answer": "Zhaozhou Bridge is a Sui-era stone arch bridge.",
+        "evidence_summaries": [
+            {"chunk_id": str(chunk_id), "text_en": "Sui-era arch."},
+        ],
+    })
+    responses = ["赵州桥", answer_json]
+
+    with caplog.at_level(logging.INFO, logger="app.api.public.v1.qa"):
+        _run_flow(responses=responses, zh_chunks=zh_chunks, en_chunks=[])
+
+    metric_records = [r for r in caplog.records if "qa.en_metrics" in r.getMessage()]
+    assert metric_records, "expected a qa.en_metrics log record on success"
+    msg = metric_records[-1].getMessage()
+    # stage timings + cache counters all present
+    for key in ("query_translate_ms", "retrieval_ms", "generate_ms",
+                "total_ms", "cache_total", "cache_hits"):
+        assert key in msg, f"missing metric {key!r} in log message: {msg}"
+
+
 def test_rrf_merge_retrieved_prefers_zh_weighted_results():
     chunk_a = _make_retrieved_chunk("chunk-A")
     chunk_b = _make_retrieved_chunk("chunk-B")

@@ -337,11 +337,20 @@ async def _run_en_qa_flow(
     ``(event_type, payload)`` tuples the caller should emit, ``degraded`` is
     whether the JSON answer fell back, ``reason`` is the short string code
     when degraded.
+
+    Phase 4.F emits a structured ``qa.en_metrics`` log line at the end with
+    per-stage timings (query_translate / retrieval / generate / total) and
+    the cached_en_summary hit rate, for offline P50/P95 aggregation.
     """
     events: list[tuple[str, dict]] = []
     question_en = body.question
+    # Phase 4.F: per-stage stopwatch. Stored in ms (int) so JSON log lines
+    # are friendly to grep / jq without float-precision nuisance.
+    flow_start = time.monotonic()
+    stage_ms: dict[str, int] = {}
 
     # Step 1 — query translation ∥ English保底 embedding retrieval
+    stage1_start = time.monotonic()
     try:
         zh_query, english_chunks = await asyncio.wait_for(
             asyncio.gather(
@@ -352,16 +361,20 @@ async def _run_en_qa_flow(
             timeout=12,
         )
     except (asyncio.TimeoutError, Exception):
-        logger.exception("en-US translate_query_zh / english保底 failed")
+        stage_ms["query_translate_ms"] = int((time.monotonic() - stage1_start) * 1000)
+        stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
+        logger.exception("qa.en_generation_failed stage=query_translate metrics=%s", stage_ms)
         events.append(("error", {
             "code": "TIMEOUT",
             "message": "Query translation failed; please retry.",
         }))
         return events, True, "query_translation_failed"
+    stage_ms["query_translate_ms"] = int((time.monotonic() - stage1_start) * 1000)
 
     events.append(("translated_query", {"zh": zh_query}))
 
     # Step 2 — Chinese hybrid search on translated query
+    stage2_start = time.monotonic()
     try:
         target_bridge_id, taxonomy_filter = _resolve_context(db, body)
         if not target_bridge_id and not taxonomy_filter:
@@ -381,6 +394,7 @@ async def _run_en_qa_flow(
         zh_result = HybridRetrievalResult(
             anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
         )
+    stage_ms["retrieval_ms"] = int((time.monotonic() - stage2_start) * 1000)
 
     merged = _rrf_merge_retrieved(
         zh_result.all_chunks(),
@@ -391,6 +405,8 @@ async def _run_en_qa_flow(
     )
 
     if not merged:
+        stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
+        logger.info("qa.en_metrics reason=no_evidence metrics=%s", stage_ms)
         events.append(("error", {
             "code": "INSUFFICIENT_EVIDENCE",
             "message": "No relevant evidence found. Try rephrasing.",
@@ -405,13 +421,25 @@ async def _run_en_qa_flow(
         ).scalar()
         for chunk in merged
     }
+    # Phase 4.F.3: cache hit rate — how many merged chunks already have a
+    # cached English summary from a prior run. Target > 70% after warm-up.
+    cache_total = len(cached_by_id)
+    cache_hits = sum(1 for v in cached_by_id.values() if v)
+    stage_ms["cache_total"] = cache_total
+    stage_ms["cache_hits"] = cache_hits
 
+    stage3_start = time.monotonic()
     answer_result = await translate_answer_with_evidence(
         question_en, merged, zhipu_client=provider,
     )
+    stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
     if answer_result.get("degraded"):
         # Degrade to a Chinese answer via existing generator.
-        logger.info("Falling back to Chinese answer (en-US generation degraded)")
+        stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
+        logger.warning(
+            "qa.en_generation_failed stage=translate_answer degraded=1 metrics=%s",
+            stage_ms,
+        )
         try:
             zh_answer_events = await asyncio.wait_for(
                 Generator(provider=provider).generate_streaming(question_en, zh_result),
@@ -466,5 +494,10 @@ async def _run_en_qa_flow(
     # Background: persist evidence summaries so future requests cache-hit.
     if summaries:
         background_tasks.add_task(_persist_en_summaries_in_background, summaries)
+
+    # Phase 4.F: emit the success-path structured metrics line for offline
+    # aggregation (P50 / P95 / P99, cache hit rate, degradation rate).
+    stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
+    logger.info("qa.en_metrics ok=1 metrics=%s", stage_ms)
 
     return events, False, None
