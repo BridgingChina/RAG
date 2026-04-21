@@ -7,8 +7,8 @@ from typing import Callable, Literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.llm import ChatMessage, chat_for_task
 from app.models import Bridge
-from app.providers import ChatMessage, LLMProvider
 
 BindingStatus = Literal["none", "primary", "ambiguous"]
 LinkRole = Literal["primary", "secondary", "candidate"]
@@ -35,7 +35,13 @@ class BridgeLinkingResult:
 
 
 class BridgeLinker:
-    """Chunk-level bridge entity linker for mixed-bridge documents."""
+    """Chunk-level bridge entity linker for mixed-bridge documents.
+
+    Phase C: LLM dispatch goes through :func:`app.llm.chat_for_task` with
+    task_key ``"ingest_bridge_linker"``. No more injected provider.
+    """
+
+    TASK_KEY = "ingest_bridge_linker"
 
     PROMPT_TEMPLATE = """你是桥梁实体链接助手。请根据文本片段判断主桥、次要桥和候选桥。
 
@@ -61,11 +67,9 @@ class BridgeLinker:
 
     def __init__(
         self,
-        provider: LLMProvider,
         min_primary_confidence: float = 0.75,
         enable_auto_bridge_detection: bool = True,
     ):
-        self.provider = provider
         self.min_primary_confidence = min_primary_confidence
         self.enable_auto_bridge_detection = enable_auto_bridge_detection
         self._bridge_by_id: dict[uuid.UUID, Bridge] | None = None
@@ -314,7 +318,7 @@ class BridgeLinker:
             candidates=", ".join(candidates) if candidates else "无",
         )
         messages = [ChatMessage(role="user", content=prompt)]
-        response = await self.provider.chat(messages)
+        response = await chat_for_task(self.TASK_KEY, messages)
 
         try:
             start = response.content.find("{")

@@ -26,12 +26,17 @@ from app.api.v1.schemas.knowledge_point import (
     KeyPointUpdate,
 )
 from app.core.database import get_db
+from app.llm import ChatMessage, chat_for_task
 from app.models import Bridge, Chunk, Flashcard, KnowledgePoint, KnowledgePointKeyPoint, TaxonomyNode
 from app.models.current_user import CurrentUser
-from app.providers import ChatMessage, get_provider
 from app.services.audit_service import AuditService
 from app.services.flashcard_generator import FlashcardBatchGenerator
 from app.services.kp_bridge_service import KnowledgePointBridgeService
+
+# Task keys for routed LLM calls — see app/llm/__init__.py.
+_AUTO_ASSOCIATE_TASK = "content_generation"
+_KEY_POINTS_TASK = "content_generation"
+_SYNC_BRIDGES_TASK = "content_generation"
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +176,11 @@ async def auto_associate_chunks(
         '{"matches": {"1": "yes", "2": "no", ...}}'
     )
 
-    provider = get_provider()
     try:
-        response = await provider.chat([ChatMessage(role="user", content=prompt)])
+        response = await chat_for_task(
+            _AUTO_ASSOCIATE_TASK,
+            [ChatMessage(role="user", content=prompt)],
+        )
     except Exception as e:
         logger.error("LLM call failed for auto-associate KP %s: %s", kp_id, e)
         raise HTTPException(
@@ -240,10 +247,9 @@ async def sync_bridges(
         raise HTTPException(status_code=404, detail="Knowledge point not found")
 
     svc = KnowledgePointBridgeService()
-    provider = get_provider() if use_llm else None
 
     try:
-        created = await svc.sync_from_chunks(db, kp_id, provider=provider)
+        created = await svc.sync_from_chunks(db, kp_id, use_llm=use_llm)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -356,10 +362,9 @@ async def generate_flashcards(
         raise HTTPException(status_code=404, detail="Knowledge point not found")
 
     generator = FlashcardBatchGenerator()
-    provider = get_provider()
 
     try:
-        cards = await generator.generate_for_kp(db, kp_id, provider)
+        cards = await generator.generate_for_kp(db, kp_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -558,11 +563,11 @@ async def generate_key_points(
         '{"key_points": [{"summary": "...", "explanation": "...", "citations": [1, 2]}]}'
     )
 
-    provider = get_provider()
     try:
-        response = await provider.chat([
-            ChatMessage(role="user", content=prompt),
-        ])
+        response = await chat_for_task(
+            _KEY_POINTS_TASK,
+            [ChatMessage(role="user", content=prompt)],
+        )
     except Exception as e:
         logger.error("LLM call failed for KP %s: %s", kp_id, e)
         raise HTTPException(status_code=502, detail="LLM service unavailable. Please try again later.")

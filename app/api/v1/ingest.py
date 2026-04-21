@@ -114,16 +114,15 @@ async def ingest(
         )
 
     # Initialize services
-    context_enricher = ContextEnricher(provider=provider)
+    context_enricher = ContextEnricher()
     chunker = SemanticChunker(
         provider=provider,
         min_chunk_size=200,
         max_chunk_size=500,
         similarity_threshold=0.5,
     )
-    tagger = MetadataTagger(provider=provider, taxonomy=load_taxonomy_snapshot(db))
+    tagger = MetadataTagger(taxonomy=load_taxonomy_snapshot(db))
     bridge_linker = BridgeLinker(
-        provider=provider,
         min_primary_confidence=body.min_primary_confidence,
         enable_auto_bridge_detection=body.enable_auto_bridge_detection,
     )

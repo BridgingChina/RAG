@@ -2,7 +2,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from app.providers import ChatMessage, LLMProvider
+from app.llm import ChatMessage, chat_for_task
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,13 @@ class ContextResult:
 
 
 class ContextEnricher:
-    """Generate contextual text for chunks to improve embedding quality."""
+    """Generate contextual text for chunks to improve embedding quality.
+
+    Phase C: LLM dispatch goes through :func:`app.llm.chat_for_task` with
+    task_key ``"ingest_context_enricher"``. No more injected provider.
+    """
+
+    TASK_KEY = "ingest_context_enricher"
 
     PROMPT_TEMPLATE = """你是桥梁知识整理助手。请为以下文本片段生成一段上下文描述（80-160字）。
 
@@ -40,8 +46,11 @@ class ContextEnricher:
 3. 如无法确定指代对象，写 "unknown"
 """
 
-    def __init__(self, provider: LLMProvider):
-        self.provider = provider
+    def __init__(self) -> None:
+        # No constructor state for now — the service is stateless. Kept as a
+        # class (rather than a bare function) so future config (retry policy,
+        # prompt overrides) has a natural home without churn at call sites.
+        pass
 
     async def enrich(
         self,
@@ -65,7 +74,7 @@ class ContextEnricher:
         )
 
         messages = [ChatMessage(role="user", content=prompt)]
-        response = await self.provider.chat(messages)
+        response = await chat_for_task(self.TASK_KEY, messages)
 
         return self._parse_response(response.content)
 

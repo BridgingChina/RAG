@@ -1,4 +1,9 @@
-"""Service for managing knowledge_point ↔ bridge associations."""
+"""Service for managing knowledge_point ↔ bridge associations.
+
+Phase C: when ``use_llm=True`` the service dispatches relevance-note
+generation through :func:`app.llm.chat_for_task` with task_key
+``"content_generation"`` — shared with flashcard / key-point generation.
+"""
 import json
 import logging
 from uuid import UUID
@@ -6,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 
+from app.llm import ChatMessage, chat_for_task
 from app.models import (
     Bridge,
     Chunk,
@@ -17,6 +23,8 @@ from app.models import (
 
 logger = logging.getLogger(__name__)
 
+_TASK_KEY = "content_generation"
+
 
 class KnowledgePointBridgeService:
     """Manage KnowledgePoint-Bridge associations."""
@@ -25,7 +33,7 @@ class KnowledgePointBridgeService:
         self,
         db: Session,
         knowledge_point_id: UUID,
-        provider=None,
+        use_llm: bool = False,
     ) -> list[KnowledgePointBridge]:
         """Auto-derive KP-bridge associations from chunk taxonomy tags.
 
@@ -65,10 +73,8 @@ class KnowledgePointBridgeService:
         notes: dict[UUID, str] = {}
         default_note = f"与{kp.name}相关"
 
-        if provider and bridges:
+        if use_llm and bridges:
             try:
-                from app.providers import ChatMessage
-
                 bridge_names = [b.name for b in bridges]
                 prompt = (
                     f"为知识点「{kp.name}」生成每座关联桥梁的一句话关联说明（20-40字）。\n\n"
@@ -78,9 +84,10 @@ class KnowledgePointBridgeService:
                     '输出严格的 JSON 格式（不要输出任何其他内容）：\n'
                     '{"notes": {"桥梁名称": "关联说明", ...}}'
                 )
-                response = await provider.chat([
-                    ChatMessage(role="user", content=prompt),
-                ])
+                response = await chat_for_task(
+                    _TASK_KEY,
+                    [ChatMessage(role="user", content=prompt)],
+                )
                 # Parse response
                 text = response.content.strip()
                 if text.startswith("```"):

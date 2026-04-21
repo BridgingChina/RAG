@@ -57,8 +57,8 @@ async def ask(
     Returns confidence assessment and evidence groups.
     """
     retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
-    generator = Generator(provider=provider)
-    facet_extractor = FacetExtractor(provider=provider)
+    generator = Generator()
+    facet_extractor = FacetExtractor()
 
     degraded: list[str] = []
     want_debug = request.debug

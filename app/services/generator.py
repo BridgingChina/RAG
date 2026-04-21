@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal, Optional, TypeAlias
 
-from app.providers import ChatMessage, LLMProvider
+from app.llm import ChatMessage, chat_for_task
 from app.services.hybrid_retriever import HybridRetrievalResult
 
 logger = logging.getLogger(__name__)
@@ -40,8 +40,17 @@ class GenerationResult:
 
 
 class Generator:
-    def __init__(self, provider: LLMProvider):
-        self.provider = provider
+    """Answer generator — Phase C routes LLM via ``chat_for_task('qa_generation')``.
+
+    No injected provider — the task router picks the backend. Instantiation is
+    still a class (rather than module-level functions) so future state (per-
+    request retry budget, streaming cursor) has a natural home.
+    """
+
+    TASK_KEY = "qa_generation"
+
+    def __init__(self) -> None:
+        pass
 
     async def generate_v2(
         self,
@@ -85,7 +94,7 @@ class Generator:
 """
 
         messages = [ChatMessage(role="user", content=prompt)]
-        response = await self.provider.chat(messages)
+        response = await chat_for_task(self.TASK_KEY, messages)
 
         # Build citations and sources from all chunks
         citations = []
@@ -220,7 +229,7 @@ class Generator:
 - 置信度按证据充分程度判断"""
 
         messages = [ChatMessage(role="user", content=prompt)]
-        response = await self.provider.chat(messages)
+        response = await chat_for_task(self.TASK_KEY, messages)
 
         if not response.content:
             logger.warning("LLM returned empty content for streaming QA")

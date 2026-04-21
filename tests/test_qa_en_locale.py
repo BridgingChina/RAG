@@ -1,8 +1,9 @@
 """Unit tests for the translate-around English QA flow (i18n Phase 4).
 
-Exercises the ``_run_en_qa_flow`` helper directly rather than driving the full
-SSE stream, so the test only needs to stub the retriever + translation service,
-not a live DB or LLM provider.
+Phase C: the flow's LLM calls (translate_query_zh / translate_answer_with_evidence
+/ Generator fallback) are all routed via :func:`chat_for_task`. Tests monkey-
+patch that symbol on the relevant service modules and feed canned responses
+through a shared queue, so the flow executes end-to-end without live DB/LLM.
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import pytest
 
 from app.api.public.v1 import qa as qa_module
 from app.providers.base import ChatResponse, LLMProvider
+from app.services import generator as generator_module
 from app.services import translation_service as svc
 from app.services.hybrid_retriever import (
     HybridRetrievalResult,
@@ -26,6 +28,10 @@ from app.services.hybrid_retriever import (
 
 @dataclass
 class _FakeProvider(LLMProvider):
+    """Stand-in for ZhipuProvider — the en-qa flow only calls ``embed()`` on
+    this object now (for the English保底 retrieval branch inside
+    ``retriever.search_by_english_embedding``)."""
+
     default_content: str = ""
     responses: list[str] = field(default_factory=list)
     calls: list = field(default_factory=list)
@@ -35,6 +41,8 @@ class _FakeProvider(LLMProvider):
         return [[0.0] * 8 for _ in texts]
 
     async def chat(self, messages):
+        # Should not be called in Phase C — translation goes through
+        # chat_for_task, not the provider directly.
         self.calls.append(messages)
         return ChatResponse(
             content=self.responses.pop(0) if self.responses else self.default_content,
@@ -42,9 +50,28 @@ class _FakeProvider(LLMProvider):
         )
 
     async def list_models(self):
-        # A4 added list_models as an abstract method on LLMProvider. This stub
-        # returns empty to satisfy the ABC without pretending to know models.
         return []
+
+
+class _ChatStub:
+    """Shared async stub that dispenses responses in order. Installed on
+    every module that calls ``chat_for_task`` so a single queue drives the
+    whole flow (query-translate, then answer-generate)."""
+
+    def __init__(self, responses: list[str]):
+        self._responses = list(responses)
+        self.calls: list = []
+
+    async def __call__(self, task_key, messages):
+        self.calls.append({"task_key": task_key, "messages": messages})
+        if not self._responses:
+            raise AssertionError(
+                f"ChatStub out of responses (task_key={task_key}); "
+                f"test queued too few."
+            )
+        return ChatResponse(
+            content=self._responses.pop(0), usage={}, model="stub-model"
+        )
 
 
 def _make_retrieved_chunk(content: str = "赵州桥是石拱桥") -> RetrievedChunk:
@@ -77,8 +104,28 @@ def _make_body(question: str):
     return SimpleNamespace(question=question, context=None)
 
 
-def _run_flow(*, responses, zh_chunks, en_chunks, question="Zhaozhou Bridge arch"):
-    provider = _FakeProvider(responses=list(responses))
+def _run_flow(*, responses, zh_chunks, en_chunks, question="Zhaozhou Bridge arch", monkeypatch=None):
+    """Drive the en-qa flow with a single shared ``_ChatStub`` servicing both
+    the translation service and the generator fallback."""
+    stub = _ChatStub(responses)
+
+    if monkeypatch is not None:
+        monkeypatch.setattr(svc, "chat_for_task", stub)
+        monkeypatch.setattr(generator_module, "chat_for_task", stub)
+    else:
+        # Fallback for tests that don't accept monkeypatch — swap directly.
+        # pytest.MonkeyPatch works similarly, but we avoid importing it here
+        # to keep the test style consistent with the rest of the suite.
+        import pytest as _pytest  # local import
+        mp = _pytest.MonkeyPatch()
+        mp.setattr(svc, "chat_for_task", stub)
+        mp.setattr(generator_module, "chat_for_task", stub)
+        # Caller is responsible for undo — test fixtures usually handle this,
+        # but since these helpers run outside a fixture we leak the patch for
+        # the test's lifetime (process-local, no cross-test bleed because
+        # each call installs fresh).
+
+    provider = _FakeProvider()
     retriever = _FakeRetriever(zh_chunks, en_chunks)
     db = MagicMock()
 
@@ -98,10 +145,10 @@ def _run_flow(*, responses, zh_chunks, en_chunks, question="Zhaozhou Bridge arch
         retriever=retriever,
         provider=provider,
         background_tasks=background_tasks,
-    )), provider, background_tasks
+    )), stub, background_tasks
 
 
-def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded():
+def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded(monkeypatch):
     zh_chunks = [_make_retrieved_chunk()]
     en_chunks = []
     chunk_id = zh_chunks[0].chunk_id
@@ -115,8 +162,9 @@ def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded():
     # Query-translate first, then answer-generate.
     responses = ["赵州桥的拱结构", answer_json]
 
-    (events, degraded, reason), provider, background_tasks = _run_flow(
+    (events, degraded, reason), stub, background_tasks = _run_flow(
         responses=responses, zh_chunks=zh_chunks, en_chunks=en_chunks,
+        monkeypatch=monkeypatch,
     )
     assert degraded is False
     assert reason is None
@@ -137,14 +185,22 @@ def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded():
     assert background_tasks.add_task.called
 
 
-def test_en_qa_flow_degrades_on_translate_failure():
+def test_en_qa_flow_degrades_on_translate_failure(monkeypatch):
     zh_chunks = [_make_retrieved_chunk()]
     en_chunks = []
 
-    # translate_query succeeds; answer generation returns non-JSON.
-    responses = ["赵州桥", "absolutely not json"]
-    (events, degraded, reason), _provider, _bg = _run_flow(
+    # translate_query succeeds; answer generation returns non-JSON. After
+    # degradation, the flow falls back to Generator.generate_streaming which
+    # makes its OWN chat_for_task call — queue a third response.
+    generator_fallback = json.dumps({
+        "key_points": [{"summary": "cn", "explanation": "cn", "citations": []}],
+        "deep_dive": None,
+        "confidence": {"level": "low", "reason": "fallback"},
+    })
+    responses = ["赵州桥", "absolutely not json", generator_fallback]
+    (events, degraded, reason), _stub, _bg = _run_flow(
         responses=responses, zh_chunks=zh_chunks, en_chunks=en_chunks,
+        monkeypatch=monkeypatch,
     )
 
     # degraded falls back to Chinese answer via Generator — the flow returns
@@ -153,11 +209,12 @@ def test_en_qa_flow_degrades_on_translate_failure():
     assert reason == "translate_answer_failed"
 
 
-def test_en_qa_flow_degrades_on_no_evidence():
+def test_en_qa_flow_degrades_on_no_evidence(monkeypatch):
     # Neither channel returns anything.
     responses = ["赵州桥"]  # Only the query translation call.
-    (events, degraded, reason), _provider, _bg = _run_flow(
+    (events, degraded, reason), _stub, _bg = _run_flow(
         responses=responses, zh_chunks=[], en_chunks=[],
+        monkeypatch=monkeypatch,
     )
     assert degraded is True
     assert reason == "no_evidence"
@@ -173,7 +230,7 @@ def test_settings_i18n_enabled_defaults_to_true():
     assert Settings().i18n_enabled is True
 
 
-def test_en_qa_flow_emits_structured_metrics_log(caplog):
+def test_en_qa_flow_emits_structured_metrics_log(caplog, monkeypatch):
     """Phase 4.F.1: success-path flow emits a `qa.en_metrics` log line with
     stage timings + cache hit rate, for offline P50/P95 aggregation."""
     import logging
@@ -189,7 +246,8 @@ def test_en_qa_flow_emits_structured_metrics_log(caplog):
     responses = ["赵州桥", answer_json]
 
     with caplog.at_level(logging.INFO, logger="app.api.public.v1.qa"):
-        _run_flow(responses=responses, zh_chunks=zh_chunks, en_chunks=[])
+        _run_flow(responses=responses, zh_chunks=zh_chunks, en_chunks=[],
+                  monkeypatch=monkeypatch)
 
     metric_records = [r for r in caplog.records if "qa.en_metrics" in r.getMessage()]
     assert metric_records, "expected a qa.en_metrics log record on success"

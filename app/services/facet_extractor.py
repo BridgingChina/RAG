@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 
 from app.core.constants import load_facets
-from app.providers import ChatMessage, LLMProvider
+from app.llm import ChatMessage, chat_for_task
 
 
 @dataclass
@@ -34,7 +34,17 @@ class Facet:
 
 
 class FacetExtractor:
-    """Extract query facets using LLM with enum constraints."""
+    """Extract query facets using LLM with enum constraints.
+
+    Phase C: routes via :func:`chat_for_task` with task_key
+    ``"qa_facet_extraction"``. The previous implementation monkey-patched
+    ``provider.chat_model = settings.qa_chat_model`` on the shared provider
+    instance from ``qa.py:180`` — this was a cross-request race (concurrent
+    requests would stomp on each other's model setting). Routing via task_key
+    makes the model assignment atomic on each call, eliminating the race.
+    """
+
+    TASK_KEY = "qa_facet_extraction"
 
     PROMPT_TEMPLATE = """分析以下关于桥梁的问题，提取涉及的桥梁属性。
 
@@ -57,8 +67,8 @@ class FacetExtractor:
 }}
 """
 
-    def __init__(self, provider: LLMProvider):
-        self.provider = provider
+    def __init__(self) -> None:
+        pass
 
     async def extract(self, query: str) -> Facet:
         """Extract facets from a query."""
@@ -73,7 +83,7 @@ class FacetExtractor:
         )
 
         messages = [ChatMessage(role="user", content=prompt)]
-        response = await self.provider.chat(messages)
+        response = await chat_for_task(self.TASK_KEY, messages)
 
         return self._parse_response(response.content)
 
