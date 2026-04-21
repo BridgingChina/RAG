@@ -10,6 +10,7 @@ from app.models.ingest_task import IngestTask
 from app.models.knowledge_point import KnowledgePoint
 from app.models.knowledge_point_bridge import KnowledgePointBridge
 from app.models.knowledge_point_key_point import KnowledgePointKeyPoint
+from app.models.llm import LLMProviderModel, LLMProviderRow, LLMTaskRoute
 from app.models.review_progress import ReviewProgress
 from app.models.schema_version import SchemaVersion
 from app.models.source import Source
@@ -30,6 +31,9 @@ __all__ = [
     "KnowledgePoint",
     "KnowledgePointBridge",
     "KnowledgePointKeyPoint",
+    "LLMProviderModel",
+    "LLMProviderRow",
+    "LLMTaskRoute",
     "ReviewProgress",
     "SchemaVersion",
     "Source",
