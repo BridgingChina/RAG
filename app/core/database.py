@@ -17,10 +17,14 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
+# v13 (2026-04-21): Multi-provider + task-level model routing — adds
+# llm_providers / llm_provider_models / llm_task_routes plus a Zhipu seed so
+# existing LLM call sites keep working after Phase C migrates them to
+# ``chat_for_task(task_key)``.
 # v12 (2026-04-21): i18n Phase 3 — *_en translation columns on bridges /
 # knowledge_points / flashcards / taxonomy_nodes, chunks.cached_en_summary for
 # Phase 4 translate-around evidence cache, and translation_reviews审校 table.
-LATEST_SCHEMA_VERSION = 12
+LATEST_SCHEMA_VERSION = 13
 
 
 def get_db():
@@ -169,6 +173,19 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         "view_history": {
             "id", "user_id", "target_id", "target_type", "viewed_at",
         },
+        # v13 LLM routing tables
+        "llm_providers": {
+            "id", "name", "kind", "base_url", "api_key_env", "extra_headers",
+            "enabled", "timeout_read", "last_tested_at", "last_test_ok",
+            "last_test_error", "created_at", "updated_at",
+        },
+        "llm_provider_models": {
+            "id", "provider_id", "model_id", "display_name", "kind",
+            "context_window", "extra", "fetched_at",
+        },
+        "llm_task_routes": {
+            "task_key", "provider_id", "model_id", "updated_at", "updated_by",
+        },
     }
 
     required_tables = sorted(required_schema.keys())
@@ -258,6 +275,47 @@ def verify_schema_compatibility(engine: Engine, *, conn: Connection | None = Non
         )
 
 
+def _seed_llm_routes(conn: Connection) -> None:
+    """Seed the Zhipu provider + 7 default task routes (schema v13).
+
+    Idempotent — safe to run on an already-seeded database. Mirrors the seed
+    block in ``scripts/migrate_db.py::migrate_v12_to_v13`` so v0 fresh installs
+    and v12→v13 migrations converge on the same initial routing config.
+    """
+    zhipu_row = conn.execute(text("""
+        INSERT INTO llm_providers (name, kind, base_url, api_key_env)
+        VALUES ('智谱 AI（默认）', 'zhipu',
+                'https://open.bigmodel.cn/api/paas/v4', 'ZHIPU_API_KEY')
+        ON CONFLICT (name) DO NOTHING
+        RETURNING id
+    """)).fetchone()
+    if zhipu_row is None:
+        zhipu_id = conn.execute(text(
+            "SELECT id FROM llm_providers WHERE name = '智谱 AI（默认）'"
+        )).scalar()
+    else:
+        zhipu_id = zhipu_row[0]
+
+    seed_routes = [
+        ("qa_generation",           "glm-4.7"),
+        ("qa_facet_extraction",     "glm-4-flash"),
+        ("ingest_tagger",           "glm-4.7"),
+        ("ingest_context_enricher", "glm-4.7"),
+        ("ingest_bridge_linker",    "glm-4.7"),
+        ("content_generation",      "glm-4.7"),
+        ("translation",             "glm-4.7"),
+    ]
+    for task_key, model_id in seed_routes:
+        conn.execute(
+            text(
+                "INSERT INTO llm_task_routes (task_key, provider_id, model_id) "
+                "VALUES (:task_key, :pid, :model_id) "
+                "ON CONFLICT (task_key) DO NOTHING"
+            ),
+            {"task_key": task_key, "pid": zhipu_id, "model_id": model_id},
+        )
+
+
 def _seed_taxonomy_if_empty(conn: Connection) -> None:
     """Seed taxonomy_nodes from config/taxonomy.yaml if table is empty."""
     result = conn.execute(text("SELECT COUNT(*) FROM taxonomy_nodes"))
@@ -338,6 +396,9 @@ def init_database() -> None:
 
             # Seed taxonomy_nodes from YAML if empty
             _seed_taxonomy_if_empty(conn)
+
+            # Seed LLM routing config (Zhipu provider + 7 task routes).
+            _seed_llm_routes(conn)
 
             # Verify schema compatibility before stamping version
             verify_schema_compatibility(engine, conn=conn)

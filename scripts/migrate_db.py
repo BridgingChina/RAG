@@ -435,6 +435,119 @@ def migrate_v11_to_v12(conn) -> None:
     )
 
 
+def migrate_v12_to_v13(conn) -> None:
+    """LLM routing — create llm_providers, llm_provider_models, llm_task_routes.
+
+    Seeds the Zhipu provider + 7 task routes pointing at glm-4.7 / glm-4-flash
+    so all existing LLM call sites keep working identically after the upgrade.
+    Phase C later migrates call sites to ``chat_for_task(task_key)``.
+
+    See ``docs/plans/2026-04-21-multi-provider-model-routing-design.md`` §5.
+    """
+    # 1. llm_providers — provider metadata. api_key is NEVER stored here.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS llm_providers (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name            VARCHAR(64)  NOT NULL UNIQUE,
+            kind            VARCHAR(32)  NOT NULL,
+            base_url        VARCHAR(512) NOT NULL,
+            api_key_env     VARCHAR(64)  NOT NULL,
+            extra_headers   JSONB        NOT NULL DEFAULT '{}'::jsonb,
+            enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
+            timeout_read    REAL         NOT NULL DEFAULT 90.0,
+            last_tested_at  TIMESTAMPTZ,
+            last_test_ok    BOOLEAN,
+            last_test_error TEXT,
+            created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+            updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+            CONSTRAINT ck_llm_providers_kind
+                CHECK (kind IN ('zhipu', 'openai_compat', 'minimax'))
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_llm_providers_enabled "
+        "ON llm_providers(enabled) WHERE enabled = TRUE"
+    ))
+
+    # 2. llm_provider_models — list_models() cache, refreshed on "test" button.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS llm_provider_models (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider_id     UUID NOT NULL REFERENCES llm_providers(id) ON DELETE CASCADE,
+            model_id        VARCHAR(128) NOT NULL,
+            display_name    VARCHAR(256) NOT NULL,
+            kind            VARCHAR(32)  NOT NULL,
+            context_window  INTEGER,
+            extra           JSONB        NOT NULL DEFAULT '{}'::jsonb,
+            fetched_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+            CONSTRAINT uq_llm_provider_models UNIQUE (provider_id, model_id)
+        )
+    """))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_llm_provider_models_provider "
+        "ON llm_provider_models(provider_id)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_llm_provider_models_kind "
+        "ON llm_provider_models(provider_id, kind)"
+    ))
+
+    # 3. llm_task_routes — task_key → (provider, model) runtime routing.
+    # FK to llm_providers is RESTRICT: a provider being used by any task
+    # cannot be deleted. No FK on model_id — a provider temporarily
+    # removing a model must not orphan-cascade-kill the route config.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS llm_task_routes (
+            task_key        VARCHAR(64)  PRIMARY KEY,
+            provider_id     UUID NOT NULL REFERENCES llm_providers(id) ON DELETE RESTRICT,
+            model_id        VARCHAR(128) NOT NULL,
+            updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+            updated_by      UUID
+        )
+    """))
+
+    # 4. Seed: register the Zhipu provider and 7 task routes mirroring
+    # Phase-A-era settings.chat_model / qa_chat_model defaults.
+    zhipu_row = conn.execute(text("""
+        INSERT INTO llm_providers (name, kind, base_url, api_key_env)
+        VALUES ('智谱 AI（默认）', 'zhipu',
+                'https://open.bigmodel.cn/api/paas/v4', 'ZHIPU_API_KEY')
+        ON CONFLICT (name) DO NOTHING
+        RETURNING id
+    """)).fetchone()
+    if zhipu_row is None:
+        zhipu_id = conn.execute(text(
+            "SELECT id FROM llm_providers WHERE name = '智谱 AI（默认）'"
+        )).scalar()
+    else:
+        zhipu_id = zhipu_row[0]
+
+    seed_routes = [
+        ("qa_generation",           "glm-4.7"),
+        ("qa_facet_extraction",     "glm-4-flash"),
+        ("ingest_tagger",           "glm-4.7"),
+        ("ingest_context_enricher", "glm-4.7"),
+        ("ingest_bridge_linker",    "glm-4.7"),
+        ("content_generation",      "glm-4.7"),
+        ("translation",             "glm-4.7"),
+    ]
+    for task_key, model_id in seed_routes:
+        conn.execute(
+            text(
+                "INSERT INTO llm_task_routes (task_key, provider_id, model_id) "
+                "VALUES (:task_key, :pid, :model_id) "
+                "ON CONFLICT (task_key) DO NOTHING"
+            ),
+            {"task_key": task_key, "pid": zhipu_id, "model_id": model_id},
+        )
+
+    set_schema_version(
+        engine, 13,
+        "LLM routing: add llm_providers + llm_provider_models + llm_task_routes with Zhipu seed",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -447,6 +560,7 @@ MIGRATIONS = {
     9: migrate_v9_to_v10,
     10: migrate_v10_to_v11,
     11: migrate_v11_to_v12,
+    12: migrate_v12_to_v13,
 }
 
 

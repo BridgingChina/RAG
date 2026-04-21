@@ -120,6 +120,9 @@ class TestVerifySchemaCompatibility:
             "favorites",
             "review_progress",
             "view_history",
+            "llm_providers",
+            "llm_provider_models",
+            "llm_task_routes",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -278,6 +281,39 @@ class TestVerifySchemaCompatibility:
                 "target_type",
                 "target_id",
                 "viewed_at",
+            },
+            # v13 LLM routing tables
+            "llm_providers": {
+                "id",
+                "name",
+                "kind",
+                "base_url",
+                "api_key_env",
+                "extra_headers",
+                "enabled",
+                "timeout_read",
+                "last_tested_at",
+                "last_test_ok",
+                "last_test_error",
+                "created_at",
+                "updated_at",
+            },
+            "llm_provider_models": {
+                "id",
+                "provider_id",
+                "model_id",
+                "display_name",
+                "kind",
+                "context_window",
+                "extra",
+                "fetched_at",
+            },
+            "llm_task_routes": {
+                "task_key",
+                "provider_id",
+                "model_id",
+                "updated_at",
+                "updated_by",
             },
         }
 
@@ -328,6 +364,9 @@ class TestVerifySchemaCompatibility:
             "favorites",
             "review_progress",
             "view_history",
+            "llm_providers",
+            "llm_provider_models",
+            "llm_task_routes",
         ]
         mock_tables_result.scalars.return_value.all.return_value = required_tables
 
@@ -486,6 +525,39 @@ class TestVerifySchemaCompatibility:
                 "target_type",
                 "target_id",
                 "viewed_at",
+            },
+            # v13 LLM routing tables
+            "llm_providers": {
+                "id",
+                "name",
+                "kind",
+                "base_url",
+                "api_key_env",
+                "extra_headers",
+                "enabled",
+                "timeout_read",
+                "last_tested_at",
+                "last_test_ok",
+                "last_test_error",
+                "created_at",
+                "updated_at",
+            },
+            "llm_provider_models": {
+                "id",
+                "provider_id",
+                "model_id",
+                "display_name",
+                "kind",
+                "context_window",
+                "extra",
+                "fetched_at",
+            },
+            "llm_task_routes": {
+                "task_key",
+                "provider_id",
+                "model_id",
+                "updated_at",
+                "updated_by",
             },
         }
         mock_columns_result.all.return_value = [

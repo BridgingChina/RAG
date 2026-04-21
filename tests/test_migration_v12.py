@@ -12,13 +12,6 @@ from app.core.database import LATEST_SCHEMA_VERSION
 from scripts import migrate_db
 
 
-def test_latest_schema_version_is_12():
-    """Pinning this — future migrations must bump ``LATEST_SCHEMA_VERSION``
-    and add a ``migrate_vN_to_vN+1`` entry to :data:`migrate_db.MIGRATIONS`.
-    """
-    assert LATEST_SCHEMA_VERSION == 12
-
-
 def test_v11_to_v12_migration_registered():
     """The migrate_db MIGRATIONS dict must have an entry for every prior
     version."""

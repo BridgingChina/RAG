@@ -56,8 +56,15 @@ def reset_db(seed: bool = False, force: bool = False) -> None:
     print("Tables created.")
 
     print("Stamping schema version...")
-    from app.core.database import LATEST_SCHEMA_VERSION, set_schema_version
+    from app.core.database import (
+        LATEST_SCHEMA_VERSION,
+        _seed_llm_routes,
+        set_schema_version,
+    )
     with engine.connect() as conn:
+        # Seed LLM routing config (Zhipu provider + 7 task routes) so a
+        # post-reset environment can immediately serve LLM traffic.
+        _seed_llm_routes(conn)
         set_schema_version(engine, LATEST_SCHEMA_VERSION, "Clean rebuild via reset_db.py", conn=conn)
         conn.commit()
     print(f"Schema version set to {LATEST_SCHEMA_VERSION}.")
