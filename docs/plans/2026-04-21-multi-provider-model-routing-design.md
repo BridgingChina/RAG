@@ -4,7 +4,7 @@
 - **作者**：Bridge RAG team（brainstorming 协作产出）
 - **状态**：Draft（待进入 writing-plans 出实施计划）
 - **关联仓库**：`RAG/`（FastAPI 后端 + `RAG/web/` 管理后台）
-- **Schema 版本**：v11 → v12
+- **Schema 版本**：v12 → v13
 
 ---
 
@@ -165,7 +165,7 @@ def resolve_api_key(env_name: str) -> str:
 
 ---
 
-## 5 · DB Schema (v12)
+## 5 · DB Schema (v13)
 
 ### 5.1 三张新表
 
@@ -226,11 +226,11 @@ CREATE TABLE llm_task_routes (
 
 Postgres ENUM 加值要 `ALTER TYPE`，VARCHAR + CHECK 只要 `ALTER TABLE ... DROP/ADD CONSTRAINT`，迭代成本更低。
 
-### 5.4 7 个任务 + v12 迁移 seed
+### 5.4 7 个任务 + v13 迁移 seed
 
 ```python
-# app/scripts/migrations/v12_multi_provider.py
-def migrate_v11_to_v12(conn):
+# app/scripts/migrations/v13_multi_provider.py
+def migrate_v12_to_v13(conn):
     conn.execute(CREATE_LLM_PROVIDERS_SQL)
     conn.execute(CREATE_LLM_PROVIDER_MODELS_SQL)
     conn.execute(CREATE_LLM_TASK_ROUTES_SQL)
@@ -445,7 +445,7 @@ class TaskRouteNotFoundError(ProviderError):         # 500 (bug)
 
 ## 11 · 测试策略（按优先级）
 
-1. **迁移测试**（最高 ROI）—— v11→v12 后 seed 正确、所有路由指向智谱、7 task_keys 齐全
+1. **迁移测试**（最高 ROI）—— v12→v13 后 seed 正确、所有路由指向智谱、7 task_keys 齐全
 2. **Provider ABC 契约测试** —— 所有 Provider 的 `chat()` 必须接 `model=` keyword-only
 3. **`sanitize_error` 测试** —— 注册密钥后异常消息里看不见明文
 4. **路由缓存 TTL 测试** —— 改 DB 后 30s 内命中旧缓存、31s 后命中新值
@@ -470,7 +470,7 @@ class TaskRouteNotFoundError(ProviderError):         # 500 (bug)
 ## 13 · 文档更新（DoD）
 
 - `CLAUDE.md` Gotchas 新增：**禁止 `provider.chat_model = ...` 单例赋值 → 必须走 `chat_for_task(task_key)`**
-- `CLAUDE.md` schema 版本升 v12 + 三表简述
+- `CLAUDE.md` schema 版本升 v13 + 三表简述
 - `docs/architecture.md` 加 §3.1 架构图
 
 ---

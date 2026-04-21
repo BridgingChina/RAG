@@ -4,7 +4,7 @@
 
 **Goal:** Give Bridge RAG a multi-LLM-provider adapter layer with per-task (provider, model) routing that admins can reconfigure from the web console — without ever exposing API keys to the database, HTTP responses, or frontend.
 
-**Architecture:** Thin provider abstraction (3 subclasses) + DB-backed routing table (v12, 3 new tables) + admin REST API + React UI. Keys stay in env vars only. See design doc: `docs/plans/2026-04-21-multi-provider-model-routing-design.md` (commit `7b027e2`).
+**Architecture:** Thin provider abstraction (3 subclasses) + DB-backed routing table (v13, 3 new tables) + admin REST API + React UI. Keys stay in env vars only. See design doc: `docs/plans/2026-04-21-multi-provider-model-routing-design.md` (commit `7b027e2`).
 
 **Tech Stack:** Python 3.11 + FastAPI + SQLAlchemy + PostgreSQL + pgvector (backend); Vite + React 19 + TanStack Query + shadcn/ui (admin console); pytest + vitest (tests).
 
@@ -17,7 +17,7 @@
 | Phase | Scope | Risk | Ships | PR depends on |
 |---|---|---|---|---|
 | **A** | Provider ABC + 3 concrete providers + sanitizer + config | 0 user impact (pure additions) | A-only | — |
-| **B** | DB schema v12 + migration + seed | Schema change; zero behavior change | B-only | A |
+| **B** | DB schema v13 + migration + seed | Schema change; zero behavior change | B-only | A |
 | **C** | Router + registry + migrate 8 call sites + remove qa.py monkey-patch | Touches every LLM call; needs careful review | C-only | B |
 | **D** | Admin REST API (11 endpoints) | New endpoints only | D-only | C |
 | **E** | Admin UI (LLMSettingsPage + tabs + dialogs) | Frontend only | E-only | D |
@@ -640,47 +640,47 @@ git commit -m "feat(llm): register sensitive keys at app startup"
 
 ---
 
-# Phase B — DB Schema v12
+# Phase B — DB Schema v13
 
 **Goal:** 3 new tables + migration + seed. Runtime behavior unchanged.
 
 ## Task B1: SQL migration file
 
 **Files:**
-- Create: `app/scripts/migrations/v12_multi_provider.py`
+- Create: `app/scripts/migrations/v13_multi_provider.py`
 
 **Step 1: Write test file**
 ```python
-# tests/integration/test_v12_migration.py
+# tests/integration/test_v13_migration.py
 import pytest
 from sqlalchemy import inspect as sa_inspect, text
 from app.core.database import engine
-from app.scripts.migrations.v12_multi_provider import migrate_v11_to_v12
+from app.scripts.migrations.v13_multi_provider import migrate_v12_to_v13
 
 
 @pytest.fixture
-def v11_db(real_db):
-    """Set schema to v11 and drop v12 tables if they exist."""
+def v12_db(real_db):
+    """Set schema to v12 and drop v13 tables if they exist."""
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS llm_task_routes"))
         conn.execute(text("DROP TABLE IF EXISTS llm_provider_models"))
         conn.execute(text("DROP TABLE IF EXISTS llm_providers"))
-        conn.execute(text("UPDATE schema_version SET version = 11"))
+        conn.execute(text("UPDATE schema_version SET version = 12"))
     yield real_db
 
 
-def test_v12_creates_three_tables(v11_db):
+def test_v13_creates_three_tables(v12_db):
     with engine.begin() as conn:
-        migrate_v11_to_v12(conn)
+        migrate_v12_to_v13(conn)
     insp = sa_inspect(engine)
     assert "llm_providers" in insp.get_table_names()
     assert "llm_provider_models" in insp.get_table_names()
     assert "llm_task_routes" in insp.get_table_names()
 
 
-def test_v12_seeds_zhipu_provider(v11_db):
+def test_v13_seeds_zhipu_provider(v12_db):
     with engine.begin() as conn:
-        migrate_v11_to_v12(conn)
+        migrate_v12_to_v13(conn)
         rows = conn.execute(text(
             "SELECT name, kind, api_key_env FROM llm_providers"
         )).fetchall()
@@ -690,9 +690,9 @@ def test_v12_seeds_zhipu_provider(v11_db):
     assert rows[0].api_key_env == "ZHIPU_API_KEY"
 
 
-def test_v12_seeds_seven_task_routes(v11_db):
+def test_v13_seeds_seven_task_routes(v12_db):
     with engine.begin() as conn:
-        migrate_v11_to_v12(conn)
+        migrate_v12_to_v13(conn)
         rows = conn.execute(text(
             "SELECT task_key, model_id FROM llm_task_routes ORDER BY task_key"
         )).fetchall()
@@ -705,17 +705,17 @@ def test_v12_seeds_seven_task_routes(v11_db):
     assert all(r.model_id in {"glm-4.7", "glm-4-flash"} for r in rows)
 
 
-def test_v12_is_idempotent_raises_on_rerun(v11_db):
+def test_v13_is_idempotent_raises_on_rerun(v12_db):
     with engine.begin() as conn:
-        migrate_v11_to_v12(conn)
+        migrate_v12_to_v13(conn)
     with engine.begin() as conn, pytest.raises(Exception):
         # UNIQUE(name) on llm_providers should prevent double seed
-        migrate_v11_to_v12(conn)
+        migrate_v12_to_v13(conn)
 
 
-def test_v12_fk_restrict_prevents_provider_delete_when_route_exists(v11_db):
+def test_v13_fk_restrict_prevents_provider_delete_when_route_exists(v12_db):
     with engine.begin() as conn:
-        migrate_v11_to_v12(conn)
+        migrate_v12_to_v13(conn)
     with engine.begin() as conn, pytest.raises(Exception):
         conn.execute(text(
             "DELETE FROM llm_providers WHERE name = '智谱 AI（默认）'"
@@ -724,17 +724,17 @@ def test_v12_fk_restrict_prevents_provider_delete_when_route_exists(v11_db):
 
 **Step 2: Run — fail**
 
-**Step 3: Implement `app/scripts/migrations/v12_multi_provider.py`** — full SQL + seed (see design §5.1 and §5.4). Register in `MIGRATIONS` dict in `migrate_db.py`:
+**Step 3: Implement `app/scripts/migrations/v13_multi_provider.py`** — full SQL + seed (see design §5.1 and §5.4). Register in `MIGRATIONS` dict in `migrate_db.py`:
 ```python
-MIGRATIONS[(11, 12)] = migrate_v11_to_v12
+MIGRATIONS[(12, 13)] = migrate_v12_to_v13
 ```
 
 **Step 4: Run — pass**
 
 **Step 5: Commit**
 ```bash
-git add app/scripts/migrations/v12_multi_provider.py tests/integration/test_v12_migration.py
-git commit -m "feat(llm): v12 migration — 3 tables + seed Zhipu + 7 task routes"
+git add app/scripts/migrations/v13_multi_provider.py tests/integration/test_v13_migration.py
+git commit -m "feat(llm): v13 migration — 3 tables + seed Zhipu + 7 task routes"
 ```
 
 ---
@@ -760,22 +760,22 @@ Commit: `feat(llm): SQLAlchemy models for llm_providers / llm_provider_models / 
 - Modify: `scripts/reset_db.py`
 - Modify: `app/core/database.py::init_database`
 
-Ensure fresh-install path also creates v12 tables and seeds, so new developers get the same state as migrated ones.
+Ensure fresh-install path also creates v13 tables and seeds, so new developers get the same state as migrated ones.
 
-**Step 1:** Test that `init_database()` on empty DB ends in schema_version=12 with 1 provider + 7 task_routes.
+**Step 1:** Test that `init_database()` on empty DB ends in schema_version=13 with 1 provider + 7 task_routes.
 
 **Step 2–5:** Add seed call after `Base.metadata.create_all`.
 
-Commit: `feat(llm): init_database seeds v12 llm_* tables on fresh install`
+Commit: `feat(llm): init_database seeds v13 llm_* tables on fresh install`
 
 ---
 
 ## Phase B exit criteria
 
-- [ ] `pytest tests/integration/test_v12_migration.py tests/test_models_llm.py -v` → pass
+- [ ] `pytest tests/integration/test_v13_migration.py tests/test_models_llm.py -v` → pass
 - [ ] Local DB migrates cleanly: `python scripts/migrate_db.py`
-- [ ] Fresh-install path: `python scripts/reset_db.py --force` ends at schema v12 with seed
-- [ ] PR `feat(llm): Phase B — DB schema v12`
+- [ ] Fresh-install path: `python scripts/reset_db.py --force` ends at schema v13 with seed
+- [ ] PR `feat(llm): Phase B — DB schema v13`
 - [ ] **Do not merge until Phase C ready** — leaving seeded tables + no reader causes no harm, but coordinated rollout is simpler
 
 ---
@@ -1279,12 +1279,12 @@ Commit: `test(llm): e2e — switch qa_generation route survives end-to-end`
 - Modify: `RAG/web/CLAUDE.md` (if exists)
 
 Add:
-- "Schema v12 — 3 LLM routing tables"
+- "Schema v13 — 3 LLM routing tables"
 - New gotcha: **Don't write `provider.chat_model = ...` — use `chat_for_task(task_key)`**
 - New gotcha: **`api_key_env` is the env variable NAME; real secret stays in env/1Password**
 - New gotcha: **Adding a new task_key requires: (1) add constant in `app/core/llm_tasks.py`, (2) seed row in a new migration, (3) switch the call site to `chat_for_task("<new_key>", ...)`**
 
-Commit: `docs(llm): CLAUDE.md gotchas + v12 schema notes`
+Commit: `docs(llm): CLAUDE.md gotchas + v13 schema notes`
 
 ## Task F4: `docs/architecture.md` update
 
@@ -1300,11 +1300,11 @@ Commit: `docs(llm): architecture.md routing layer diagram`
 Checklist covering:
 - Ensure `ZHIPU_API_KEY` still set (migration seeds route to it)
 - If introducing DeepSeek/OpenRouter: add `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY` to 1Password envs
-- Verify `migrate_db.py` runs cleanly on prod DB (v11 → v12)
+- Verify `migrate_db.py` runs cleanly on prod DB (v12 → v13)
 - Post-deploy: `curl /api/v1/llm/providers` returns 1 row; `curl -X POST /api/v1/llm/providers/{id}/test` returns `ok`
 - Run one real QA query and verify logs emit `llm_call` event with `status=ok`
 
-Commit: `docs(llm): deployment checklist for v12 rollout`
+Commit: `docs(llm): deployment checklist for v13 rollout`
 
 ---
 
@@ -1324,7 +1324,7 @@ Commit: `docs(llm): deployment checklist for v12 rollout`
 - [ ] `git grep -n "api_key" app/api/v1/schemas/llm.py` returns 0 hits (whitelist clean)
 - [ ] Full `pytest tests/ -v` green on main
 - [ ] `docker compose up` + browser smoke: add a new provider, test it, switch one task, verify route change in logs
-- [ ] Rollback rehearsal: drop 3 v12 tables + `UPDATE schema_version SET version=11` — system still boots and runs (falls back to `ZhipuProvider` directly via legacy `get_provider()`)
+- [ ] Rollback rehearsal: drop 3 v13 tables + `UPDATE schema_version SET version=12` — system still boots and runs (falls back to `ZhipuProvider` directly via legacy `get_provider()`)
 
 ---
 
