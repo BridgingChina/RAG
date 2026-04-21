@@ -36,6 +36,10 @@ import type {
   TaxonomyNodeCreate,
   TaxonomyNodeDetail,
   TaxonomyTree,
+  TranslationReviewItem,
+  TranslationReviewAction,
+  BatchGenerateResult,
+  TranslationCoverageResponse,
 } from "./types"
 import { clearJWTCache, getJWT, redirectToLogin } from "./auth"
 
@@ -680,4 +684,44 @@ export function fetchAuditLogs(params?: {
   end?: string
 }): Promise<PaginatedResponse<AuditLogItem>> {
   return get<PaginatedResponse<AuditLogItem>>("/audit-logs", params)
+}
+
+// --- Translations (Phase 3.E) ---
+
+export function fetchTranslations(params?: {
+  page?: number
+  page_size?: number
+  status?: string
+  table?: string
+  field?: string
+  reviewed_by?: string
+}): Promise<PaginatedResponse<TranslationReviewItem>> {
+  return get<PaginatedResponse<TranslationReviewItem>>("/translations", params)
+}
+
+export function generateTranslation(body: {
+  table_name: string
+  row_id: string
+  field_name: string
+}): Promise<TranslationReviewItem> {
+  return post<TranslationReviewItem>("/translations/generate", body)
+}
+
+export function batchGenerateTranslations(body: {
+  table_name: string
+  field_name: string
+  limit?: number
+}): Promise<BatchGenerateResult> {
+  return post<BatchGenerateResult>("/translations/batch-generate", body)
+}
+
+export function reviewTranslation(
+  reviewId: string,
+  body: { action: TranslationReviewAction; text?: string },
+): Promise<TranslationReviewItem> {
+  return put<TranslationReviewItem>(`/translations/${reviewId}/review`, body)
+}
+
+export function fetchTranslationCoverage(): Promise<TranslationCoverageResponse> {
+  return get<TranslationCoverageResponse>("/translations/coverage")
 }
