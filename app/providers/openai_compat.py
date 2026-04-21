@@ -157,7 +157,7 @@ class OpenAICompatProvider(LLMProvider):
         async with self._semaphore:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{self._config.base_url}/v1/chat/completions",
+                    f"{self._config.base_url.rstrip('/')}/chat/completions",
                     headers=self._headers(),
                     json={
                         "model": model,
@@ -209,7 +209,7 @@ class OpenAICompatProvider(LLMProvider):
         async with self._semaphore:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{self._config.base_url}/v1/embeddings",
+                    f"{self._config.base_url.rstrip('/')}/embeddings",
                     headers=self._headers(),
                     json={"model": model, "input": texts},
                     timeout=self._embed_timeout(),
@@ -243,7 +243,7 @@ class OpenAICompatProvider(LLMProvider):
         async with httpx.AsyncClient() as client:
             try:
                 resp = await client.get(
-                    f"{self._config.base_url}/v1/models",
+                    f"{self._config.base_url.rstrip('/')}/models",
                     headers=self._headers(),
                     timeout=httpx.Timeout(
                         connect=10.0, read=20.0, write=10.0, pool=10.0

@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 
 ProviderKind = Literal["zhipu", "openai_compat", "minimax"]
@@ -56,11 +56,22 @@ class ProviderCreate(BaseModel):
 
     name: str = Field(min_length=1, max_length=64)
     kind: ProviderKind
-    base_url: HttpUrl
+    # base_url: the FULL endpoint prefix — caller is responsible for any
+    # versioning path like `/v1` (OpenAI-style) or `/api/paas/v4` (Zhipu).
+    # We validate as URL for correctness but store as str; trailing slash is
+    # stripped so `{base_url}/models` never produces `//models`.
+    base_url: str = Field(min_length=1, max_length=512)
     api_key_env: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     extra_headers: dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
     timeout_read: float = Field(default=90.0, ge=5.0, le=600.0)
+
+    @field_validator("base_url", mode="after")
+    @classmethod
+    def _normalize_base_url(cls, v: str) -> str:
+        # Validate as URL (raises if malformed) but return cleaned string
+        AnyHttpUrl(v)
+        return v.rstrip("/")
 
     @field_validator("extra_headers", mode="after")
     @classmethod
@@ -77,11 +88,19 @@ class ProviderUpdate(BaseModel):
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=64)
-    base_url: HttpUrl | None = None
+    base_url: str | None = Field(default=None, min_length=1, max_length=512)
     api_key_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     extra_headers: dict[str, str] | None = None
     enabled: bool | None = None
     timeout_read: float | None = Field(default=None, ge=5.0, le=600.0)
+
+    @field_validator("base_url", mode="after")
+    @classmethod
+    def _normalize_base_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        AnyHttpUrl(v)
+        return v.rstrip("/")
 
     @field_validator("extra_headers", mode="after")
     @classmethod
