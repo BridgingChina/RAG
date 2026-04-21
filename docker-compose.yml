@@ -39,6 +39,12 @@ services:
       R2_BUCKET_NAME: ${R2_BUCKET_NAME:-bridge-rag}
       R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
       ZHIPU_PARSER_TOOL_TYPE: ${ZHIPU_PARSER_TOOL_TYPE:-expert}
+      # LLM routing (schema v13): additional provider keys passed through
+      # when admin adds the corresponding provider row via /settings/llm.
+      # Default empty — Phase A resolve_api_key raises ProviderConfigurationError
+      # fail-closed if the provider is actually invoked without a key.
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
