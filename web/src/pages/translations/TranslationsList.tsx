@@ -66,7 +66,7 @@ const STATUS_BADGE: Record<TranslationStatus, { variant: "default" | "secondary"
   rejected: { variant: "destructive", label: "已驳回" },
 }
 
-function truncate(text: string, limit = 80): string {
+function truncate(text: string, limit = 140): string {
   if (!text) return "-"
   if (text.length <= limit) return text
   return `${text.slice(0, limit)}…`
@@ -166,7 +166,7 @@ export function Component() {
     return (
       <>
         <PageHeader title="翻译审校" description="AI 生成的英文译文管理" />
-        <main className="space-y-6 p-6">
+        <main className="min-w-0 space-y-6 overflow-x-hidden p-6">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-96 w-full" />
         </main>
@@ -265,15 +265,15 @@ export function Component() {
           </div>
         ) : (
           <>
-            <div className="rounded-lg border">
-              <Table>
+            <div className="w-full overflow-hidden rounded-lg border">
+              <Table className="w-full table-fixed">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[180px]">字段</TableHead>
-                    <TableHead>中文原文</TableHead>
-                    <TableHead>英文译文</TableHead>
-                    <TableHead className="w-[100px]">状态</TableHead>
-                    <TableHead className="w-[120px] text-right">操作</TableHead>
+                    <TableHead className="w-auto">中文原文</TableHead>
+                    <TableHead className="w-auto">英文译文</TableHead>
+                    <TableHead className="w-[90px]">状态</TableHead>
+                    <TableHead className="w-[90px] text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -282,17 +282,23 @@ export function Component() {
                     const display = row.reviewed_translation ?? row.ai_translation
                     return (
                       <TableRow key={row.id}>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="truncate font-mono text-xs">
                           {row.table_name}.{row.field_name}
                         </TableCell>
-                        <TableCell className="text-sm">{truncate(row.source_text)}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {display ? truncate(display) : <em className="opacity-60">尚未生成</em>}
+                        <TableCell className="align-top text-sm">
+                          <div className="line-clamp-3 break-words whitespace-normal">
+                            {truncate(row.source_text)}
+                          </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top text-sm text-muted-foreground">
+                          <div className="line-clamp-3 break-words whitespace-normal">
+                            {display ? truncate(display) : <em className="opacity-60">尚未生成</em>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-top">
                           <Badge variant={badge.variant}>{badge.label}</Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="align-top text-right">
                           <Button variant="ghost" size="sm" onClick={() => setDialogItem(row)}>
                             审校
                           </Button>
