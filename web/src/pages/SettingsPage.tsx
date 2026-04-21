@@ -1,3 +1,5 @@
+import { Link } from "react-router"
+import { Network } from "lucide-react"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { BatchOperationsPanel } from "@/components/settings/BatchOperationsPanel"
 import { useApi } from "@/hooks/useApi"
@@ -57,6 +59,26 @@ export function Component() {
             </Card>
           </div>
         )}
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Network className="size-4" />
+                LLM 路由
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                管理 LLM 供应商与任务路由：配置多个供应商（智谱 / OpenAI 兼容 /
+                MiniMax），为 7 个业务任务分别绑定供应商与模型。
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/settings/llm">进入 LLM 路由设置</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
 
         <div className="mt-6">
           <BatchOperationsPanel />
