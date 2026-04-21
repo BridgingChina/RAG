@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 _zhipu_semaphore = asyncio.Semaphore(3)
 
 
+# NOTE: `app/providers/openai_compat.py` duplicates this helper + `_rate_limit_aware_wait`
+# verbatim. Keep in sync until `app/providers/_retry.py` consolidates both (follow-up).
 def _is_retryable_http_error(exc: BaseException) -> bool:
     """Return True for transient upstream/network errors worth retrying.
 

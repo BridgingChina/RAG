@@ -101,10 +101,17 @@ class OpenAICompatProvider(LLMProvider):
         instance state prevents leakage via repr() / logs / serialization.
         See app/providers/_secret.py.
         """
+        # Defense-in-depth: protected headers can't be overridden via config.extra_headers
+        # (admin writes are already gated in Phase D; this closes the boundary).
+        _PROTECTED = {"authorization", "content-type"}
+        safe_extras = {
+            k: v for k, v in self._config.extra_headers.items()
+            if k.lower() not in _PROTECTED
+        }
         return {
             "Authorization": f"Bearer {resolve_api_key(self._config.api_key_env)}",
             "Content-Type": "application/json",
-            **self._config.extra_headers,
+            **safe_extras,
         }
 
     def _chat_timeout(self) -> httpx.Timeout:

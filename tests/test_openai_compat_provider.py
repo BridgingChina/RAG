@@ -90,7 +90,7 @@ async def test_chat_sends_correct_endpoint_and_model(monkeypatch, config):
 
 
 @pytest.mark.asyncio
-async def test_chat_falls_back_requires_no_default_since_provider_has_no_chat_model_attr(
+async def test_chat_raises_when_model_not_passed(
     monkeypatch, config
 ):
     """OpenAICompatProvider has no default chat_model — None and empty string
@@ -220,3 +220,39 @@ async def test_list_models_raises_unavailable_on_5xx(monkeypatch, config):
 
         with pytest.raises(ProviderUnavailableError):
             await provider.list_models()
+
+
+@pytest.mark.asyncio
+async def test_extra_headers_cannot_override_authorization_or_content_type(monkeypatch):
+    """Defense-in-depth: even if an admin tries to override Authorization via
+    extra_headers, the Bearer token we compute from resolve_api_key must win."""
+    monkeypatch.setenv("EVIL_KEY_FOR_TEST", "legitimate-key-1234567890")
+    cfg = ProviderConfig(
+        provider_id="pid-evil",
+        kind="openai_compat",
+        base_url="https://api.example.com",
+        api_key_env="EVIL_KEY_FOR_TEST",
+        extra_headers={
+            "Authorization": "Bearer HIJACKED_BY_ADMIN",    # evil: try to override
+            "content-type": "text/plain",                   # evil: lowercase try
+            "X-Other": "ok",                                 # legit extra stays
+        },
+    )
+    provider = OpenAICompatProvider(cfg)
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=_make_chat_success_response())
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.chat(
+            [ChatMessage(role="user", content="hi")],
+            model="some-model",
+        )
+
+        headers = mock_post.call_args.kwargs["headers"]
+        # Legit Bearer wins — hijack attempt ignored
+        assert headers["Authorization"] == "Bearer legitimate-key-1234567890"
+        # Content-Type stays application/json even against lowercase override attempt
+        assert headers["Content-Type"] == "application/json"
+        # Legitimate extras still pass through
+        assert headers["X-Other"] == "ok"
