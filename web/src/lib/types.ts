@@ -511,3 +511,45 @@ export interface AuditLogItem {
   ip_address: string | null
   created_at: string
 }
+
+// --- Translations (Phase 3.E) ---
+
+export type TranslationStatus =
+  | "pending_ai"
+  | "ai_generated"
+  | "human_reviewed"
+  | "rejected"
+
+export interface TranslationReviewItem {
+  id: string
+  table_name: string
+  row_id: string
+  field_name: string
+  source_text: string
+  ai_translation: string | null
+  reviewed_translation: string | null
+  status: TranslationStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
+  created_at: string
+}
+
+export interface BatchGenerateResult {
+  started: number
+  already_queued: number
+  total_pending: number
+}
+
+export interface TranslationCoverageRow {
+  table: string
+  field: string
+  total: number
+  translated: number
+  pct: number
+}
+
+export interface TranslationCoverageResponse {
+  tables: TranslationCoverageRow[]
+}
+
+export type TranslationReviewAction = "approve" | "edit" | "reject"

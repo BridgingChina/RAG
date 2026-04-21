@@ -26,6 +26,7 @@ export const router = createBrowserRouter([
           { path: "ask", lazy: () => import("@/pages/AskPage") },
           { path: "settings", lazy: () => import("@/pages/SettingsPage") },
           { path: "audit-logs", lazy: () => import("@/pages/AuditLogPage") },
+          { path: "translations", lazy: () => import("@/pages/translations/TranslationsList") },
         ],
       },
     ],

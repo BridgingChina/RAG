@@ -21,11 +21,15 @@ import {
   MessageSquare,
   Settings,
   ScrollText,
+  Languages,
   LogOut,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 
-const navGroups = [
+type NavItem = { path: string; icon: typeof LayoutDashboard; label: string; adminOnly?: boolean }
+type NavGroup = { label: string; items: NavItem[] }
+
+const navGroups: NavGroup[] = [
   {
     label: "概览",
     items: [
@@ -47,6 +51,7 @@ const navGroups = [
     items: [
       { path: "/ingest", icon: Upload, label: "入库" },
       { path: "/ask", icon: MessageSquare, label: "问答测试" },
+      { path: "/translations", icon: Languages, label: "翻译审校", adminOnly: true },
     ],
   },
   {
@@ -60,6 +65,7 @@ const navGroups = [
 
 export function AppSidebar() {
   const { user, logout } = useAuth()
+  const isAdmin = user?.role === "admin"
 
   return (
     <Sidebar collapsible="icon">
@@ -74,11 +80,14 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {navGroups.map((group) => (
+        {navGroups.map((group) => {
+          const visible = group.items.filter((i) => !i.adminOnly || isAdmin)
+          if (visible.length === 0) return null
+          return (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarMenu>
-              {group.items.map((item) => (
+              {visible.map((item) => (
                 <SidebarMenuItem key={item.path}>
                   <NavLink to={item.path} end={item.path === "/"}>
                     {({ isActive }) => (
@@ -94,7 +103,8 @@ export function AppSidebar() {
               ))}
             </SidebarMenu>
           </SidebarGroup>
-        ))}
+          )
+        })}
       </SidebarContent>
 
       <SidebarFooter>
