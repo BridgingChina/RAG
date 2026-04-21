@@ -21,7 +21,7 @@ def config():
     return ProviderConfig(
         provider_id="pid-minimax",
         kind="minimax",
-        base_url="https://api.minimaxi.com",
+        base_url="https://api.minimaxi.com/v1",
         api_key_env="MINIMAX_KEY_FOR_TEST",
     )
 

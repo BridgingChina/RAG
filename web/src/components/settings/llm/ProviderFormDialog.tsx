@@ -269,8 +269,13 @@ export function ProviderFormDialog({
               id="provider-base-url"
               value={form.base_url}
               onChange={(e) => update("base_url", e.target.value)}
-              placeholder="https://open.bigmodel.cn/api/paas/v4"
+              placeholder="https://openrouter.ai/api/v1"
             />
+            <p className="text-xs text-muted-foreground">
+              填完整 endpoint 前缀（包括 <code className="font-mono">/v1</code> 等版本段），代码只追加 <code className="font-mono">/chat/completions</code>、<code className="font-mono">/embeddings</code>、<code className="font-mono">/models</code>。末尾斜杠会自动去除。
+              <br />
+              示例：OpenRouter <code className="font-mono">https://openrouter.ai/api/v1</code> · DeepSeek <code className="font-mono">https://api.deepseek.com/v1</code> · MiniMax <code className="font-mono">https://api.minimaxi.com/v1</code>
+            </p>
           </div>
 
           <div className="space-y-1.5">

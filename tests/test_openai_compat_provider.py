@@ -19,7 +19,7 @@ def config():
     return ProviderConfig(
         provider_id="pid-deepseek",
         kind="openai_compat",
-        base_url="https://api.deepseek.com",
+        base_url="https://api.deepseek.com/v1",
         api_key_env="DEEPSEEK_KEY_FOR_TEST",
     )
 
@@ -29,7 +29,7 @@ def openrouter_config():
     return ProviderConfig(
         provider_id="pid-openrouter",
         kind="openai_compat",
-        base_url="https://openrouter.ai/api",
+        base_url="https://openrouter.ai/api/v1",
         api_key_env="OPENROUTER_KEY_FOR_TEST",
         extra_headers={
             "HTTP-Referer": "https://example.com",
@@ -230,7 +230,7 @@ async def test_extra_headers_cannot_override_authorization_or_content_type(monke
     cfg = ProviderConfig(
         provider_id="pid-evil",
         kind="openai_compat",
-        base_url="https://api.example.com",
+        base_url="https://api.example.com/v1",
         api_key_env="EVIL_KEY_FOR_TEST",
         extra_headers={
             "Authorization": "Bearer HIJACKED_BY_ADMIN",    # evil: try to override
