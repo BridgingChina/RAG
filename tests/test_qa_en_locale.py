@@ -41,6 +41,11 @@ class _FakeProvider(LLMProvider):
             usage={},
         )
 
+    async def list_models(self):
+        # A4 added list_models as an abstract method on LLMProvider. This stub
+        # returns empty to satisfy the ABC without pretending to know models.
+        return []
+
 
 def _make_retrieved_chunk(content: str = "赵州桥是石拱桥") -> RetrievedChunk:
     return RetrievedChunk(
