@@ -1,4 +1,12 @@
-"""Tests for V1 Ingest API endpoint."""
+"""Tests for V1 Ingest API endpoint.
+
+Phase C: chat calls route through ``chat_for_task``, so the e2e fixture
+patches the symbol on every service module the ingest pipeline touches
+(context_enricher / bridge_linker / tagger) instead of stubbing the
+ZhipuProvider class. Embedding still flows through ``get_provider()`` (Zhipu
+is locked for embedding per design §2), so the fixture also patches
+``ZhipuProvider.embed`` to return a deterministic vector.
+"""
 import hashlib
 import json
 import uuid
@@ -7,7 +15,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import event, text
 from sqlalchemy.orm import Session
-from unittest.mock import patch
 
 from app.core.constants import EMBEDDING_DIM
 from app.core.database import get_db
@@ -17,46 +24,48 @@ from app.providers import ChatResponse
 from app.providers.base import ChatMessage
 
 
-class MockProvider:
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+def _fake_embed(texts, *, model=None):
+    async def _run():
         embeddings: list[list[float]] = []
         for t in texts:
             digest = hashlib.sha256(t.encode("utf-8")).digest()
-            seed = list(digest)  # 32 bytes
+            seed = list(digest)
             vec = [(seed[i % len(seed)] / 255.0) for i in range(EMBEDDING_DIM)]
             embeddings.append(vec)
         return embeddings
+    return _run()
 
-    async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
-        prompt = messages[-1].content if messages else ""
 
-        # ContextEnricher prompt.
-        if '"contextual_text"' in prompt and '"entities"' in prompt:
-            payload = {
-                "contextual_text": "该片段来自测试文档，介绍赵州桥的结构特点与历史背景。",
-                "entities": ["赵州桥", "石拱桥"],
-                "resolved_references": {},
-            }
-            return ChatResponse(content=json.dumps(payload, ensure_ascii=False), usage={})
-
-        # BridgeLinker prompt.
-        if '"primary_bridge"' in prompt and '"secondary_bridges"' in prompt:
-            payload = {
-                "primary_bridge": "赵州桥",
-                "primary_confidence": 0.9,
-                "secondary_bridges": [],
-                "candidate_bridges": [],
-            }
-            return ChatResponse(content=json.dumps(payload, ensure_ascii=False), usage={})
-
-        # MetadataTagger prompt.
+async def _fake_chat_for_task(task_key: str, messages: list[ChatMessage]) -> ChatResponse:
+    """Route stub responses by task_key — one task_key per service after
+    Phase C (ingest_context_enricher / ingest_bridge_linker / ingest_tagger)."""
+    if task_key == "ingest_context_enricher":
+        payload = {
+            "contextual_text": "该片段来自测试文档，介绍赵州桥的结构特点与历史背景。",
+            "entities": ["赵州桥", "石拱桥"],
+            "resolved_references": {},
+        }
+    elif task_key == "ingest_bridge_linker":
+        payload = {
+            "primary_bridge": "赵州桥",
+            "primary_confidence": 0.9,
+            "secondary_bridges": [],
+            "candidate_bridges": [],
+        }
+    elif task_key == "ingest_tagger":
         payload = {
             "lvl1": "形制与技术",
             "lvl2": "结构体系",
             "lvl3": "拱桥结构",
             "bridge_name": None,
         }
-        return ChatResponse(content=json.dumps(payload, ensure_ascii=False), usage={})
+    else:
+        payload = {}
+    return ChatResponse(
+        content=json.dumps(payload, ensure_ascii=False),
+        usage={},
+        model="stub-model",
+    )
 
 
 @pytest.fixture
@@ -115,9 +124,7 @@ def test_ingest_response_schema():
 
 
 @pytest.fixture
-def client_e2e(db_engine):
-    provider = MockProvider()
-
+def client_e2e(db_engine, monkeypatch):
     connection = db_engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection)
@@ -144,9 +151,22 @@ def client_e2e(db_engine):
 
     app.dependency_overrides[get_db] = override_get_db
 
+    # Patch chat_for_task on each service module — this is the Phase C
+    # equivalent of the old "patch ZhipuProvider" approach. embed() still
+    # lives on ZhipuProvider (locked by design §2), so stub that too.
+    from app.providers import zhipu as zhipu_module
+    from app.services import bridge_linker as bridge_linker_module
+    from app.services import context_enricher as context_enricher_module
+    from app.services import tagger as tagger_module
+    from app.services import chunker as chunker_module
+
+    monkeypatch.setattr(context_enricher_module, "chat_for_task", _fake_chat_for_task)
+    monkeypatch.setattr(bridge_linker_module, "chat_for_task", _fake_chat_for_task)
+    monkeypatch.setattr(tagger_module, "chat_for_task", _fake_chat_for_task)
+    monkeypatch.setattr(zhipu_module.ZhipuProvider, "embed", _fake_embed)
+
     try:
-        with patch("app.api.v1.ingest.ZhipuProvider", return_value=provider):
-            yield TestClient(app), session
+        yield TestClient(app), session
     finally:
         app.dependency_overrides.clear()
         session.close()

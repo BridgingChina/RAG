@@ -437,15 +437,14 @@ class IngestTaskService:
             if not chunks:
                 raise ValueError(f"No chunks found for source {task.source_id}")
 
-            context_enricher = ContextEnricher(provider=self.provider)
+            context_enricher = ContextEnricher()
             # Fresh taxonomy per task: admin edits committed before this call
             # are visible immediately. Bypasses _cache so there is no cross-
             # worker staleness window.
             tagger = MetadataTagger(
-                provider=self.provider,
                 taxonomy=load_taxonomy_snapshot(self.db),
             )
-            bridge_linker = BridgeLinker(provider=self.provider)
+            bridge_linker = BridgeLinker()
             tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
 
             doc = parse_markdown(task.parsed_content or "")

@@ -10,14 +10,16 @@ import pytest
 
 from app.core.constants import EMBEDDING_DIM
 from app.providers import ChatMessage, ChatResponse
-from app.services.tokenizer import Tokenizer
+from app.services import facet_extractor as facet_module
+from app.services import generator as generator_module
 from app.services.facet_extractor import FacetExtractor, Facet
-from app.services.ranker import rrf_merge
+from app.services.generator import Confidence, Generator, GenerationResult
 from app.services.hybrid_retriever import (
     HybridRetrievalResult,
     RetrievedChunk,
 )
-from app.services.generator import Generator, GenerationResult, Confidence
+from app.services.ranker import rrf_merge
+from app.services.tokenizer import Tokenizer
 
 # Deterministic UUID constants for test IDs
 _UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -32,29 +34,32 @@ _UUID6 = uuid.UUID("00000000-0000-0000-0000-000000000006")
 _UUID7 = uuid.UUID("00000000-0000-0000-0000-000000000007")
 
 
-class MockProvider:
-    """Mock LLM provider for testing.
-
-    Returns deterministic responses based on prompt content.
+async def _routed_chat(task_key, messages):
+    """Phase C stand-in for the old MockProvider.chat() — inspect the prompt
+    content and return the facet-extraction or generation response accordingly.
     """
+    content = messages[0].content
+    if "枚举值约束" in content:
+        return ChatResponse(
+            content='{"bridge_type": "石拱桥", "material": null, "era": null, '
+                    '"region": null, "function": null}',
+            usage={"total_tokens": 50},
+            model="stub-model",
+        )
+    return ChatResponse(
+        content='{"summary": "测试要点", "details": "测试详细", "analogy": null, '
+                '"confidence": {"level": "medium", "reason": "测试"}}',
+        usage={"total_tokens": 100},
+        model="stub-model",
+    )
 
-    async def embed(self, texts):
-        return [[0.1] * EMBEDDING_DIM for _ in texts]
 
-    async def chat(self, messages):
-        content = messages[0].content
-        if "枚举值约束" in content:
-            # Facet extraction response
-            return ChatResponse(
-                content='{"bridge_type": "石拱桥", "material": null, "era": null, "region": null, "function": null}',
-                usage={"total_tokens": 50},
-            )
-        else:
-            # Generation response
-            return ChatResponse(
-                content='{"summary": "测试要点", "details": "测试详细", "analogy": null, "confidence": {"level": "medium", "reason": "测试"}}',
-                usage={"total_tokens": 100},
-            )
+@pytest.fixture(autouse=True)
+def _install_chat_stub(monkeypatch):
+    """Patch chat_for_task on every service module the tests touch so no
+    test in this file accidentally talks to a real provider."""
+    monkeypatch.setattr(facet_module, "chat_for_task", _routed_chat)
+    monkeypatch.setattr(generator_module, "chat_for_task", _routed_chat)
 
 
 def test_tokenizer_integration():
@@ -98,8 +103,7 @@ async def test_facet_extractor_integration():
     - Validate facet values against allowed enum values
     - Return empty Facet on parse error
     """
-    provider = MockProvider()
-    extractor = FacetExtractor(provider=provider)
+    extractor = FacetExtractor()
 
     facet = await extractor.extract("石拱桥有什么特点")
 
@@ -216,8 +220,7 @@ async def test_generator_v2_integration():
     - Extract unique sources
     - Handle malformed JSON gracefully
     """
-    provider = MockProvider()
-    generator = Generator(provider=provider)
+    generator = Generator()
 
     # Create mock evidence with all three channels
     evidence = HybridRetrievalResult(
@@ -259,20 +262,19 @@ async def test_generator_v2_integration():
 
 
 @pytest.mark.asyncio
-async def test_generator_v2_malformed_json():
+async def test_generator_v2_malformed_json(monkeypatch):
     """Verify Generator handles malformed JSON gracefully."""
-    class BadProvider:
-        async def embed(self, texts):
-            return [[0.1] * EMBEDDING_DIM for _ in texts]
 
-        async def chat(self, messages):
-            return ChatResponse(
-                content="This is not valid JSON at all",
-                usage={"total_tokens": 50},
-            )
+    async def _bad_chat(task_key, messages):
+        return ChatResponse(
+            content="This is not valid JSON at all",
+            usage={"total_tokens": 50},
+            model="stub-model",
+        )
 
-    provider = BadProvider()
-    generator = Generator(provider=provider)
+    monkeypatch.setattr(generator_module, "chat_for_task", _bad_chat)
+
+    generator = Generator()
 
     evidence = HybridRetrievalResult(
         anchor_chunks=[],
@@ -299,10 +301,9 @@ async def test_full_pipeline_integration():
     3. RRF merges results
     4. Generator produces V2 result with confidence
     """
-    provider = MockProvider()
     tokenizer = Tokenizer()
-    extractor = FacetExtractor(provider=provider)
-    generator = Generator(provider=provider)
+    extractor = FacetExtractor()
+    generator = Generator()
 
     # Step 1: Tokenize query
     query = "赵州桥是石拱桥吗"

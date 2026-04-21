@@ -1,8 +1,15 @@
+"""Tests for MetadataTagger.
+
+Phase C: MetadataTagger no longer takes an injected provider. The LLM call
+now goes through :func:`app.llm.chat_for_task`, which tests monkey-patch at
+the module level (``app.services.tagger.chat_for_task``) to stub responses.
+"""
 import pytest
 
-from app.core.constants import EMBEDDING_DIM, get_taxonomy_lvl1
-from app.providers import ChatMessage, ChatResponse
-from app.services.tagger import MetadataTagger, TagResult
+from app.core.constants import get_taxonomy_lvl1
+from app.providers import ChatResponse
+from app.services import tagger as tagger_module
+from app.services.tagger import MetadataTagger
 
 # A minimal taxonomy snapshot mirroring the seed YAML. Using a fixed local
 # constant (not a constants.py import) so these tests still pass after the
@@ -20,21 +27,19 @@ _TAXONOMY = {
 }
 
 
-class MockProvider:
-    def __init__(self, response_content: str):
-        self.response_content = response_content
+def _patch_chat(monkeypatch, content: str):
+    """Stub ``app.services.tagger.chat_for_task`` to return ``content``."""
 
-    async def embed(self, texts):
-        return [[0.1] * EMBEDDING_DIM for _ in texts]
+    async def _fake_chat_for_task(task_key, messages):
+        return ChatResponse(content=content, usage={}, model="stub-model")
 
-    async def chat(self, messages: list[ChatMessage]) -> ChatResponse:
-        return ChatResponse(content=self.response_content, usage={})
+    monkeypatch.setattr(tagger_module, "chat_for_task", _fake_chat_for_task)
 
 
 @pytest.mark.asyncio
-async def test_tag_with_valid_response():
-    provider = MockProvider('{"lvl1": "形制与技术", "lvl2": "结构体系", "bridge_name": "赵州桥"}')
-    tagger = MetadataTagger(provider, taxonomy=_TAXONOMY)
+async def test_tag_with_valid_response(monkeypatch):
+    _patch_chat(monkeypatch, '{"lvl1": "形制与技术", "lvl2": "结构体系", "bridge_name": "赵州桥"}')
+    tagger = MetadataTagger(taxonomy=_TAXONOMY)
 
     result = await tagger.tag("赵州桥是一座石拱桥，采用敞肩式结构。")
 
@@ -44,9 +49,9 @@ async def test_tag_with_valid_response():
 
 
 @pytest.mark.asyncio
-async def test_tag_with_invalid_lvl1():
-    provider = MockProvider('{"lvl1": "无效分类", "lvl2": null, "bridge_name": null}')
-    tagger = MetadataTagger(provider, taxonomy=_TAXONOMY)
+async def test_tag_with_invalid_lvl1(monkeypatch):
+    _patch_chat(monkeypatch, '{"lvl1": "无效分类", "lvl2": null, "bridge_name": null}')
+    tagger = MetadataTagger(taxonomy=_TAXONOMY)
 
     result = await tagger.tag("一些文本")
 
@@ -54,9 +59,9 @@ async def test_tag_with_invalid_lvl1():
 
 
 @pytest.mark.asyncio
-async def test_tag_with_malformed_response():
-    provider = MockProvider("这不是JSON格式")
-    tagger = MetadataTagger(provider, taxonomy=_TAXONOMY)
+async def test_tag_with_malformed_response(monkeypatch):
+    _patch_chat(monkeypatch, "这不是JSON格式")
+    tagger = MetadataTagger(taxonomy=_TAXONOMY)
 
     result = await tagger.tag("一些文本")
 
@@ -79,7 +84,7 @@ def test_taxonomy_lvl1_values():
 
 
 @pytest.mark.asyncio
-async def test_tagger_accepts_runtime_added_lvl1():
+async def test_tagger_accepts_runtime_added_lvl1(monkeypatch):
     """A lvl1 added via admin UI after boot must be usable by the tagger.
 
     Simulates: admin creates a brand-new lvl1 via POST /taxonomy/nodes →
@@ -92,10 +97,11 @@ async def test_tagger_accepts_runtime_added_lvl1():
             "新二级分类": ["新三级分类"],
         },
     }
-    provider = MockProvider(
+    _patch_chat(
+        monkeypatch,
         '{"lvl1": "方案2回归测试用新分类", "lvl2": "新二级分类", "lvl3": "新三级分类", "bridge_name": null}'
     )
-    tagger = MetadataTagger(provider, taxonomy=runtime_taxonomy)
+    tagger = MetadataTagger(taxonomy=runtime_taxonomy)
 
     result = await tagger.tag("一些属于新分类的文本")
 
@@ -105,7 +111,7 @@ async def test_tagger_accepts_runtime_added_lvl1():
 
 
 @pytest.mark.asyncio
-async def test_tagger_rejects_runtime_deleted_lvl1():
+async def test_tagger_rejects_runtime_deleted_lvl1(monkeypatch):
     """A lvl1 removed via admin UI must stop appearing on new ingests.
 
     If the LLM hallucinates a now-deleted lvl1, the tagger's whitelist
@@ -115,10 +121,11 @@ async def test_tagger_rejects_runtime_deleted_lvl1():
     deleted_lvl1 = "已被管理员删除的旧分类"
     # Deleted lvl1 is deliberately absent from runtime_taxonomy.
     runtime_taxonomy = _TAXONOMY
-    provider = MockProvider(
+    _patch_chat(
+        monkeypatch,
         f'{{"lvl1": "{deleted_lvl1}", "lvl2": "任何二级", "bridge_name": null}}'
     )
-    tagger = MetadataTagger(provider, taxonomy=runtime_taxonomy)
+    tagger = MetadataTagger(taxonomy=runtime_taxonomy)
 
     result = await tagger.tag("一些可能属于旧分类的文本")
 
@@ -128,12 +135,12 @@ async def test_tagger_rejects_runtime_deleted_lvl1():
 
 
 @pytest.mark.asyncio
-async def test_tagger_prompt_lists_only_snapshot_categories():
+async def test_tagger_prompt_lists_only_snapshot_categories(monkeypatch):
     """The prompt sent to the LLM must enumerate exactly the snapshot's
     lvl1 keys — not anything from constants.py / taxonomy.yaml."""
     only_one_lvl1 = {"只有这一个分类": {"唯一二级": []}}
-    provider = MockProvider('{"lvl1": null, "lvl2": null, "bridge_name": null}')
-    tagger = MetadataTagger(provider, taxonomy=only_one_lvl1)
+    _patch_chat(monkeypatch, '{"lvl1": null, "lvl2": null, "bridge_name": null}')
+    tagger = MetadataTagger(taxonomy=only_one_lvl1)
 
     prompt = tagger._build_taxonomy_prompt()
 

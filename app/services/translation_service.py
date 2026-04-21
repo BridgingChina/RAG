@@ -1,7 +1,7 @@
 """Translation service — i18n Phases 3 & 4.
 
 Split across two independent flows that share the same glossary injection and
-``ZhipuProvider`` plumbing:
+LLM plumbing:
 
 * **Admin-driven审校 flow** (Phase 3): :func:`generate_for_row`,
   :func:`batch_generate_for_field`, :func:`approve_review`, :func:`reject_review`.
@@ -13,9 +13,13 @@ Split across two independent flows that share the same glossary injection and
   generated in the answer call land in ``chunks.cached_en_summary`` as a
   fire-and-forget background write.
 
-Model selection (cost vs quality):
-    - ``glm-4-flash``  — query translation + batch field translation (cheap)
-    - ``glm-4.7``      — English answer generation + evidence summarisation
+Phase C: all LLM chat dispatch goes through :func:`app.llm.chat_for_task` with
+task_key ``"translation"``. The previous code toggled ``provider.chat_model``
+between ``glm-4-flash`` (cheap) and ``glm-4.7`` (quality) per call — that
+mutation on the shared provider instance was a cross-request race and has
+been removed. Admins that want to split the cheap/quality backends can add
+distinct task routes (e.g. ``translation_cheap`` / ``translation_quality``)
+in Phase D once the admin UI ships; for now both paths share one route.
 """
 from __future__ import annotations
 
@@ -36,6 +40,7 @@ from app.core.glossary import (
     load_glossary,
     pick_relevant_terms,
 )
+from app.llm import ChatMessage, chat_for_task
 from app.models import (
     Bridge,
     Chunk,
@@ -50,16 +55,17 @@ from app.models.translation_review import (
     TRANSLATION_STATUS_PENDING_AI,
     TRANSLATION_STATUS_REJECTED,
 )
-from app.providers import ChatMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
 
 
-# --- Model routing --------------------------------------------------------
+TASK_KEY = "translation"
 
-# Cheap model for bulk translation / query-translate work.
+# Historical model constants — kept for backwards-compatible reads (system
+# status page, tests that still reference them). Phase D will replace these
+# with llm_task_routes lookups; for now both cheap/quality flows route via
+# the single "translation" task_key, so these are informational only.
 CHEAP_TRANSLATION_MODEL = "glm-4-flash"
-# Quality model for user-facing answer generation.
 QUALITY_ANSWER_MODEL = "glm-4.7"
 
 # Advisory lock for batch AI translation. Picked as ingest_scheduler's base
@@ -178,15 +184,14 @@ def _source_field_for_review(table_name: str, field_name: str) -> str:
 async def translate_query_zh(
     query_en: str,
     *,
-    zhipu_client: LLMProvider,
     glossary: list[GlossaryTerm] | None = None,
     cache: _LRUCache | None = None,
 ) -> str:
     """Translate an English user question into a Chinese retrieval query.
 
-    Uses ``glm-4-flash`` + glossary few-shot. Caches by SHA-256 prefix of the
-    input query for the process lifetime so repeat questions don't reburn
-    tokens.
+    Routes via ``chat_for_task("translation", ...)``. Caches by SHA-256 prefix
+    of the input query for the process lifetime so repeat questions don't
+    reburn tokens.
 
     Returns the unwrapped Chinese string ready to hand to
     :meth:`HybridRetriever.retrieve`. On LLM failure raises the provider's
@@ -221,14 +226,7 @@ async def translate_query_zh(
         "no surrounding quotes):"
     )
 
-    # Route to the cheap model without mutating the shared provider's default.
-    original_model = getattr(zhipu_client, "chat_model", None)
-    try:
-        zhipu_client.chat_model = CHEAP_TRANSLATION_MODEL  # type: ignore[attr-defined]
-        resp = await zhipu_client.chat([ChatMessage(role="user", content=prompt)])
-    finally:
-        if original_model is not None:
-            zhipu_client.chat_model = original_model  # type: ignore[attr-defined]
+    resp = await chat_for_task(TASK_KEY, [ChatMessage(role="user", content=prompt)])
 
     translated = _strip_llm_wrapper(resp.content)
     if not translated:
@@ -275,7 +273,6 @@ def _get_or_create_review_row(
 
 
 async def _call_cheap_translator(
-    zhipu_client: LLMProvider,
     *,
     source_text: str,
     context: str | None = None,
@@ -300,13 +297,7 @@ async def _call_cheap_translator(
     )
     prompt = "\n\n".join(prompt_parts)
 
-    original_model = getattr(zhipu_client, "chat_model", None)
-    try:
-        zhipu_client.chat_model = CHEAP_TRANSLATION_MODEL  # type: ignore[attr-defined]
-        resp = await zhipu_client.chat([ChatMessage(role="user", content=prompt)])
-    finally:
-        if original_model is not None:
-            zhipu_client.chat_model = original_model  # type: ignore[attr-defined]
+    resp = await chat_for_task(TASK_KEY, [ChatMessage(role="user", content=prompt)])
     return _strip_llm_wrapper(resp.content)
 
 
@@ -317,7 +308,6 @@ async def generate_for_row(
     row_id: UUID,
     field_name: str,
     source_text: str,
-    zhipu_client: LLMProvider,
 ) -> TranslationReview:
     """Produce (or refresh) the AI translation for a single business row/field.
 
@@ -342,7 +332,6 @@ async def generate_for_row(
 
     try:
         translation = await _call_cheap_translator(
-            zhipu_client,
             source_text=source_text,
             context=f"{table_name}.{field_name}",
         )
@@ -366,7 +355,6 @@ async def batch_generate_for_field(
     table_name: str,
     field_name: str,
     limit: int = 100,
-    zhipu_client: LLMProvider,
 ) -> dict[str, int]:
     """Kick off AI translation for up to ``limit`` business rows that lack an
     ``_en`` value.
@@ -434,7 +422,6 @@ async def batch_generate_for_field(
             row_id=row.id,
             field_name=field_name,
             source_text=source_text,
-            zhipu_client=zhipu_client,
         )
         started += 1
 
@@ -571,7 +558,6 @@ async def translate_answer_with_evidence(
     question_original: str,
     evidence_chunks: list[Any],
     *,
-    zhipu_client: LLMProvider,
     glossary: list[GlossaryTerm] | None = None,
 ) -> dict[str, Any]:
     """One LLM call that emits the English answer + per-chunk English summaries.
@@ -622,23 +608,17 @@ async def translate_answer_with_evidence(
         "Do NOT include any commentary outside the JSON object."
     )
 
-    original_model = getattr(zhipu_client, "chat_model", None)
     try:
-        zhipu_client.chat_model = QUALITY_ANSWER_MODEL  # type: ignore[attr-defined]
-        try:
-            resp = await zhipu_client.chat(
-                [ChatMessage(role="user", content=prompt)]
-            )
-        except Exception:
-            logger.exception("translate_answer_with_evidence LLM call failed")
-            return {
-                "answer": "",
-                "evidence_summaries": [],
-                "degraded": True,
-            }
-    finally:
-        if original_model is not None:
-            zhipu_client.chat_model = original_model  # type: ignore[attr-defined]
+        resp = await chat_for_task(
+            TASK_KEY, [ChatMessage(role="user", content=prompt)]
+        )
+    except Exception:
+        logger.exception("translate_answer_with_evidence LLM call failed")
+        return {
+            "answer": "",
+            "evidence_summaries": [],
+            "degraded": True,
+        }
 
     parsed = _extract_json_object(resp.content)
     if not parsed or "answer" not in parsed:

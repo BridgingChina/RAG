@@ -3,7 +3,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from app.providers import ChatMessage, LLMProvider
+from app.llm import ChatMessage, chat_for_task
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +23,18 @@ class MetadataTagger:
     tagger never reads YAML or touches the DB on its own. Callers (ingest
     pipeline, scripts, tests) pass a fresh snapshot so admin-side taxonomy
     edits propagate on the next task without any cache invalidation dance.
+
+    Phase C: LLM dispatch goes through :func:`app.llm.chat_for_task` with
+    task_key ``"ingest_tagger"``. No more injected provider — the task
+    router owns provider/model selection.
     """
+
+    TASK_KEY = "ingest_tagger"
 
     def __init__(
         self,
-        provider: LLMProvider,
         taxonomy: dict[str, dict[str, list[str]]],
     ):
-        self.provider = provider
         self.taxonomy = taxonomy
 
     async def tag(self, chunk_content: str) -> TagResult:
@@ -56,7 +60,7 @@ class MetadataTagger:
 4) 只输出JSON，不要其他内容。"""
 
         messages = [ChatMessage(role="user", content=prompt)]
-        response = await self.provider.chat(messages)
+        response = await chat_for_task(self.TASK_KEY, messages)
 
         return self._parse_response(response.content)
 

@@ -1,21 +1,28 @@
-"""Batch flashcard generation via LLM for knowledge points."""
+"""Batch flashcard generation via LLM for knowledge points.
+
+Phase C: LLM dispatch goes through :func:`app.llm.chat_for_task` with task_key
+``"content_generation"`` (shared with the inline key-points generator in
+``app/api/v1/knowledge_points.py``).
+"""
 import json
 import logging
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.llm import ChatMessage, chat_for_task
 from app.models import Bridge, Flashcard, KnowledgePoint, KnowledgePointBridge, KnowledgePointKeyPoint
-from app.providers.base import LLMProvider
 
 logger = logging.getLogger(__name__)
+
+TASK_KEY = "content_generation"
 
 
 class FlashcardBatchGenerator:
     """Generate flashcards for knowledge points using LLM."""
 
     async def generate_for_kp(
-        self, db: Session, knowledge_point_id: UUID, provider: LLMProvider
+        self, db: Session, knowledge_point_id: UUID
     ) -> list[Flashcard]:
         """Generate flashcards for one knowledge point.
 
@@ -103,9 +110,7 @@ class FlashcardBatchGenerator:
         )
 
         # 3. Call LLM
-        from app.providers.base import ChatMessage
-
-        response = await provider.chat([ChatMessage(role="user", content=prompt)])
+        response = await chat_for_task(TASK_KEY, [ChatMessage(role="user", content=prompt)])
 
         # 4. Parse JSON response
         text = response.content.strip()
@@ -169,15 +174,12 @@ class FlashcardBatchGenerator:
         self, db: Session, knowledge_point_ids: list[UUID]
     ) -> dict:
         """Generate flashcards for multiple KPs. Returns summary."""
-        from app.providers import get_provider
-
-        provider = get_provider()
         total_generated = 0
         errors = []
 
         for kp_id in knowledge_point_ids:
             try:
-                cards = await self.generate_for_kp(db, kp_id, provider)
+                cards = await self.generate_for_kp(db, kp_id)
                 total_generated += len(cards)
                 db.commit()
             except Exception as e:

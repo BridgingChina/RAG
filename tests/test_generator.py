@@ -1,14 +1,22 @@
-"""Tests for Generator service."""
+"""Tests for Generator service — Phase C routed via chat_for_task."""
 import uuid
 
 import pytest
 
 from app.providers import ChatResponse
+from app.services import generator as generator_module
 from app.services.generator import Citation, Generator
 from app.services.hybrid_retriever import HybridRetrievalResult, RetrievedChunk
 
 _UUID1 = uuid.UUID("00000000-0000-0000-0000-000000000001")
 _UUID2 = uuid.UUID("00000000-0000-0000-0000-000000000002")
+
+
+def _patch_chat(monkeypatch, content: str):
+    async def _fake(task_key, messages):
+        return ChatResponse(content=content, usage={"total_tokens": 100}, model="stub-model")
+
+    monkeypatch.setattr(generator_module, "chat_for_task", _fake)
 
 
 def test_citation_structure():
@@ -19,17 +27,15 @@ def test_citation_structure():
 
 
 @pytest.mark.asyncio
-async def test_generate_v2_with_confidence():
+async def test_generate_v2_with_confidence(monkeypatch):
     """Test generate_v2 returns confidence assessment."""
+    _patch_chat(
+        monkeypatch,
+        '{"summary": "要点", "details": "详细", "analogy": null, '
+        '"confidence": {"level": "high", "reason": "证据充分"}}',
+    )
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(
-                content='{"summary": "要点", "details": "详细", "analogy": null, "confidence": {"level": "high", "reason": "证据充分"}}',
-                usage={"total_tokens": 100},
-            )
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[
             RetrievedChunk(
@@ -54,17 +60,15 @@ async def test_generate_v2_with_confidence():
 
 
 @pytest.mark.asyncio
-async def test_generate_v2_with_analogy():
+async def test_generate_v2_with_analogy(monkeypatch):
     """Test generate_v2 includes analogy from similar bridges."""
+    _patch_chat(
+        monkeypatch,
+        '{"summary": "要点", "details": "详细", "analogy": "类似于卢沟桥的石墩设计", '
+        '"confidence": {"level": "medium", "reason": "有类比参考"}}',
+    )
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(
-                content='{"summary": "要点", "details": "详细", "analogy": "类似于卢沟桥的石墩设计", "confidence": {"level": "medium", "reason": "有类比参考"}}',
-                usage={"total_tokens": 100},
-            )
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[],
         concept_chunks=[],
@@ -85,17 +89,11 @@ async def test_generate_v2_with_analogy():
 
 
 @pytest.mark.asyncio
-async def test_generate_v2_parse_error_fallback():
+async def test_generate_v2_parse_error_fallback(monkeypatch):
     """Test generate_v2 fallback when JSON parsing fails."""
+    _patch_chat(monkeypatch, "这不是有效的JSON格式")
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(
-                content="这不是有效的JSON格式",
-                usage={"total_tokens": 50},
-            )
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[],
         concept_chunks=[],
@@ -109,17 +107,16 @@ async def test_generate_v2_parse_error_fallback():
 
 
 @pytest.mark.asyncio
-async def test_generate_streaming_returns_event_list():
+async def test_generate_streaming_returns_event_list(monkeypatch):
     """Test generate_streaming returns structured SSE events."""
+    _patch_chat(
+        monkeypatch,
+        '{"key_points": [{"summary": "要点一", "explanation": "解释一", "citations": [1]}, '
+        '{"summary": "要点二", "explanation": "解释二", "citations": [2]}], '
+        '"deep_dive": null, "confidence": {"level": "high", "reason": "充分"}}',
+    )
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(
-                content='{"key_points": [{"summary": "要点一", "explanation": "解释一", "citations": [1]}, {"summary": "要点二", "explanation": "解释二", "citations": [2]}], "deep_dive": null, "confidence": {"level": "high", "reason": "充分"}}',
-                usage={"total_tokens": 200},
-            )
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[
             RetrievedChunk(chunk_id=_UUID1, content="内容一", bridge_id=_UUID1, bridge_name="赵州桥", score=0.9),
@@ -146,14 +143,11 @@ async def test_generate_streaming_returns_event_list():
 
 
 @pytest.mark.asyncio
-async def test_generate_streaming_fallback_on_bad_json():
+async def test_generate_streaming_fallback_on_bad_json(monkeypatch):
     """Test generate_streaming handles malformed LLM output."""
+    _patch_chat(monkeypatch, "这不是JSON")
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(content="这不是JSON", usage={"total_tokens": 50})
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
     )
@@ -169,17 +163,15 @@ _UUID3 = uuid.UUID("00000000-0000-0000-0000-000000000003")
 
 
 @pytest.mark.asyncio
-async def test_generate_streaming_sources_contiguous_ids():
+async def test_generate_streaming_sources_contiguous_ids(monkeypatch):
     """Sources event has contiguous IDs even when multiple chunks share bridge_name."""
+    _patch_chat(
+        monkeypatch,
+        '{"key_points": [{"summary": "s", "explanation": "e", "citations": [1]}], '
+        '"deep_dive": null, "confidence": {"level": "high", "reason": "ok"}}',
+    )
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(
-                content='{"key_points": [{"summary": "s", "explanation": "e", "citations": [1]}], "deep_dive": null, "confidence": {"level": "high", "reason": "ok"}}',
-                usage={"total_tokens": 100},
-            )
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[
             RetrievedChunk(chunk_id=_UUID1, content="赵州桥内容一", bridge_id=_UUID1, bridge_name="赵州桥", score=0.9),
@@ -203,17 +195,15 @@ async def test_generate_streaming_sources_contiguous_ids():
 
 
 @pytest.mark.asyncio
-async def test_generate_streaming_sources_no_bridge_name():
+async def test_generate_streaming_sources_no_bridge_name(monkeypatch):
     """Chunks with bridge_name='' get fallback name '来源'."""
+    _patch_chat(
+        monkeypatch,
+        '{"key_points": [{"summary": "s", "explanation": "e", "citations": []}], '
+        '"deep_dive": null, "confidence": {"level": "low", "reason": "ok"}}',
+    )
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(
-                content='{"key_points": [{"summary": "s", "explanation": "e", "citations": []}], "deep_dive": null, "confidence": {"level": "low", "reason": "ok"}}',
-                usage={"total_tokens": 50},
-            )
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[],
         concept_chunks=[
@@ -230,16 +220,12 @@ async def test_generate_streaming_sources_no_bridge_name():
 
 
 @pytest.mark.asyncio
-async def test_generate_streaming_fallback_asserts_specific_behavior():
+async def test_generate_streaming_fallback_asserts_specific_behavior(monkeypatch):
     """When LLM returns non-JSON, fallback produces exactly 3 events with expected structure."""
-
     raw_content = "这不是JSON格式的响应内容"
+    _patch_chat(monkeypatch, raw_content)
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(content=raw_content, usage={"total_tokens": 50})
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
     )
@@ -262,14 +248,11 @@ async def test_generate_streaming_fallback_asserts_specific_behavior():
 
 
 @pytest.mark.asyncio
-async def test_generate_streaming_empty_content_returns_error():
+async def test_generate_streaming_empty_content_returns_error(monkeypatch):
     """Empty LLM content returns a single error event with code EMPTY_LLM_RESPONSE."""
+    _patch_chat(monkeypatch, "")
 
-    class MockProvider:
-        async def chat(self, messages):
-            return ChatResponse(content="", usage={"total_tokens": 0})
-
-    generator = Generator(provider=MockProvider())
+    generator = Generator()
     evidence = HybridRetrievalResult(
         anchor_chunks=[], concept_chunks=[], analogy_chunks=[],
     )

@@ -175,14 +175,18 @@ async def ask_sse(
         _mark_event()
 
         try:
-            # Use faster model for latency-sensitive QA path
+            # Phase C: every LLM chat call is task-routed via
+            # ``chat_for_task(task_key, messages)`` — see app/llm. The old
+            # ``provider.chat_model = settings.qa_chat_model`` monkey-patch
+            # on the shared singleton was a cross-request race bug and is
+            # gone. ``provider`` here is only used for ``embed()`` (locked to
+            # Zhipu per design §2) inside HybridRetriever.
             provider = get_provider()
-            provider.chat_model = settings.qa_chat_model
 
             tokenizer = Tokenizer(user_dict_path=default_user_dict_path())
             retriever = HybridRetriever(provider=provider, tokenizer=tokenizer)
-            generator = Generator(provider=provider)
-            facet_extractor = FacetExtractor(provider=provider)
+            generator = Generator()
+            facet_extractor = FacetExtractor()
 
             # ── English translate-around branch (i18n Phase 4) ──
             # Phase 5 rollback flag: when settings.i18n_enabled is False the
@@ -358,7 +362,7 @@ async def _run_en_qa_flow(
     try:
         zh_query, english_chunks = await asyncio.wait_for(
             asyncio.gather(
-                translate_query_zh(question_en, zhipu_client=provider),
+                translate_query_zh(question_en),
                 retriever.search_by_english_embedding(db, question_en, top_k=10),
                 return_exceptions=False,
             ),
@@ -434,7 +438,7 @@ async def _run_en_qa_flow(
 
     stage3_start = time.monotonic()
     answer_result = await translate_answer_with_evidence(
-        question_en, merged, zhipu_client=provider,
+        question_en, merged,
     )
     stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
     if answer_result.get("degraded"):
@@ -446,7 +450,7 @@ async def _run_en_qa_flow(
         )
         try:
             zh_answer_events = await asyncio.wait_for(
-                Generator(provider=provider).generate_streaming(question_en, zh_result),
+                Generator().generate_streaming(question_en, zh_result),
                 timeout=_GENERATE_TIMEOUT,
             )
         except Exception:

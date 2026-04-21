@@ -1,11 +1,26 @@
-"""Tests for FlashcardBatchGenerator service."""
+"""Tests for FlashcardBatchGenerator service — Phase C routed via chat_for_task."""
 import json
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
+from app.providers import ChatResponse
+from app.services import flashcard_generator as fc_module
 from app.services.flashcard_generator import FlashcardBatchGenerator
+
+
+def _patch_chat(monkeypatch, content: str) -> list:
+    """Install a recorder and return its call log. Tests use the log to
+    assert prompt fragments (e.g. 'no identification cards')."""
+    calls: list = []
+
+    async def _fake_chat_for_task(task_key, messages):
+        calls.append({"task_key": task_key, "messages": messages})
+        return ChatResponse(content=content, usage={}, model="stub-model")
+
+    monkeypatch.setattr(fc_module, "chat_for_task", _fake_chat_for_task)
+    return calls
 
 
 def _make_kp(name="拱桥结构", kp_id=None):
@@ -39,15 +54,8 @@ def _make_kp_bridge(bridge_id):
 
 def _mock_db_queries(db, kp, key_points, bridges, kp_bridges):
     """Set up chained query mocks for the generator."""
-    # Each db.query(...) call needs its own chain
-    call_count = {"n": 0}
-    original_query = db.query
-
     def _query_side_effect(model):
         q = MagicMock()
-        call_count["n"] += 1
-
-        # Determine what to return based on the model
         from app.models import (
             Bridge,
             Flashcard,
@@ -72,7 +80,7 @@ def _mock_db_queries(db, kp, key_points, bridges, kp_bridges):
 
 
 @pytest.mark.asyncio
-async def test_generate_for_kp_creates_cards():
+async def test_generate_for_kp_creates_cards(monkeypatch):
     """Test that generate_for_kp creates flashcards from LLM response."""
     kp_id = uuid.uuid4()
     bridge = _make_bridge("赵州桥")
@@ -83,10 +91,7 @@ async def test_generate_for_kp_creates_cards():
     db = MagicMock()
     _mock_db_queries(db, kp, key_points, [bridge], kp_bridges)
 
-    # Mock LLM provider
-    provider = MagicMock()
-    llm_response = MagicMock()
-    llm_response.content = json.dumps({
+    llm_content = json.dumps({
         "cards": [
             {
                 "card_type": "concept",
@@ -106,10 +111,10 @@ async def test_generate_for_kp_creates_cards():
             },
         ]
     })
-    provider.chat = AsyncMock(return_value=llm_response)
+    _patch_chat(monkeypatch, llm_content)
 
     generator = FlashcardBatchGenerator()
-    cards = await generator.generate_for_kp(db, kp_id, provider)
+    cards = await generator.generate_for_kp(db, kp_id)
 
     assert len(cards) == 2
     assert cards[0].card_type == "concept"
@@ -121,7 +126,7 @@ async def test_generate_for_kp_creates_cards():
 
 
 @pytest.mark.asyncio
-async def test_generate_skips_identification_when_no_bridges():
+async def test_generate_skips_identification_when_no_bridges(monkeypatch):
     """Test that prompt instructs no identification cards when no bridges."""
     kp_id = uuid.uuid4()
     kp = _make_kp("梁桥结构", kp_id=kp_id)
@@ -130,9 +135,7 @@ async def test_generate_skips_identification_when_no_bridges():
     db = MagicMock()
     _mock_db_queries(db, kp, key_points, bridges=[], kp_bridges=[])
 
-    provider = MagicMock()
-    llm_response = MagicMock()
-    llm_response.content = json.dumps({
+    llm_content = json.dumps({
         "cards": [
             {
                 "card_type": "concept",
@@ -144,22 +147,23 @@ async def test_generate_skips_identification_when_no_bridges():
             },
         ]
     })
-    provider.chat = AsyncMock(return_value=llm_response)
+    calls = _patch_chat(monkeypatch, llm_content)
 
     generator = FlashcardBatchGenerator()
-    cards = await generator.generate_for_kp(db, kp_id, provider)
+    cards = await generator.generate_for_kp(db, kp_id)
 
     assert len(cards) == 1
     assert cards[0].card_type == "concept"
     assert cards[0].back_example_bridge_id is None
 
     # Verify prompt mentions no identification cards
-    prompt_arg = provider.chat.call_args[0][0][0].content
+    assert calls, "expected at least one chat_for_task call"
+    prompt_arg = calls[0]["messages"][0].content
     assert "不要生成 identification 卡" in prompt_arg
 
 
 @pytest.mark.asyncio
-async def test_parse_llm_response_handles_malformed_json():
+async def test_parse_llm_response_handles_malformed_json(monkeypatch):
     """Test that malformed JSON from LLM raises an exception."""
     kp_id = uuid.uuid4()
     kp = _make_kp("拱桥结构", kp_id=kp_id)
@@ -167,18 +171,15 @@ async def test_parse_llm_response_handles_malformed_json():
     db = MagicMock()
     _mock_db_queries(db, kp, key_points=[], bridges=[], kp_bridges=[])
 
-    provider = MagicMock()
-    llm_response = MagicMock()
-    llm_response.content = "This is not valid JSON at all"
-    provider.chat = AsyncMock(return_value=llm_response)
+    _patch_chat(monkeypatch, "This is not valid JSON at all")
 
     generator = FlashcardBatchGenerator()
     with pytest.raises(json.JSONDecodeError):
-        await generator.generate_for_kp(db, kp_id, provider)
+        await generator.generate_for_kp(db, kp_id)
 
 
 @pytest.mark.asyncio
-async def test_parse_llm_response_handles_markdown_fences():
+async def test_parse_llm_response_handles_markdown_fences(monkeypatch):
     """Test that markdown-fenced JSON is parsed correctly."""
     kp_id = uuid.uuid4()
     kp = _make_kp("拱桥结构", kp_id=kp_id)
@@ -186,20 +187,20 @@ async def test_parse_llm_response_handles_markdown_fences():
     db = MagicMock()
     _mock_db_queries(db, kp, key_points=[], bridges=[], kp_bridges=[])
 
-    provider = MagicMock()
-    llm_response = MagicMock()
-    llm_response.content = '```json\n{"cards": [{"card_type": "concept", "front_title": "测试", "back_answer": "答案"}]}\n```'
-    provider.chat = AsyncMock(return_value=llm_response)
+    _patch_chat(
+        monkeypatch,
+        '```json\n{"cards": [{"card_type": "concept", "front_title": "测试", "back_answer": "答案"}]}\n```',
+    )
 
     generator = FlashcardBatchGenerator()
-    cards = await generator.generate_for_kp(db, kp_id, provider)
+    cards = await generator.generate_for_kp(db, kp_id)
 
     assert len(cards) == 1
     assert cards[0].front_title == "测试"
 
 
 @pytest.mark.asyncio
-async def test_bridge_name_matching_case_insensitive():
+async def test_bridge_name_matching_case_insensitive(monkeypatch):
     """Test that bridge name matching is case-insensitive."""
     kp_id = uuid.uuid4()
     bridge = _make_bridge("赵州桥")
@@ -209,22 +210,21 @@ async def test_bridge_name_matching_case_insensitive():
     db = MagicMock()
     _mock_db_queries(db, kp, key_points=[], bridges=[bridge], kp_bridges=kp_bridges)
 
-    provider = MagicMock()
-    llm_response = MagicMock()
-    # LLM returns exact name — should match
-    llm_response.content = json.dumps({
-        "cards": [
-            {
-                "card_type": "identification",
-                "front_title": "测试",
-                "back_answer": "赵州桥",
-                "example_bridge_name": "赵州桥",
-            },
-        ]
-    })
-    provider.chat = AsyncMock(return_value=llm_response)
+    _patch_chat(
+        monkeypatch,
+        json.dumps({
+            "cards": [
+                {
+                    "card_type": "identification",
+                    "front_title": "测试",
+                    "back_answer": "赵州桥",
+                    "example_bridge_name": "赵州桥",
+                },
+            ]
+        }),
+    )
 
     generator = FlashcardBatchGenerator()
-    cards = await generator.generate_for_kp(db, kp_id, provider)
+    cards = await generator.generate_for_kp(db, kp_id)
 
     assert cards[0].back_example_bridge_id == bridge.id

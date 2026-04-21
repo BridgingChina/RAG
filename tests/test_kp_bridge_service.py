@@ -83,17 +83,17 @@ class TestSyncFromChunks:
 
         db.query.side_effect = enhanced_side_effect
 
-        result = await svc.sync_from_chunks(db, kp.id, provider=None)
+        result = await svc.sync_from_chunks(db, kp.id, use_llm=False)
 
         assert len(result) == 2
         assert result[0].bridge_id == bridge1.id
         assert result[1].bridge_id == bridge2.id
-        # Default notes when no provider
+        # Default notes when use_llm=False
         assert result[0].relevance_note == "与拱桥结构相关"
 
     @pytest.mark.asyncio
     async def test_generates_default_note_without_provider(self):
-        """Without a provider, relevance_note should use default text."""
+        """With ``use_llm=False``, relevance_note should use default text."""
         svc = KnowledgePointBridgeService()
 
         taxonomy_node = _mock_taxonomy_node(lvl3="桥墩设计")
@@ -123,7 +123,7 @@ class TestSyncFromChunks:
 
         db.query.side_effect = query_side_effect
 
-        result = await svc.sync_from_chunks(db, kp.id, provider=None)
+        result = await svc.sync_from_chunks(db, kp.id, use_llm=False)
 
         assert len(result) == 1
         assert result[0].relevance_note == "与桥墩设计相关"
