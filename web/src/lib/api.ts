@@ -106,7 +106,7 @@ function parseHttpError(status: number, text: string): Error {
 
 // --- Core HTTP methods ---
 
-async function get<T>(
+export async function get<T>(
   url: string,
   params?: Record<string, unknown>,
 ): Promise<T> {
@@ -140,7 +140,7 @@ async function get<T>(
   return res.json()
 }
 
-async function post<T>(url: string, body: unknown): Promise<T> {
+export async function post<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "POST",
     headers: await authHeaders(),
@@ -156,7 +156,7 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return res.json()
 }
 
-async function put<T>(url: string, body: unknown): Promise<T> {
+export async function put<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "PUT",
     headers: await authHeaders(),
@@ -172,7 +172,7 @@ async function put<T>(url: string, body: unknown): Promise<T> {
   return res.json()
 }
 
-async function del(url: string): Promise<void> {
+export async function del(url: string): Promise<void> {
   const res = await fetch(`${BASE}${url}`, {
     method: "DELETE",
     headers: await authHeaders(),
@@ -185,7 +185,7 @@ async function del(url: string): Promise<void> {
   }
 }
 
-async function patch<T>(url: string, body: unknown): Promise<T> {
+export async function patch<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {
     method: "PATCH",
     headers: await authHeaders(),

@@ -25,6 +25,7 @@ export const router = createBrowserRouter([
           { path: "ingest-tasks/:id", lazy: () => import("@/pages/IngestTaskDetailPage") },
           { path: "ask", lazy: () => import("@/pages/AskPage") },
           { path: "settings", lazy: () => import("@/pages/SettingsPage") },
+          { path: "settings/llm", lazy: () => import("@/pages/settings/LLMSettingsPage") },
           { path: "audit-logs", lazy: () => import("@/pages/AuditLogPage") },
           { path: "translations", lazy: () => import("@/pages/translations/TranslationsList") },
         ],
