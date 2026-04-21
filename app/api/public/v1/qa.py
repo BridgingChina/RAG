@@ -185,7 +185,11 @@ async def ask_sse(
             facet_extractor = FacetExtractor(provider=provider)
 
             # ── English translate-around branch (i18n Phase 4) ──
-            if locale == "en-US":
+            # Phase 5 rollback flag: when settings.i18n_enabled is False the
+            # en-US branch is bypassed and the request falls through to the
+            # Chinese pipeline. Users see Chinese answers instead of a 500 —
+            # this is the declared safe degrade path.
+            if locale == "en-US" and settings.i18n_enabled:
                 en_events, degraded, reason = await _run_en_qa_flow(
                     db=db,
                     body=body,

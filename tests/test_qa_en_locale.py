@@ -160,6 +160,14 @@ def test_en_qa_flow_degrades_on_no_evidence():
     assert any(t == "error" for t, _ in events)
 
 
+def test_settings_i18n_enabled_defaults_to_true():
+    """Phase 5 rollback flag is on by default so production keeps the
+    translate-around flow until an env var flips it."""
+    from app.core.config import Settings
+
+    assert Settings().i18n_enabled is True
+
+
 def test_en_qa_flow_emits_structured_metrics_log(caplog):
     """Phase 4.F.1: success-path flow emits a `qa.en_metrics` log line with
     stage timings + cache hit rate, for offline P50/P95 aggregation."""
