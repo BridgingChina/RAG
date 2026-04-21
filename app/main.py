@@ -1,8 +1,9 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -11,6 +12,13 @@ from app.core.config import settings
 from app.core.database import init_database
 from app.core.logging import logger
 from app.core.rate_limit import limiter
+from app.providers._sanitize import sanitize_error
+from app.providers.errors import (
+    ModelNotFoundError,
+    ProviderConfigurationError,
+    ProviderUnavailableError,
+    TaskRouteNotFoundError,
+)
 
 
 async def on_startup_register_keys() -> None:
@@ -104,6 +112,81 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Bridge RAG", version="1.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ---------------------------------------------------------------------------
+# Provider error handlers (Phase D)
+#
+# These map the provider-layer exception hierarchy from
+# ``app.providers.errors`` onto HTTP status codes so services can raise
+# Provider* errors anywhere in the request lifecycle without each endpoint
+# having to translate them. Every handler runs the sanitizer on the
+# exception text — it's the last line of the zero-key-exposure defense for
+# any provider error that slips past a route without being caught.
+# ---------------------------------------------------------------------------
+
+
+@app.exception_handler(ProviderConfigurationError)
+async def _handle_provider_cfg(
+    request: Request, exc: ProviderConfigurationError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": {
+                "error": "provider_misconfigured",
+                "message": sanitize_error(exc),
+            }
+        },
+    )
+
+
+@app.exception_handler(ProviderUnavailableError)
+async def _handle_provider_unavailable(
+    request: Request, exc: ProviderUnavailableError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={
+            "detail": {
+                "error": "provider_unavailable",
+                "reason": sanitize_error(exc),
+            }
+        },
+    )
+
+
+@app.exception_handler(ModelNotFoundError)
+async def _handle_model_not_found(
+    request: Request, exc: ModelNotFoundError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": {
+                "error": "model_not_found",
+                "message": sanitize_error(exc),
+            }
+        },
+    )
+
+
+@app.exception_handler(TaskRouteNotFoundError)
+async def _handle_task_route_not_found(
+    request: Request, exc: TaskRouteNotFoundError
+) -> JSONResponse:
+    # 500 is deliberate: missing task routes are a deploy-time bug (missing
+    # seed), not a user-facing condition. See router docstring.
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": {
+                "error": "task_route_not_found",
+                "message": sanitize_error(exc),
+            }
+        },
+    )
+
 
 from app.api.public.v1.error_handlers import register_public_error_handlers
 register_public_error_handlers(app)

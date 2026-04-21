@@ -76,6 +76,19 @@ from .ingest import (
     IngestedChunkSummary,
 )
 
+# LLM routing schemas (Phase D admin API)
+from .llm import (
+    ModelInfoPublic,
+    ProviderCreate,
+    ProviderKind,
+    ProviderPublic,
+    ProviderTestResult,
+    ProviderUpdate,
+    TaskRouteBatchUpdate,
+    TaskRoutePublic,
+    TaskRouteUpdate,
+)
+
 # IngestTask schemas
 from .ingest_task import (
     IngestTaskCreate,
@@ -184,6 +197,16 @@ __all__ = [
     "IngestTaskListItem",
     "PresignRequest",
     "PresignResponse",
+    # LLM routing (Phase D)
+    "ModelInfoPublic",
+    "ProviderCreate",
+    "ProviderKind",
+    "ProviderPublic",
+    "ProviderTestResult",
+    "ProviderUpdate",
+    "TaskRouteBatchUpdate",
+    "TaskRoutePublic",
+    "TaskRouteUpdate",
     # Source
     "SourceDetail",
     "SourceListItem",
