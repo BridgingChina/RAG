@@ -86,5 +86,13 @@ class Settings(BaseSettings):
     git_commit: str = "dev"
     git_date: str = ""
 
+    # --- i18n (Phase 5 rollout flag) ---
+    # When False, any en-US request is served by the Chinese pipeline and the
+    # translate-around flow is bypassed. This is the declared rollback switch
+    # in docs/plans/2026-04-20-i18n-design.md §Phase 5 — flip to False in the
+    # environment (`I18N_ENABLED=false`) for an instant revert without shipping
+    # new code. Default True; production starts with it on.
+    i18n_enabled: bool = True
+
 
 settings = Settings()
