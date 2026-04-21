@@ -146,6 +146,9 @@ class ZhipuProvider(LLMProvider):
     ) -> list[list[float]]:
         """Generate embeddings for the given texts.
 
+        An empty-string model is treated as unspecified (falls back to the
+        provider default) — pass None explicitly if that is the intent.
+
         Args:
             texts: List of text strings to embed
             model: Override the configured embedding model. When None
@@ -210,6 +213,11 @@ class ZhipuProvider(LLMProvider):
         *,
         model: str | None = None,
     ) -> ChatResponse:
+        """Issue a chat completion against the Zhipu upstream.
+
+        An empty-string model is treated as unspecified (falls back to the
+        provider default) — pass None explicitly if that is the intent.
+        """
         actual_model = model or self.chat_model
         base = self.CHAT_BASE_URL or self.BASE_URL
         async with _zhipu_semaphore:
@@ -251,6 +259,11 @@ class ZhipuProvider(LLMProvider):
             ProviderUnavailableError: on HTTP 4xx/5xx or transport
                 failure, so the admin API can surface a sanitized
                 reason.
+
+        No automatic retry on 429/5xx is applied (unlike chat/embed): failures
+        are mapped 1:1 to ProviderUnavailableError so the admin "refresh models"
+        button surfaces them immediately. Router/DB caches a successful list,
+        so transient admin-path failures are non-critical.
         """
         async with httpx.AsyncClient() as client:
             try:
@@ -271,7 +284,7 @@ class ZhipuProvider(LLMProvider):
         return [
             ModelInfo(
                 id=row["id"],
-                display_name=row.get("id", "<unknown>"),
+                display_name=row["id"],
                 kind="chat",
                 context_window=row.get("context_window"),
                 extra={k: v for k, v in row.items() if k != "id"},

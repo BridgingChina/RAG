@@ -369,3 +369,55 @@ async def test_chat_falls_back_to_self_chat_model_when_model_none(provider):
         json_payload = call_args.kwargs["json"]
         # should fall back to settings.chat_model (default "glm-4.7")
         assert json_payload["model"] == provider.chat_model
+
+
+@pytest.mark.asyncio
+async def test_embed_uses_passed_model(provider):
+    """embed(model='embedding-custom') should pass that model in the request
+    body and hit the /embeddings endpoint.
+
+    Symmetric to test_chat_uses_passed_model — locks the kwarg contract so
+    A6's OpenAICompatProvider can't accidentally ignore the passed model.
+    """
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [{"index": 0, "embedding": [0.1] * EMBEDDING_DIM}]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.embed(["hello"], model="embedding-custom")
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        assert json_payload["model"] == "embedding-custom"
+        # Confirm the embeddings endpoint is hit (not chat/completions)
+        assert call_args.args[0].endswith("/embeddings")
+
+
+@pytest.mark.asyncio
+async def test_embed_falls_back_to_self_embedding_model_when_model_none(provider):
+    """Without model=, embed() should fall back to self.embedding_model
+    (settings.embedding_model, default 'embedding-3').
+
+    Symmetric to test_chat_falls_back_to_self_chat_model_when_model_none.
+    """
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [{"index": 0, "embedding": [0.1] * EMBEDDING_DIM}]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.embed(["hello"])
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        # should fall back to settings.embedding_model (default "embedding-3")
+        assert json_payload["model"] == provider.embedding_model
