@@ -1,6 +1,5 @@
 import inspect
-import pytest
-from app.providers.base import LLMProvider, ChatMessage, ModelInfo
+from app.providers.base import LLMProvider, ChatMessage, ModelInfo  # noqa: F401
 
 
 def test_modelinfo_required_fields():
@@ -17,8 +16,10 @@ def test_list_models_is_abstract():
 def test_chat_has_model_keyword_only():
     sig = inspect.signature(LLMProvider.chat)
     assert "model" in sig.parameters
+    assert sig.parameters["model"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
 def test_embed_has_model_keyword_only():
     sig = inspect.signature(LLMProvider.embed)
     assert "model" in sig.parameters
+    assert sig.parameters["model"].kind == inspect.Parameter.KEYWORD_ONLY

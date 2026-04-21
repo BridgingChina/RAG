@@ -290,3 +290,82 @@ async def test_chat_retries_on_pool_timeout(fast_retry_provider):
 
     # Exhaust all attempts -- proves transport errors use the same budget
     assert call_count["n"] == max_attempts
+
+
+# --- A5: list_models + model= kwarg + ChatResponse.model fill ---
+
+
+@pytest.mark.asyncio
+async def test_list_models_parses_response(provider):
+    """list_models() should GET /models and map rows into ModelInfo."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "data": [
+            {"id": "glm-4.7", "object": "model"},
+            {"id": "glm-4-flash", "object": "model"},
+        ]
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.get = mock_get
+
+        models = await provider.list_models()
+
+        # Confirm URL shape
+        call_args = mock_get.call_args
+        assert call_args.args[0] == "https://open.bigmodel.cn/api/paas/v4/models"
+
+    assert {m.id for m in models} == {"glm-4.7", "glm-4-flash"}
+    # Zhipu doesn't tag kind → default "chat" is fine for now
+    assert all(m.kind == "chat" for m in models)
+
+
+@pytest.mark.asyncio
+async def test_chat_uses_passed_model(provider):
+    """chat(model='glm-4-custom') should pass that model in the request body
+    and surface it on ChatResponse.model."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "hi"}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        resp = await provider.chat(
+            [ChatMessage(role="user", content="hello")], model="glm-4-custom"
+        )
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        assert json_payload["model"] == "glm-4-custom"
+
+    assert resp.model == "glm-4-custom"
+
+
+@pytest.mark.asyncio
+async def test_chat_falls_back_to_self_chat_model_when_model_none(provider):
+    """Without model=, chat() should fall back to self.chat_model
+    (settings.chat_model, default 'glm-4.7')."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "hi"}}],
+        "usage": {},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client:
+        mock_post = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.post = mock_post
+
+        await provider.chat([ChatMessage(role="user", content="hello")])
+
+        call_args = mock_post.call_args
+        json_payload = call_args.kwargs["json"]
+        # should fall back to settings.chat_model (default "glm-4.7")
+        assert json_payload["model"] == provider.chat_model
