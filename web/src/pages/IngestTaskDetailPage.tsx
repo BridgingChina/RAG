@@ -98,11 +98,11 @@ function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeP
       chunkCount > 0 &&
       typeof chunksIndexed === "number"
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-orange-600">
+      <span className="inline-flex items-center gap-1 text-sm text-[var(--yellow-hemp)]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {STATUS_LABELS[status]}
         {showProgress && (
-          <span className="ml-1 font-mono text-xs text-orange-700">
+          <span className="ml-1 font-mono text-xs text-[var(--yellow-hemp)]/80">
             {chunksIndexed}/{chunkCount}
           </span>
         )}
@@ -111,14 +111,14 @@ function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeP
   }
   if (status === "chunked") {
     return (
-      <span className="text-sm font-medium text-blue-600">
+      <span className="text-sm font-medium text-[var(--songci-celadon)]">
         {STATUS_LABELS[status]}
       </span>
     )
   }
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-green-600">
+      <span className="inline-flex items-center gap-1 text-sm text-[var(--songci-celadon-deep)]">
         <CheckCircle2 className="h-3.5 w-3.5" />
         {STATUS_LABELS[status]}
       </span>
@@ -133,7 +133,7 @@ function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeP
   }
   // failed
   return (
-    <span className="inline-flex items-center gap-1 text-sm text-red-600">
+    <span className="inline-flex items-center gap-1 text-sm text-destructive">
       <XCircle className="h-3.5 w-3.5" />
       {STATUS_LABELS[status]}
     </span>
@@ -309,7 +309,7 @@ export function Component() {
       <main className="space-y-6 p-6">
         {/* Action error banner */}
         {actionError && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {actionError}
           </div>
         )}
@@ -317,7 +317,7 @@ export function Component() {
         {/* Loading skeleton */}
         {loading && !task && (
           <div className="space-y-6">
-            <div className="rounded-lg border bg-white p-6">
+            <div className="rounded-lg border border-border bg-card p-6">
               <div className="grid grid-cols-2 gap-4">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="flex flex-col gap-1">
@@ -328,7 +328,7 @@ export function Component() {
               </div>
             </div>
             <Skeleton className="h-9 w-64" />
-            <div className="rounded-lg border bg-white p-6">
+            <div className="rounded-lg border border-border bg-card p-6">
               <Skeleton className="h-32 w-full" />
             </div>
           </div>
@@ -348,7 +348,7 @@ export function Component() {
         {task && (
           <>
             {/* Info card */}
-            <div className="rounded-lg border bg-white p-6">
+            <div className="rounded-lg border border-border bg-card p-6">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {/* 文件名 */}
                 <div>
@@ -391,7 +391,7 @@ export function Component() {
                     {task.source_id ? (
                       <Link
                         to={`/sources/${task.source_id}`}
-                        className="text-blue-600 hover:underline"
+                        className="text-[var(--songci-celadon)] hover:underline"
                       >
                         #{task.source_id}
                       </Link>
@@ -421,7 +421,7 @@ export function Component() {
                 {task.error_message && (
                   <div className="sm:col-span-2">
                     <dt className="text-xs text-muted-foreground">错误信息</dt>
-                    <dd className="mt-0.5 text-sm text-red-600 break-all">
+                    <dd className="mt-0.5 text-sm text-destructive break-all">
                       {task.error_message}
                     </dd>
                   </div>
@@ -471,7 +471,7 @@ export function Component() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+                  className="text-destructive hover:text-destructive/80 border-destructive/30 hover:border-destructive/50"
                   onClick={handleDelete}
                 >
                   <Trash2 className="h-4 w-4 mr-1" />
@@ -481,7 +481,7 @@ export function Component() {
             </div>
 
             {/* File download section */}
-            <div className="rounded-lg border bg-white p-6">
+            <div className="rounded-lg border border-border bg-card p-6">
               <h2 className="text-sm font-medium mb-4">文件下载</h2>
               <div className="flex flex-wrap gap-3">
                 <Button
@@ -509,7 +509,7 @@ export function Component() {
             </div>
 
             {/* Audit log timeline */}
-            <div className="rounded-lg border bg-white p-6">
+            <div className="rounded-lg border border-border bg-card p-6">
               <h2 className="text-sm font-medium mb-4">操作历史</h2>
               {auditLoading && !auditData ? (
                 <div className="space-y-3">

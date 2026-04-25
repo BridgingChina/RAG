@@ -35,9 +35,9 @@ export function DebugPanel({ debug }: { debug: DebugInfo }) {
   }
 
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50/50 p-4 space-y-2">
+    <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-600">调试信息</h3>
+        <h3 className="text-sm font-medium text-muted-foreground">调试信息</h3>
         <Button variant="ghost" size="sm" onClick={toggleAll} className="text-xs h-7">
           {openSections.size > 0 ? "全部折叠" : "全部展开"}
         </Button>
@@ -81,7 +81,7 @@ function Section({
 }) {
   return (
     <Collapsible open={open} onOpenChange={() => onToggle(id)}>
-      <CollapsibleTrigger className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 cursor-pointer w-full py-1">
+      <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground cursor-pointer w-full py-1">
         <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
         {title}
       </CollapsibleTrigger>

@@ -103,8 +103,8 @@ export function FileUploadZone({ onTaskCreated, onError }: FileUploadZoneProps) 
         onDrop={handleDrop}
         className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 cursor-pointer transition-colors ${
           dragOver
-            ? "border-orange-400 bg-orange-50"
-            : "border-slate-200 hover:border-slate-300 bg-white"
+            ? "border-[var(--songci-celadon)] bg-secondary/30"
+            : "border-border hover:border-[var(--stone-grey-deep)] bg-card"
         }`}
       >
         <input
@@ -116,25 +116,25 @@ export function FileUploadZone({ onTaskCreated, onError }: FileUploadZoneProps) 
         />
         {uploading ? (
           <>
-            <Loader2 className="h-8 w-8 text-orange-500 animate-spin mb-2" />
-            <p className="text-sm text-slate-600">
+            <Loader2 className="h-8 w-8 text-[var(--songci-celadon)] animate-spin mb-2" />
+            <p className="text-sm text-muted-foreground">
               上传中 {progress > 0 ? `${progress}%` : ""}
             </p>
           </>
         ) : (
           <>
-            <Upload className="h-8 w-8 text-slate-400 mb-2" />
-            <p className="text-sm text-slate-600">
+            <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+            <p className="text-sm text-foreground/70">
               拖拽 PDF 或 Markdown 文件到此处，或点击选择
             </p>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               支持 .pdf .md 格式，最大 100MB
             </p>
           </>
         )}
       </label>
       {error && (
-        <p className="text-sm text-red-600">{error}</p>
+        <p className="text-sm text-destructive">{error}</p>
       )}
     </div>
   )

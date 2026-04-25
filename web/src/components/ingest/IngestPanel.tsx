@@ -50,13 +50,13 @@ export function IngestPanel() {
   return (
     <div className="space-y-6">
       {/* Input area */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-slate-700">Markdown 内容</label>
+          <label className="text-sm font-medium text-foreground">Markdown 内容</label>
           <select
             value={sourceType}
             onChange={(e) => setSourceType(e.target.value)}
-            className="text-sm border border-slate-200 rounded-md px-2 py-1 text-slate-600 bg-white cursor-pointer"
+            className="text-sm border border-border rounded-md px-2 py-1 text-foreground/80 bg-background cursor-pointer"
           >
             {SOURCE_TYPES.map((t) => (
               <option key={t} value={t}>{t}</option>
@@ -74,20 +74,20 @@ export function IngestPanel() {
             value={bridgeCandidates}
             onChange={(e) => setBridgeCandidates(e.target.value)}
             placeholder="候选桥（可选，逗号分隔）"
-            className="text-sm border border-slate-200 rounded-md px-3 py-2 text-slate-600 bg-white"
+            className="text-sm border border-border rounded-md px-3 py-2 text-foreground/80 bg-background"
           />
           <input
             value={minPrimaryConfidence}
             onChange={(e) => setMinPrimaryConfidence(e.target.value)}
             placeholder="主桥阈值（默认0.75）"
-            className="text-sm border border-slate-200 rounded-md px-3 py-2 text-slate-600 bg-white"
+            className="text-sm border border-border rounded-md px-3 py-2 text-foreground/80 bg-background"
           />
         </div>
         <div className="flex justify-end">
           <Button
             onClick={handleSubmit}
             disabled={loading || !content.trim()}
-            className="bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+            className="cursor-pointer"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -101,25 +101,25 @@ export function IngestPanel() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {/* Result */}
       {result && !loading && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
+        <div className="rounded-lg border border-border bg-card p-6 space-y-4">
           <div className="flex items-baseline justify-between">
             <div>
               {result.primary_bridge_names.length > 0 && (
-                <h2 className="font-serif text-xl font-semibold text-slate-800">
+                <h2 className="font-serif text-xl font-semibold text-foreground">
                   主桥：{result.primary_bridge_names.join(" / ")}
                 </h2>
               )}
               {result.title && (
-                <p className="text-sm text-slate-400">{result.title}</p>
+                <p className="text-sm text-muted-foreground">{result.title}</p>
               )}
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 歧义块：{result.ambiguous_chunk_count}
                 {result.auto_created_bridges.length > 0
                   ? ` · 自动建桥：${result.auto_created_bridges.join("、")}`
@@ -127,8 +127,8 @@ export function IngestPanel() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-500">
-                共 <span className="font-semibold text-blue-500">{result.chunk_count}</span> 个知识块
+              <span className="text-sm text-muted-foreground">
+                共 <span className="font-semibold text-[var(--songci-celadon)]">{result.chunk_count}</span> 个知识块
               </span>
               <Button
                 size="sm"

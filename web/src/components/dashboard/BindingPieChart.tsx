@@ -1,10 +1,11 @@
 import { PieChart, Pie, Cell, Legend, ResponsiveContainer, Tooltip } from "recharts"
 import type { BindingDistribution } from "@/lib/types"
 
+// CSS custom properties resolved at runtime — must use computed style for recharts Cell fill
 const COLORS = {
-  primary: "#16A34A",   // green-600
-  ambiguous: "#D97706", // amber-600
-  none: "#D6D3D1",      // stone-300
+  primary: "var(--chart-1)",   // songci-celadon: 绑定
+  ambiguous: "var(--chart-3)", // yellow-hemp: 歧义
+  none: "var(--chart-4)",      // distant-mountain: 未绑定
 }
 
 const LABELS: Record<string, string> = {

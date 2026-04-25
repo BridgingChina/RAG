@@ -23,7 +23,7 @@ export function Lvl1BarChart({ data }: Props) {
         <XAxis type="number" />
         <YAxis type="category" dataKey="label" width={80} />
         <Tooltip />
-        <Bar dataKey="count" fill="#2563EB" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="count" fill="var(--chart-1)" radius={[0, 4, 4, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )

@@ -128,8 +128,8 @@ export function BatchToolbar({
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-10 flex items-center gap-3 border-t bg-white px-6 py-3 shadow-md">
-        <span className="text-sm font-medium text-slate-700">
+      <div className="fixed bottom-0 left-0 right-0 z-10 flex items-center gap-3 border-t bg-background px-6 py-3 shadow-md">
+        <span className="text-sm font-medium text-foreground">
           已选 {selectedIds.length} 项
         </span>
         <Button

@@ -8,9 +8,9 @@ interface TabNavProps {
 
 export function TabNav({ value, onValueChange }: TabNavProps) {
   return (
-    <header className="border-b border-slate-200 bg-white">
+    <header className="border-b border-border bg-background">
       <div className="mx-auto max-w-3xl px-6 py-4 flex items-center justify-between">
-        <h1 className="font-serif text-xl font-semibold text-slate-800">
+        <h1 className="font-serif text-xl font-semibold text-foreground">
           Bridge RAG
         </h1>
         <Tabs value={value} onValueChange={onValueChange}>

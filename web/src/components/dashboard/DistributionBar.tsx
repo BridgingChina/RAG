@@ -1,7 +1,7 @@
 interface DistributionBarItem {
   label: string
   count: number
-  color: string // Tailwind bg class like 'bg-emerald-500'
+  color: string // Tailwind bg class or inline style — use design token classes
 }
 
 interface DistributionBarProps {
@@ -15,7 +15,7 @@ export function DistributionBar({ items }: DistributionBarProps) {
   if (total === 0) {
     return (
       <div className="space-y-3">
-        <div className="h-8 w-full rounded-md bg-gray-100" />
+        <div className="h-8 w-full rounded-md bg-muted" />
         <p className="text-sm text-muted-foreground">暂无数据</p>
       </div>
     )

@@ -73,7 +73,8 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="font-medium">
-              桥梁知识库
+              <span className="font-serif tracking-wide">桥知</span>
+              <span className="text-muted-foreground text-xs font-normal">管理后台</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

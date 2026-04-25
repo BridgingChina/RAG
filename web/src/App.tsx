@@ -7,7 +7,7 @@ function App() {
   const [tab, setTab] = useState("ask")
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       <TabNav value={tab} onValueChange={setTab} />
       <main className="mx-auto max-w-3xl px-6 py-8">
         {tab === "ask" && <AskPanel />}

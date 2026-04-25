@@ -17,7 +17,7 @@ export function SplitParagraphView({ content, onSelectPosition }: SplitParagraph
   const totalLen = content.length
 
   if (segments.length === 0) {
-    return <p className="px-4 py-8 text-sm text-slate-400">内容为空，无法拆分</p>
+    return <p className="px-4 py-8 text-sm text-muted-foreground">内容为空，无法拆分</p>
   }
 
   return (
@@ -39,11 +39,11 @@ export function SplitParagraphView({ content, onSelectPosition }: SplitParagraph
               onMouseLeave={() => setHoveredIdx(null)}
               onClick={() => onSelectPosition(segments[i + 1].startOffset)}
             >
-              <div className="flex-1 border-t border-dashed border-slate-300 group-hover:border-blue-400 transition-colors" />
-              <span className="shrink-0 text-xs text-slate-400 group-hover:text-blue-600 transition-colors">
+              <div className="flex-1 border-t border-dashed border-border group-hover:border-[var(--songci-celadon)] transition-colors" />
+              <span className="shrink-0 text-xs text-muted-foreground group-hover:text-[var(--songci-celadon)] transition-colors">
                 ✂ {segments[i + 1].startOffset} 字 | {totalLen - segments[i + 1].startOffset} 字
               </span>
-              <div className="flex-1 border-t border-dashed border-slate-300 group-hover:border-blue-400 transition-colors" />
+              <div className="flex-1 border-t border-dashed border-border group-hover:border-[var(--songci-celadon)] transition-colors" />
             </div>
           )}
         </div>
@@ -80,8 +80,8 @@ export function SplitPreciseView({ content, onSelectPosition }: SplitPreciseView
         onClick={handleSelect}
         className="flex-1 min-h-0 resize-none font-mono text-sm"
       />
-      <div className="flex items-center justify-between rounded-md border bg-white px-3 py-2">
-        <span className="text-xs text-slate-500">
+      <div className="flex items-center justify-between rounded-md border bg-card px-3 py-2">
+        <span className="text-xs text-muted-foreground">
           {canSplit
             ? `光标: 第 ${cursorPos} 字符 · 上半 ${cursorPos} 字 | 下半 ${content.length - cursorPos} 字`
             : "点击文本中的位置来设定拆分点"}
@@ -102,9 +102,10 @@ export function SplitPreciseView({ content, onSelectPosition }: SplitPreciseView
 
 // --- Split preview ---
 
+// Split preview cards use brand token pairs — no Tailwind palette colors
 const CHUNK_CARD_STYLES = {
-  blue: { border: "border-blue-200", bg: "bg-blue-50", label: "text-blue-700", count: "text-blue-500" },
-  emerald: { border: "border-emerald-200", bg: "bg-emerald-50", label: "text-emerald-700", count: "text-emerald-500" },
+  blue: { border: "border-border", bg: "bg-card", label: "text-[var(--songci-celadon-deep)]", count: "text-[var(--songci-celadon)]" },
+  emerald: { border: "border-border", bg: "bg-secondary/30", label: "text-[var(--distant-mountain)]", count: "text-[var(--distant-mountain)]" },
 } as const
 
 function ChunkPreviewCard({ label, content, color }: { label: string; content: string; color: "blue" | "emerald" }) {
@@ -138,7 +139,7 @@ export function SplitPreview({ content, position, splitting, onConfirm, onResele
   return (
     <div className="flex flex-1 min-h-0 flex-col p-4 gap-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-700">拆分预览</h3>
+        <h3 className="text-sm font-medium text-foreground">拆分预览</h3>
         <Button size="sm" variant="ghost" onClick={onReselect} className="gap-1 text-xs">
           <ArrowLeft className="h-3 w-3" />
           重选位置
