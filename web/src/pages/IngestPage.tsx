@@ -39,6 +39,7 @@ import {
   deleteIngestTask,
   retryIngestTask,
   batchDeleteIngestTasks,
+  RetryRejectedError,
 } from "@/lib/api"
 import type { IngestTaskItem, IngestTaskStatus } from "@/lib/types"
 
@@ -82,12 +83,30 @@ function formatTime(isoStr: string): string {
 
 // --- TaskStatusBadge ---
 
-function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
+interface TaskStatusBadgeProps {
+  status: IngestTaskStatus
+  // Optional progress signal — when status === "indexing" the backend
+  // emits chunks_indexed (live count) so we can render N/M progress.
+  chunksIndexed?: number | null
+  chunkCount?: number | null
+}
+
+function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeProps) {
   if (isInProgress(status)) {
+    const showProgress =
+      status === "indexing" &&
+      typeof chunkCount === "number" &&
+      chunkCount > 0 &&
+      typeof chunksIndexed === "number"
     return (
       <span className="inline-flex items-center gap-1 text-sm text-orange-600">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {STATUS_LABELS[status]}
+        {showProgress && (
+          <span className="ml-1 font-mono text-xs text-orange-700">
+            {chunksIndexed}/{chunkCount}
+          </span>
+        )}
       </span>
     )
   }
@@ -226,8 +245,16 @@ export function Component() {
     try {
       await retryIngestTask(id)
       refetch()
-    } catch {
-      // silent
+    } catch (err) {
+      // 2026-04-24 RCA: silent failure here let users hammer retry 5x against
+      // the same Zhipu 429 storm. Surface the structured backend reason so
+      // they understand WHY (cooldown, still running, etc.) and stop clicking.
+      if (err instanceof RetryRejectedError) {
+        alert(err.message)
+      } else if (err instanceof Error) {
+        alert(`重试失败：${err.message}`)
+      }
+      refetch()
     }
   }
 
@@ -515,7 +542,11 @@ function TaskRow({
         </span>
       </TableCell>
       <TableCell>
-        <TaskStatusBadge status={task.status} />
+        <TaskStatusBadge
+          status={task.status}
+          chunksIndexed={task.chunks_indexed}
+          chunkCount={task.chunk_count}
+        />
       </TableCell>
       <TableCell>
         {task.source_id ? (

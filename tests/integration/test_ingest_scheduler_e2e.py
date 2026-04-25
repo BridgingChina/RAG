@@ -19,6 +19,7 @@ Skipped when the DB is unavailable (see ``tests/conftest.py``).
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -137,6 +138,11 @@ def _make_failed_task(db, file_name_suffix: str) -> IngestTask:
         error_message="prior failure",
     )
     db.add(task)
+    db.flush()
+    # Skip the ingest_retry_cooldown_seconds window (added 2026-04-25 in
+    # response to the 2026-04-24 retry-storm RCA) by aging the task past
+    # the cooldown. Tests of cooldown semantics live in test_api_v1_retry_guards.
+    task.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     db.flush()
     return task
 

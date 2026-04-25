@@ -29,6 +29,9 @@ class IngestTaskDetail(BaseModel):
     file_size: int | None
     source_id: UUID | None
     chunk_count: int | None
+    # Live progress count, only populated when status == "indexing".
+    # None for all other states (including completed — use chunk_count then).
+    chunks_indexed: int | None = None
     image_count: int
     error_message: str | None
     created_at: datetime

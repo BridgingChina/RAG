@@ -14,6 +14,7 @@ Covers:
 These tests require a running PostgreSQL+pgvector instance.
 They will be skipped if the DB is unavailable (see tests/conftest.py).
 """
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -76,6 +77,12 @@ def task_with_source(db_session, test_bridges):
         error_message="429 too many requests",
     )
     db_session.add(task)
+    db_session.flush()
+
+    # Bypass the new retry cooldown (settings.ingest_retry_cooldown_seconds)
+    # by aging the task past the window; tests focused on cooldown semantics
+    # construct their own task with NOW() updated_at instead.
+    task.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
     db_session.flush()
 
     return {

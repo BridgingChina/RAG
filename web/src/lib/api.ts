@@ -70,6 +70,26 @@ export class ConflictError extends Error {
   }
 }
 
+// Raised by the ingest retry endpoint for any non-OK status (running, queued,
+// not_retriable, retry_cooldown). Carries the structured detail so callers can
+// show a meaningful message and (for cooldown) a countdown.
+export class RetryRejectedError extends Error {
+  code: string
+  retryAfterSeconds: number | null
+  currentStatus: string | null
+
+  constructor(message: string, code: string, opts: {
+    retryAfterSeconds?: number | null
+    currentStatus?: string | null
+  } = {}) {
+    super(message)
+    this.name = "RetryRejectedError"
+    this.code = code
+    this.retryAfterSeconds = opts.retryAfterSeconds ?? null
+    this.currentStatus = opts.currentStatus ?? null
+  }
+}
+
 // Turn a non-OK response body into the right Error. FastAPI sends either
 // {"detail": "..."} or {"detail": {...}} (when HTTPException.detail is a dict).
 // A 409 is only a chunk optimistic-lock conflict when the payload actually
@@ -94,6 +114,25 @@ function parseHttpError(status: number, text: string): Error {
     const currentUpdatedAt = payload["current_updated_at"]
     if (typeof chunkId === "string" && typeof currentUpdatedAt === "string") {
       return new ConflictError(currentUpdatedAt, chunkId)
+    }
+  }
+
+  // Ingest retry rejection — backend emits {code, message, current_status,
+  // retry_after_seconds?} as detail dict. 429 = cooldown, 409 = state guard.
+  if ((status === 409 || status === 429) && payload) {
+    const code = payload["code"]
+    const message = payload["message"]
+    if (
+      typeof code === "string" &&
+      typeof message === "string" &&
+      ["task_running", "task_queued", "task_not_retriable", "retry_cooldown"].includes(code)
+    ) {
+      const retryAfter = payload["retry_after_seconds"]
+      const currentStatus = payload["current_status"]
+      return new RetryRejectedError(message, code, {
+        retryAfterSeconds: typeof retryAfter === "number" ? retryAfter : null,
+        currentStatus: typeof currentStatus === "string" ? currentStatus : null,
+      })
     }
   }
 

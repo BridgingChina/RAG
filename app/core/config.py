@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # helper marks it failed. 60 min = 2x the observed real-world p95
     # (程阳永济桥 took 32.8 min to completion).
     ingest_stale_running_minutes: int = 60
+    # Cooldown after a failed task before retry is allowed again.
+    # 2026-04-24 incident: user clicked retry 5x within 2.5h on the same task,
+    # each retry hit the same Zhipu 429 storm and re-failed. Forcing a small
+    # cooldown lets the upstream limiter recover before the next attempt.
+    # Set to 0 to disable.
+    ingest_retry_cooldown_seconds: int = 60
 
     # Retrieval settings
     top_k: int = 5

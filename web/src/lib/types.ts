@@ -92,6 +92,10 @@ export interface IngestTaskItem {
   file_size: number | null
   source_id: string | null
   chunk_count: number | null
+  // Live progress while status === "indexing"; null otherwise.
+  // Backend computes this on every detail/list read by counting
+  // committed chunks under the task's source_id.
+  chunks_indexed: number | null
   image_count: number
   error_message: string | null
   created_at: string

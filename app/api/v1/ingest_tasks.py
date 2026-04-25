@@ -1,9 +1,11 @@
 """Ingest tasks API endpoints -- async multi-stage ingest pipeline."""
 import logging
 import re
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,7 @@ from app.api.v1.schemas.ingest_task import (
     PresignRequest,
     PresignResponse,
 )
+from app.core.config import settings
 from app.core.database import get_db
 from app.models import Chunk, ChunkBridgeLink, Source
 from app.models.current_user import CurrentUser
@@ -89,7 +92,19 @@ async def _run_indexing(task_id: UUID, user_id: UUID | None = None, ip_address: 
         db.close()
 
 
-def _task_to_detail(task: IngestTask) -> dict:
+def _task_to_detail(task: IngestTask, db: Session | None = None) -> dict:
+    # P0 progress signal (2026-04-24 RCA): when a task is in `indexing`
+    # the user can't tell whether it's stuck or grinding through chunks.
+    # Surface a live count of committed chunks (start_indexing commits
+    # per chunk, see CLAUDE.md gotcha) so the UI can show N/M progress.
+    chunks_indexed: int | None = None
+    if db is not None and task.status == "indexing" and task.source_id is not None:
+        chunks_indexed = (
+            db.query(func.count(Chunk.id))
+            .filter(Chunk.source_id == task.source_id)
+            .scalar()
+            or 0
+        )
     return {
         "id": task.id,
         "status": task.status,
@@ -98,6 +113,7 @@ def _task_to_detail(task: IngestTask) -> dict:
         "file_size": task.file_size,
         "source_id": task.source_id,
         "chunk_count": task.chunk_count,
+        "chunks_indexed": chunks_indexed,
         "image_count": task.image_count,
         "error_message": task.error_message,
         "created_at": task.created_at.isoformat() if task.created_at else "",
@@ -256,7 +272,7 @@ def create_ingest_task(
     )
     db.commit()
 
-    return IngestTaskDetail(**_task_to_detail(task))
+    return IngestTaskDetail(**_task_to_detail(task, db))
 
 
 @router.get("", response_model=PaginatedResponse[IngestTaskListItem])
@@ -284,7 +300,7 @@ def list_ingest_tasks(
         query.order_by(IngestTask.id.desc()),
         page,
         page_size,
-        lambda t: IngestTaskListItem(**_task_to_detail(t)),
+        lambda t: IngestTaskListItem(**_task_to_detail(t, db)),
     )
 
 
@@ -351,7 +367,7 @@ def get_ingest_task(
     task = db.get(IngestTask, task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
-    return IngestTaskDetail(**_task_to_detail(task))
+    return IngestTaskDetail(**_task_to_detail(task, db))
 
 
 @router.post("/{task_id}/confirm", response_model=IngestTaskDetail)
@@ -388,7 +404,7 @@ def confirm_ingest_task(
     )
     db.commit()
 
-    return IngestTaskDetail(**_task_to_detail(task))
+    return IngestTaskDetail(**_task_to_detail(task, db))
 
 
 @router.get("/{task_id}/download-url", response_model=DownloadUrlResponse)
@@ -416,6 +432,38 @@ def get_download_url(
     return DownloadUrlResponse(url=url)
 
 
+QUEUED_STATUSES: frozenset[str] = frozenset(("queued", "queued_for_indexing"))
+
+
+def _audit_retry_rejected(
+    db: Session,
+    task: IngestTask,
+    request: Request,
+    current_user: CurrentUser,
+    reason: str,
+    extra: dict | None = None,
+) -> None:
+    """Record a rejected retry click so we can spot users hammering the button.
+
+    The 2026-04-24 incident showed 5 successful retries on the same task
+    against the same Zhipu 429 storm. With cooldown rejection in place we
+    want telemetry on rejected attempts too.
+    """
+    detail = {"reason": reason, "current_status": task.status}
+    if extra:
+        detail.update(extra)
+    AuditService.log(
+        db,
+        action="retry_rejected",
+        resource_type="ingest_task",
+        user_id=current_user.id,
+        resource_id=str(task.id),
+        detail=detail,
+        ip_address=get_client_ip(request),
+    )
+    db.commit()
+
+
 @router.post("/{task_id}/retry", response_model=IngestTaskDetail)
 def retry_ingest_task(
     task_id: UUID,
@@ -424,6 +472,13 @@ def retry_ingest_task(
     current_user: CurrentUser = Depends(get_current_user),
 ):
     """Reset a failed/deleted task and re-enqueue the pipeline.
+
+    Status guard (P3, 2026-04-24 RCA):
+    - ``RUNNING_STATUSES`` (syncing/parsing/indexing) → 409 ``task_running``
+    - ``QUEUED_STATUSES`` (queued/queued_for_indexing) → 409 ``task_queued``
+    - any other non-terminal state (uploading/chunked/completed) → 409 ``task_not_retriable``
+    - ``failed`` within cooldown window → 429 ``retry_cooldown`` + Retry-After
+    - ``failed`` past cooldown / ``deleted`` → cleanup + re-enqueue
 
     The cleanup runs inline (savepoint-protected) but the actual
     ``_run_sync_and_parse`` dispatch is handled by the ingest scheduler
@@ -434,11 +489,67 @@ def retry_ingest_task(
     if task is None:
         raise HTTPException(404, "Task not found")
 
-    if task.status not in ("failed", "deleted"):
+    if task.status in RUNNING_STATUSES:
+        _audit_retry_rejected(db, task, request, current_user, "running")
         raise HTTPException(
-            400,
-            f"Cannot retry task in '{task.status}' state -- only failed or deleted tasks can be retried",
+            status_code=409,
+            detail={
+                "code": "task_running",
+                "message": f"任务正在 {task.status} 阶段，请等待完成后再 retry",
+                "current_status": task.status,
+            },
         )
+
+    if task.status in QUEUED_STATUSES:
+        _audit_retry_rejected(db, task, request, current_user, "queued")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "task_queued",
+                "message": "任务已在队列中等待调度，无需 retry",
+                "current_status": task.status,
+            },
+        )
+
+    if task.status not in ("failed", "deleted"):
+        _audit_retry_rejected(db, task, request, current_user, "not_retriable")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "task_not_retriable",
+                "message": f"状态 '{task.status}' 不支持 retry（只接受 failed/deleted）",
+                "current_status": task.status,
+            },
+        )
+
+    # Cooldown only applies to recently-failed tasks. `deleted` is a user
+    # action so no cooldown is needed there.
+    cooldown = settings.ingest_retry_cooldown_seconds
+    if cooldown > 0 and task.status == "failed" and task.updated_at is not None:
+        # PG `updated_at` may be returned naive depending on driver/version;
+        # coerce to UTC for safe diff. CLAUDE.md gotcha: in long-lived txns
+        # updated_at reflects TX-start time, not commit wall-clock — but
+        # `_fail` is a single short UPDATE so the value is close to wall-clock.
+        last = task.updated_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds()
+        if elapsed < cooldown:
+            retry_after = max(1, int(cooldown - elapsed) + 1)
+            _audit_retry_rejected(
+                db, task, request, current_user, "cooldown",
+                extra={"retry_after_seconds": retry_after},
+            )
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "retry_cooldown",
+                    "message": f"上次失败后请等 {retry_after}s 再重试，避免叠加上游限流",
+                    "retry_after_seconds": retry_after,
+                    "current_status": task.status,
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
 
     try:
         _cleanup_task_data(db, task)
@@ -463,7 +574,7 @@ def retry_ingest_task(
     )
     db.commit()
 
-    return IngestTaskDetail(**_task_to_detail(task))
+    return IngestTaskDetail(**_task_to_detail(task, db))
 
 
 @router.delete("/{task_id}", status_code=204)

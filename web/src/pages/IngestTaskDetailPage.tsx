@@ -21,6 +21,7 @@ import {
   deleteIngestTask,
   retryIngestTask,
   getIngestTaskDownloadUrl,
+  RetryRejectedError,
 } from "@/lib/api"
 import type { IngestTaskStatus, AuditLogItem } from "@/lib/types"
 
@@ -83,12 +84,28 @@ function formatAbsoluteTime(isoStr: string): string {
 
 // --- TaskStatusBadge ---
 
-function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
+interface TaskStatusBadgeProps {
+  status: IngestTaskStatus
+  chunksIndexed?: number | null
+  chunkCount?: number | null
+}
+
+function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeProps) {
   if (isInProgress(status)) {
+    const showProgress =
+      status === "indexing" &&
+      typeof chunkCount === "number" &&
+      chunkCount > 0 &&
+      typeof chunksIndexed === "number"
     return (
       <span className="inline-flex items-center gap-1 text-sm text-orange-600">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {STATUS_LABELS[status]}
+        {showProgress && (
+          <span className="ml-1 font-mono text-xs text-orange-700">
+            {chunksIndexed}/{chunkCount}
+          </span>
+        )}
       </span>
     )
   }
@@ -236,7 +253,15 @@ export function Component() {
       await retryIngestTask(task.id)
       refetch()
     } catch (e) {
-      setActionError(`重试失败：${e instanceof Error ? e.message : "未知错误"}`)
+      // Show the structured backend message directly when it's a retry
+      // rejection (cooldown / running / queued). Generic errors get the
+      // legacy "重试失败：" prefix.
+      if (e instanceof RetryRejectedError) {
+        setActionError(e.message)
+      } else {
+        setActionError(`重试失败：${e instanceof Error ? e.message : "未知错误"}`)
+      }
+      refetch()
     }
   }
 
@@ -351,7 +376,11 @@ export function Component() {
                 <div>
                   <dt className="text-xs text-muted-foreground">状态</dt>
                   <dd className="mt-0.5">
-                    <TaskStatusBadge status={task.status} />
+                    <TaskStatusBadge
+                      status={task.status}
+                      chunksIndexed={task.chunks_indexed}
+                      chunkCount={task.chunk_count}
+                    />
                   </dd>
                 </div>
 
