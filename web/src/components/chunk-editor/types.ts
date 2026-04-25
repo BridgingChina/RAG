@@ -96,5 +96,5 @@ export function parseContentSegments(content: string): ParagraphSegment[] {
 
 export function segmentBgClass(i: number, hoveredIdx: number | null): string {
   if (hoveredIdx === null) return ""
-  return i < hoveredIdx ? "bg-blue-50" : "bg-emerald-50"
+  return i < hoveredIdx ? "bg-secondary/40" : "bg-secondary/20"
 }

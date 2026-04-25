@@ -220,7 +220,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     )
   }
@@ -239,9 +239,9 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
         // --- Split mode ---
         <>
           {/* Split mode header */}
-          <div className="flex items-center gap-3 border-b bg-white px-4 py-2">
-            <Scissors className="h-4 w-4 text-slate-500" />
-            <span className="text-sm font-medium text-slate-700">
+          <div className="flex items-center gap-3 border-b bg-background px-4 py-2">
+            <Scissors className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium text-foreground">
               {splitPhase === "selecting" ? "选择拆分位置" : "拆分预览"}
             </span>
 
@@ -322,7 +322,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
         <div className="flex flex-col gap-4 overflow-y-auto p-4">
           {/* Reindex warning */}
           {chunk.needs_reindex && (
-            <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+            <div className="flex items-center gap-2 rounded-md border border-[var(--yellow-hemp)]/30 bg-[var(--yellow-hemp)]/10 px-3 py-2 text-sm text-[var(--ink-black)]">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               内容已修改，embedding 待更新
             </div>
@@ -330,7 +330,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
 
           {/* Content textarea */}
           <div className="space-y-1">
-            <Label className="text-xs font-medium text-slate-600">内容</Label>
+            <Label className="text-xs font-medium text-muted-foreground">内容</Label>
             <Textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -340,7 +340,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
 
           {/* Section title */}
           <div className="space-y-1">
-            <Label className="text-xs font-medium text-slate-600">章节标题</Label>
+            <Label className="text-xs font-medium text-muted-foreground">章节标题</Label>
             <Input
               value={sectionTitle}
               onChange={(e) => setSectionTitle(e.target.value)}
@@ -351,7 +351,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
 
           {/* Taxonomy cascading selects */}
           <div className="space-y-2">
-            <Label className="text-xs font-medium text-slate-600">分类标签</Label>
+            <Label className="text-xs font-medium text-muted-foreground">分类标签</Label>
             <div className="grid grid-cols-3 gap-2">
               {/* lvl1 */}
               <Select
@@ -425,7 +425,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
           {/* Bridge links */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium text-slate-600">桥梁关联</Label>
+              <Label className="text-xs font-medium text-muted-foreground">桥梁关联</Label>
               <Button
                 size="sm"
                 variant="outline"
@@ -442,7 +442,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
               </Button>
             </div>
             {bridgeLinks.length === 0 ? (
-              <p className="text-xs text-slate-400">暂无桥梁关联</p>
+              <p className="text-xs text-muted-foreground">暂无桥梁关联</p>
             ) : (
               <div className="space-y-1">
                 {bridgeLinks.map((row, i) => (
@@ -490,7 +490,7 @@ export function ChunkEditor({ chunkId, onMutated }: ChunkEditorProps) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 w-7 p-0 text-slate-400 hover:text-destructive"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                       onClick={() =>
                         setBridgeLinks(bridgeLinks.filter((_, idx) => idx !== i))
                       }

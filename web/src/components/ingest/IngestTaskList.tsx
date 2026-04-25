@@ -67,7 +67,7 @@ function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
     // Waiting for the ingest scheduler to dispatch (issue #152).
     // Distinct from running (orange spinner) and failed (red X).
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-slate-500">
+      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
         <Clock className="h-3.5 w-3.5" />
         {STATUS_LABELS[status]}
       </span>
@@ -75,7 +75,7 @@ function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
   }
   if (isRunning(status)) {
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-orange-600">
+      <span className="inline-flex items-center gap-1 text-sm text-[var(--yellow-hemp)]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {STATUS_LABELS[status]}
       </span>
@@ -83,14 +83,14 @@ function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
   }
   if (status === "chunked") {
     return (
-      <span className="text-sm font-medium text-blue-600">
+      <span className="text-sm font-medium text-[var(--songci-celadon)]">
         {STATUS_LABELS[status]}
       </span>
     )
   }
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-green-600">
+      <span className="inline-flex items-center gap-1 text-sm text-[var(--songci-celadon-deep)]">
         <CheckCircle2 className="h-3.5 w-3.5" />
         {STATUS_LABELS[status]}
       </span>
@@ -98,7 +98,7 @@ function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
   }
   if (status === "failed") {
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-red-600">
+      <span className="inline-flex items-center gap-1 text-sm text-destructive">
         <XCircle className="h-3.5 w-3.5" />
         {STATUS_LABELS[status]}
       </span>
@@ -106,7 +106,7 @@ function TaskStatusBadge({ status }: { status: IngestTaskStatus }) {
   }
   // deleted / any unknown — neutral display instead of silently rendering empty
   return (
-    <span className="text-sm text-slate-400">
+    <span className="text-sm text-muted-foreground">
       {STATUS_LABELS[status] ?? status}
     </span>
   )
@@ -135,15 +135,15 @@ function TaskRow({ task, onRefresh }: { task: IngestTaskItem; onRefresh: () => v
   }
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 last:border-b-0">
+    <div className="flex items-center justify-between px-4 py-3 border-b border-border last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-slate-800 truncate">
+          <span className="text-sm font-medium text-foreground truncate">
             {task.file_name}
           </span>
           <TaskStatusBadge status={task.status} />
         </div>
-        <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
+        <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
           <span>{formatTime(task.created_at)}</span>
           {task.file_size && (
             <>
@@ -165,7 +165,7 @@ function TaskRow({ task, onRefresh }: { task: IngestTaskItem; onRefresh: () => v
           )}
         </div>
         {task.status === "failed" && task.error_message && (
-          <p className="text-xs text-red-500 mt-1 truncate">{task.error_message}</p>
+          <p className="text-xs text-destructive mt-1 truncate">{task.error_message}</p>
         )}
       </div>
 
@@ -196,7 +196,7 @@ function TaskRow({ task, onRefresh }: { task: IngestTaskItem; onRefresh: () => v
             size="sm"
             variant="outline"
             onClick={handleDelete}
-            className="gap-1 text-red-600 hover:text-red-700"
+            className="gap-1 text-destructive hover:text-destructive/80"
           >
             <RotateCw className="h-3 w-3" />
             删除
@@ -224,14 +224,14 @@ export function IngestTaskList({ tasks, onRefresh }: IngestTaskListProps) {
 
   if (tasks.length === 0) {
     return (
-      <div className="text-center text-sm text-slate-400 py-8">
+      <div className="text-center text-sm text-muted-foreground py-8">
         暂无入库任务
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
+    <div className="rounded-lg border border-border bg-card divide-y divide-border">
       {tasks.map((task) => (
         <TaskRow key={task.id} task={task} onRefresh={onRefresh} />
       ))}

@@ -30,7 +30,7 @@ export function DebugChannel({ data }: { data: ChannelDebug }) {
                 </td>
                 <td className="py-0.5">
                   {data.final_ids[i] != null ? (
-                    <span className="text-green-600">#{data.final_ids[i]}</span>
+                    <span className="text-[var(--songci-celadon)]">#{data.final_ids[i]}</span>
                   ) : ""}
                 </td>
               </tr>

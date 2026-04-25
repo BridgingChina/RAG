@@ -99,11 +99,11 @@ function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeP
       chunkCount > 0 &&
       typeof chunksIndexed === "number"
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-orange-600">
+      <span className="inline-flex items-center gap-1 text-sm text-[var(--yellow-hemp)]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         {STATUS_LABELS[status]}
         {showProgress && (
-          <span className="ml-1 font-mono text-xs text-orange-700">
+          <span className="ml-1 font-mono text-xs text-[var(--yellow-hemp)]/80">
             {chunksIndexed}/{chunkCount}
           </span>
         )}
@@ -112,14 +112,14 @@ function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeP
   }
   if (status === "chunked") {
     return (
-      <span className="text-sm font-medium text-blue-600">
+      <span className="text-sm font-medium text-[var(--songci-celadon)]">
         {STATUS_LABELS[status]}
       </span>
     )
   }
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1 text-sm text-green-600">
+      <span className="inline-flex items-center gap-1 text-sm text-[var(--songci-celadon-deep)]">
         <CheckCircle2 className="h-3.5 w-3.5" />
         {STATUS_LABELS[status]}
       </span>
@@ -134,7 +134,7 @@ function TaskStatusBadge({ status, chunksIndexed, chunkCount }: TaskStatusBadgeP
   }
   // failed
   return (
-    <span className="inline-flex items-center gap-1 text-sm text-red-600">
+    <span className="inline-flex items-center gap-1 text-sm text-destructive">
       <XCircle className="h-3.5 w-3.5" />
       {STATUS_LABELS[status]}
     </span>
@@ -551,7 +551,7 @@ function TaskRow({
       <TableCell>
         {task.source_id ? (
           <button
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm text-[var(--songci-celadon)] hover:underline"
             onClick={() => onNavigateSource(task.source_id!)}
           >
             #{task.source_id}
@@ -583,7 +583,7 @@ function TaskRow({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700"
+              className="h-7 px-2 text-xs text-[var(--songci-celadon)] hover:text-[var(--songci-celadon-deep)]"
               onClick={onConfirm}
             >
               确认入库
@@ -609,7 +609,7 @@ function TaskRow({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs text-red-600 hover:text-red-700"
+              className="h-7 px-2 text-xs text-destructive hover:text-destructive/80"
               onClick={onDelete}
             >
               <Trash2 className="h-3.5 w-3.5" />

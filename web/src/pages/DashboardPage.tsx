@@ -26,7 +26,7 @@ export function Component() {
 
         {error && (
           <div className="space-y-4">
-            <p className="text-sm text-red-600">加载失败: {error}</p>
+            <p className="text-sm text-destructive">加载失败: {error}</p>
             <Button onClick={refetch} variant="outline" size="sm">
               重试
             </Button>

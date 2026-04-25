@@ -618,7 +618,7 @@ export function Component() {
               />
             </div>
             {basicError && <p className="text-sm text-destructive">{basicError}</p>}
-            {basicSuccess && <p className="text-sm text-green-600">已保存</p>}
+            {basicSuccess && <p className="text-sm text-[var(--songci-celadon-deep)]">已保存</p>}
             <Button onClick={handleSaveBasicInfo} disabled={basicSaving || !editName.trim()}>
               {basicSaving ? "保存中..." : "保存基本信息"}
             </Button>
@@ -732,11 +732,11 @@ export function Component() {
               </Button>
             </div>
             {associateError && <p className="text-sm text-destructive">{associateError}</p>}
-            {associateSuccess && <p className="text-sm text-green-600">{associateSuccess}</p>}
+            {associateSuccess && <p className="text-sm text-[var(--songci-celadon-deep)]">{associateSuccess}</p>}
             {kpError && <p className="text-sm text-destructive">{kpError}</p>}
-            {kpSuccess && <p className="text-sm text-green-600">{kpSuccess}</p>}
+            {kpSuccess && <p className="text-sm text-[var(--songci-celadon-deep)]">{kpSuccess}</p>}
             {fcError && <p className="text-sm text-destructive">{fcError}</p>}
-            {fcSuccess && <p className="text-sm text-green-600">{fcSuccess}</p>}
+            {fcSuccess && <p className="text-sm text-[var(--songci-celadon-deep)]">{fcSuccess}</p>}
           </CardContent>
         </Card>
 
@@ -800,7 +800,7 @@ export function Component() {
               )}
             </div>
             {bridgeError && <p className="text-sm text-destructive">{bridgeError}</p>}
-            {bridgeSuccess && <p className="text-sm text-green-600">{bridgeSuccess}</p>}
+            {bridgeSuccess && <p className="text-sm text-[var(--songci-celadon-deep)]">{bridgeSuccess}</p>}
           </CardContent>
         </Card>
 
@@ -922,7 +922,7 @@ export function Component() {
             </div>
 
             {l2Error && <p className="text-sm text-destructive">{l2Error}</p>}
-            {l2Success && <p className="text-sm text-green-600">已保存</p>}
+            {l2Success && <p className="text-sm text-[var(--songci-celadon-deep)]">已保存</p>}
             <Button onClick={handleSaveL2} disabled={l2Saving}>
               {l2Saving ? "保存中..." : "保存 L2 内容"}
             </Button>

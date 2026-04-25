@@ -95,7 +95,7 @@ export function ProviderCard({
           {lastOk === null ? (
             <span className="text-muted-foreground">从未测试</span>
           ) : lastOk ? (
-            <span className="text-emerald-600">正常</span>
+            <span className="text-[var(--songci-celadon-deep)]">正常</span>
           ) : (
             <span className="text-destructive">
               失败：{provider.last_test_error || "未知"}

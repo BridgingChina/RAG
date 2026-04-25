@@ -43,7 +43,7 @@ export function AskPanel() {
   return (
     <div className="space-y-6">
       {/* Input area */}
-      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
         <div className="flex gap-3">
           <Input
             placeholder="输入关于桥梁的问题…"
@@ -55,7 +55,7 @@ export function AskPanel() {
           <Button
             onClick={handleSubmit}
             disabled={loading || !question.trim()}
-            className="bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+            className="cursor-pointer"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -67,18 +67,18 @@ export function AskPanel() {
         </div>
         <div className="flex items-center gap-2">
           <Switch id="debug-mode" checked={debug} onCheckedChange={setDebug} />
-          <Label htmlFor="debug-mode" className="text-xs text-slate-500 cursor-pointer">调试模式</Label>
+          <Label htmlFor="debug-mode" className="text-xs text-muted-foreground cursor-pointer">调试模式</Label>
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <ChevronDown className={`h-3 w-3 transition-transform ${showFilters ? "rotate-180" : ""}`} />
           筛选条件
         </button>
         {showFilters && (
           <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-500">桥梁 ID</label>
+            <label className="text-xs text-muted-foreground">桥梁 ID</label>
             <Input
               type="number"
               placeholder="可选"
@@ -92,20 +92,20 @@ export function AskPanel() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {/* Loading skeleton */}
       {loading && (
-        <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
-          <div className="h-4 w-20 bg-slate-200 rounded animate-pulse" />
-          <div className="h-7 w-3/4 bg-slate-200 rounded animate-pulse" />
+        <div className="rounded-lg border border-border bg-card p-6 space-y-4">
+          <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+          <div className="h-7 w-3/4 bg-muted rounded animate-pulse" />
           <div className="space-y-2">
-            <div className="h-4 w-full bg-slate-100 rounded animate-pulse" />
-            <div className="h-4 w-5/6 bg-slate-100 rounded animate-pulse" />
-            <div className="h-4 w-4/6 bg-slate-100 rounded animate-pulse" />
+            <div className="h-4 w-full bg-muted/60 rounded animate-pulse" />
+            <div className="h-4 w-5/6 bg-muted/60 rounded animate-pulse" />
+            <div className="h-4 w-4/6 bg-muted/60 rounded animate-pulse" />
           </div>
         </div>
       )}

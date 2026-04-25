@@ -251,7 +251,7 @@ export function Component() {
             className={
               batchError
                 ? "rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-                : "rounded-lg border border-green-500/50 bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400"
+                : "rounded-lg border border-[var(--songci-celadon)]/50 bg-[var(--songci-celadon)]/10 p-3 text-sm text-[var(--songci-celadon-deep)]"
             }
           >
             {batchError ?? batchMsg}

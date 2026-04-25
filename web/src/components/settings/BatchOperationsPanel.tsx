@@ -50,11 +50,11 @@ function GeocodeSection() {
         </Button>
       </div>
       {result && (
-        <p className="text-sm text-green-700">
+        <p className="text-sm text-[var(--songci-celadon-deep)]">
           成功 {result.success} / 失败 {result.failed} / 共 {result.total}
         </p>
       )}
-      {error && <p className="text-sm text-red-600">错误: {error}</p>}
+      {error && <p className="text-sm text-destructive">错误: {error}</p>}
     </section>
   )
 }
@@ -110,17 +110,17 @@ function FlashcardSection() {
       </Button>
       {result && (
         <div className="space-y-1">
-          <p className="text-sm text-green-700">
+          <p className="text-sm text-[var(--songci-celadon-deep)]">
             成功生成 {result.total_generated} 张闪卡
           </p>
           {result.errors.length > 0 && (
-            <p className="text-sm text-amber-600">
+            <p className="text-sm text-[var(--yellow-hemp)]">
               {result.errors.length} 个知识点生成失败
             </p>
           )}
         </div>
       )}
-      {error && <p className="text-sm text-red-600">错误: {error}</p>}
+      {error && <p className="text-sm text-destructive">错误: {error}</p>}
     </section>
   )
 }
@@ -185,17 +185,17 @@ function KPBridgeSyncSection() {
       </Button>
       {result && (
         <div className="space-y-1">
-          <p className="text-sm text-green-700">
+          <p className="text-sm text-[var(--songci-celadon-deep)]">
             处理 {result.total} 个知识点，新增 {result.synced} 条关联
           </p>
           {result.failed > 0 && (
-            <p className="text-sm text-amber-600">
+            <p className="text-sm text-[var(--yellow-hemp)]">
               {result.failed} 个知识点同步失败
             </p>
           )}
         </div>
       )}
-      {error && <p className="text-sm text-red-600">错误: {error}</p>}
+      {error && <p className="text-sm text-destructive">错误: {error}</p>}
     </section>
   )
 }
@@ -248,15 +248,15 @@ function CSVImportSection() {
       </div>
       {result && (
         <div className="space-y-1">
-          <p className="text-sm text-green-700">匹配 {result.matched} 座桥梁</p>
+          <p className="text-sm text-[var(--songci-celadon-deep)]">匹配 {result.matched} 座桥梁</p>
           {result.unmatched.length > 0 && (
-            <p className="text-sm text-amber-600">
+            <p className="text-sm text-[var(--yellow-hemp)]">
               未匹配: {result.unmatched.join("、")}
             </p>
           )}
         </div>
       )}
-      {error && <p className="text-sm text-red-600">错误: {error}</p>}
+      {error && <p className="text-sm text-destructive">错误: {error}</p>}
     </section>
   )
 }

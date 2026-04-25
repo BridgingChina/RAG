@@ -99,7 +99,7 @@ export function TranslationReviewDialog({ item, onClose, onSaved }: Props) {
               disabled={busy}
             />
             {aiText && edited && (
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              <p className="mt-1 text-xs text-[var(--yellow-hemp)]">
                 已修改 AI 原译文；点击"通过"将以编辑后版本入库
               </p>
             )}

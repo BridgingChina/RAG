@@ -28,7 +28,7 @@ export function Component() {
 
         {error && (
           <div className="space-y-4">
-            <p className="text-sm text-red-600">加载失败: {error}</p>
+            <p className="text-sm text-destructive">加载失败: {error}</p>
             <Button onClick={refetch} variant="outline" size="sm">重试</Button>
           </div>
         )}
@@ -93,7 +93,7 @@ function StatusRow({ label, connected, detail }: { label: string; connected: boo
     <div className="flex items-center justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="flex items-center gap-2">
-        <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-green-500" : "bg-red-500"}`} />
+        <span className={`inline-block h-2 w-2 rounded-full ${connected ? "bg-[var(--songci-celadon)]" : "bg-destructive"}`} />
         <span className="font-medium">{detail ?? (connected ? "正常" : "异常")}</span>
       </span>
     </div>

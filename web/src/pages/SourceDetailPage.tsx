@@ -146,7 +146,7 @@ export function Component() {
                         href={source.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
+                        className="text-[var(--songci-celadon)] hover:underline"
                       >
                         {source.url}
                       </a>

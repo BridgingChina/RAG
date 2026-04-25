@@ -58,7 +58,7 @@ export function TaskRouteCard({
               {dirty && (
                 <span
                   title="未保存"
-                  className="inline-block h-2 w-2 rounded-full bg-amber-500"
+                  className="inline-block h-2 w-2 rounded-full bg-[var(--yellow-hemp)]"
                 />
               )}
             </div>

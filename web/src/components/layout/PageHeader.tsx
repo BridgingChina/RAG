@@ -9,7 +9,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, children }: PageHeaderProps) {
   return (
-    <header className="flex h-14 items-center gap-3 border-b bg-white px-6">
+    <header className="flex h-14 items-center gap-3 border-b bg-background px-6">
       <SidebarTrigger />
       <Separator orientation="vertical" className="h-5" />
       <div className="flex-1">

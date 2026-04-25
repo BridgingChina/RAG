@@ -13,8 +13,8 @@ interface ChunkItemProps {
 export function ChunkItem({ chunk, selected, checked, onSelect, onCheck }: ChunkItemProps) {
   return (
     <div
-      className={`flex cursor-pointer items-start gap-2 border-b px-3 py-2 hover:bg-slate-50 ${
-        selected ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
+      className={`flex cursor-pointer items-start gap-2 border-b px-3 py-2 hover:bg-secondary/40 ${
+        selected ? "bg-secondary text-[var(--songci-celadon-deep)]" : ""
       }`}
       onClick={onSelect}
     >
@@ -30,15 +30,15 @@ export function ChunkItem({ chunk, selected, checked, onSelect, onCheck }: Chunk
         />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1 text-xs text-slate-400">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <span className="font-mono">#{chunk.id}</span>
           {chunk.needs_reindex && (
-            <Badge className="bg-orange-100 text-orange-700 text-[10px] px-1 py-0">
+            <Badge className="bg-[var(--yellow-hemp)]/20 text-[var(--ink-black)] text-[10px] px-1 py-0">
               待索引
             </Badge>
           )}
         </div>
-        <p className="mt-0.5 line-clamp-2 text-xs text-slate-700">
+        <p className="mt-0.5 line-clamp-2 text-xs text-foreground/80">
           {chunk.content_preview}
         </p>
         <div className="mt-1 flex flex-wrap gap-1">

@@ -165,7 +165,7 @@ export function TaskRoutesTab() {
           {invalidating ? "清除中..." : "强制清缓存"}
         </Button>
         {actionOk && (
-          <span className="text-sm text-emerald-600">{actionOk}</span>
+          <span className="text-sm text-[var(--songci-celadon-deep)]">{actionOk}</span>
         )}
         {actionError && (
           <span className="text-sm text-destructive">{actionError}</span>

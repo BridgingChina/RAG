@@ -112,7 +112,7 @@ export function Component() {
           )}
           重新索引
           {stale > 0 && (
-            <Badge className="ml-1 bg-orange-500 text-white text-xs px-1.5 py-0">
+            <Badge className="ml-1 bg-[var(--yellow-hemp)] text-[var(--ink-black)] text-xs px-1.5 py-0">
               {stale}
             </Badge>
           )}
@@ -134,13 +134,13 @@ export function Component() {
         style={{ height: "calc(100vh - 3.5rem)" }}
       >
         {/* Left pane */}
-        <aside className="flex w-80 shrink-0 flex-col border-r bg-white">
-          <div className="border-b px-3 py-2 text-xs text-slate-400">
+        <aside className="flex w-80 shrink-0 flex-col border-r bg-background">
+          <div className="border-b px-3 py-2 text-xs text-muted-foreground">
             {chunksLoading
               ? "加载中…"
               : `共 ${chunksData?.total ?? chunks.length} 个块${stale > 0 ? `，${stale} 待索引` : ""}`}
             {!chunksLoading && chunksData && chunksData.total > chunks.length && (
-              <span className="ml-1 text-orange-500">
+              <span className="ml-1 text-[var(--yellow-hemp)]">
                 （仅显示前 {chunks.length} 个）
               </span>
             )}
@@ -157,13 +157,13 @@ export function Component() {
               />
             ))}
             {!chunksLoading && chunks.length === 0 && (
-              <p className="p-4 text-xs text-slate-400">暂无知识块</p>
+              <p className="p-4 text-xs text-muted-foreground">暂无知识块</p>
             )}
           </div>
         </aside>
 
         {/* Right pane */}
-        <main className="flex-1 overflow-hidden bg-slate-50">
+        <main className="flex-1 overflow-hidden bg-muted/20">
           {selectedId !== null ? (
             <ChunkEditor
               key={selectedId}
@@ -171,7 +171,7 @@ export function Component() {
               onMutated={handleMutated}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               从左侧选择一个知识块开始编辑
             </div>
           )}
