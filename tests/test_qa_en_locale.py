@@ -49,6 +49,10 @@ class _FakeProvider(LLMProvider):
             usage={},
         )
 
+    async def chat_stream(self, messages, *, model=None):  # pragma: no cover — not exercised
+        if False:
+            yield ""
+
     async def list_models(self):
         return []
 
