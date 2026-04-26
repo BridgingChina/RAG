@@ -201,17 +201,15 @@ def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded(monkeypatch):
     en_chunks = []
     chunk_id = zh_chunks[0].chunk_id
 
-    # Task 9: streaming path — translate_answer_stream yields markdown tokens
-    # that MarkdownStreamParser can parse into outline + detail events.
-    # Per-chunk English summaries are produced asynchronously after the stream
-    # completes, so on the first request ``text_en`` will be empty (cache miss
-    # is the expected steady state for a fresh request).
+    # Issue #185: streaming path — translate_answer_stream yields JSON tokens
+    # that JSONStreamParser parses into outline + detail events. Per-chunk
+    # English summaries are produced asynchronously after the stream completes,
+    # so on the first request ``text_en`` will be empty (cache miss is the
+    # expected steady state for a fresh request).
     stream_md = (
-        "# 要点\n"
-        "- Zhaozhou Bridge is a Sui-era stone arch bridge. [1]\n"
-        "\n"
-        "## Sui-era stone arch bridge\n"
-        "Zhaozhou Bridge is a Sui-era stone arch bridge built circa 595 CE. [1]\n"
+        '{"summaries":["Zhaozhou Bridge is a Sui-era stone arch bridge. [1]"],'
+        '"details":[{"explanation":"Zhaozhou Bridge is a Sui-era stone arch '
+        'bridge built circa 595 CE. [1]","citations":[1]}]}'
     )
     # Only the query-translate response is consumed via chat_for_task; the
     # answer comes from the stub stream below.
@@ -303,11 +301,8 @@ def test_en_qa_flow_emits_structured_metrics_log(caplog, monkeypatch):
 
     zh_chunks = [_make_retrieved_chunk()]
     stream_md = (
-        "# 要点\n"
-        "- Sui-era stone arch. [1]\n"
-        "\n"
-        "## Sui-era stone arch\n"
-        "Zhaozhou Bridge. [1]\n"
+        '{"summaries":["Sui-era stone arch. [1]"],'
+        '"details":[{"explanation":"Zhaozhou Bridge. [1]","citations":[1]}]}'
     )
     responses = ["赵州桥"]
 
