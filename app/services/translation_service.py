@@ -40,7 +40,7 @@ from app.core.glossary import (
     load_glossary,
     pick_relevant_terms,
 )
-from app.llm import ChatMessage, chat_for_task
+from app.llm import ChatMessage, chat_for_task, chat_stream_for_task
 from app.models import (
     Bridge,
     Chunk,
@@ -647,6 +647,160 @@ async def translate_answer_with_evidence(
     }
 
 
+# --- Streaming variant + async-summary helpers (Task 8) ------------------
+#
+# Splits the en-US QA path into two non-blocking phases so the SSE channel
+# can flush answer tokens as they arrive instead of waiting for the full
+# JSON-shaped response of :func:`translate_answer_with_evidence`:
+#
+#   1. :func:`translate_answer_stream` — yields markdown answer tokens.
+#   2. :func:`extract_evidence_summaries_async` — runs from a BackgroundTask
+#      after the stream completes; never raises (errors logged + swallowed)
+#      so it can never break the SSE response that already returned.
+#
+# Both helpers reuse ``TASK_KEY = "translation"`` for routing consistency
+# with the existing ``translate_answer_with_evidence`` (no new task_key
+# needed in ``llm_task_routes`` — schema v13 seed already covers it).
+
+
+_STREAMING_ANSWER_PROMPT = """You are a Chinese bridge architecture expert. Answer the user's question in English markdown using the Chinese source excerpts below. Cite sources inline as [1], [2] etc. matching the numbered evidence.
+
+Sources (Chinese):
+{evidence_text}
+
+User question (English): {question}
+
+Output format (no JSON, no code fences, no preamble — start directly with the heading):
+
+# Key points
+- First key point summary [1,3]
+- Second key point summary [2]
+- ...(3-7 bullets total)
+
+## Point 1
+First key point's expanded paragraph in English, citing evidence as [1]…
+
+## Point 2
+Second key point's expanded paragraph in English…
+
+(Continue with one ## section per bullet above. Body must be entirely in English — no Chinese characters in the answer prose. Do not echo the prompt, do not add commentary outside the markdown structure.)"""
+
+
+_EVIDENCE_SUMMARIES_PROMPT = """You are a Chinese bridge architecture expert. The English answer below was generated from the numbered Chinese sources. For EACH source that was cited, produce a one-paragraph English summary capturing the relevant content.
+
+English answer:
+{answer_text}
+
+Sources (Chinese):
+{evidence_text}
+
+Respond with a single JSON object of the exact form:
+{{
+  "evidence_summaries": [
+    {{"chunk_id": "<as given above>", "text_en": "One-paragraph English summary"}}
+  ]
+}}
+
+Do NOT include any commentary outside the JSON object. Include one entry per source you can summarize."""
+
+
+async def translate_answer_stream(
+    question_en: str,
+    merged: list[Any],
+):
+    """Stream English markdown answer tokens for the en-US QA path.
+
+    Routes via ``chat_stream_for_task("translation", ...)`` so model selection
+    stays consistent with :func:`translate_answer_with_evidence`. Evidence
+    summaries are intentionally NOT produced here — they're generated in a
+    second pass by :func:`extract_evidence_summaries_async`, scheduled as a
+    BackgroundTask so SSE flushing isn't blocked.
+
+    :param question_en: The user's English question (already translated upstream
+        if the original was Chinese — caller decides).
+    :param merged: List of ``RetrievedChunk`` (or dict-shaped) evidence chunks
+        post-RRF. Empty list is allowed; the prompt will still be issued and the
+        LLM is expected to respond with an "insufficient evidence" markdown
+        block. Callers that want to short-circuit on empty evidence should do
+        so before calling this generator.
+    """
+    evidence_text = _format_evidence_for_en_prompt(merged)
+    prompt = _STREAMING_ANSWER_PROMPT.format(
+        evidence_text=evidence_text,
+        question=question_en,
+    )
+    messages = [ChatMessage(role="user", content=prompt)]
+    async for token in chat_stream_for_task(TASK_KEY, messages):
+        yield token
+
+
+async def extract_evidence_summaries_async(
+    *,
+    answer_text: str,
+    merged: list[Any],
+) -> None:
+    """Generate per-chunk English summaries given a finished answer + chunks,
+    then persist via :func:`cache_evidence_summaries`.
+
+    Designed to be added to ``BackgroundTasks`` after the SSE answer stream
+    has fully flushed. Opens its own ``SessionLocal()`` (cannot reuse the
+    request-scoped session — by the time a BackgroundTask runs, the request
+    session is closed). All exceptions are logged and swallowed so a failure
+    here cannot poison the response that has already returned to the client;
+    a swallowed failure simply means the next request for the same evidence
+    will re-translate (cache miss).
+    """
+    try:
+        if not merged:
+            return
+
+        evidence_text = _format_evidence_for_en_prompt(merged)
+        prompt = _EVIDENCE_SUMMARIES_PROMPT.format(
+            answer_text=answer_text,
+            evidence_text=evidence_text,
+        )
+        messages = [ChatMessage(role="user", content=prompt)]
+        resp = await chat_for_task(TASK_KEY, messages)
+
+        parsed = _extract_json_object(resp.content)
+        if not parsed:
+            logger.warning(
+                "extract_evidence_summaries_async: JSON parse failed; "
+                "skipping cache write",
+            )
+            return
+
+        summaries_raw = parsed.get("evidence_summaries") or []
+        summaries: list[dict[str, str]] = []
+        for item in summaries_raw:
+            if not isinstance(item, dict):
+                continue
+            chunk_id = item.get("chunk_id")
+            text_en = item.get("text_en") or ""
+            if not chunk_id or not text_en:
+                continue
+            summaries.append({
+                "chunk_id": str(chunk_id),
+                "text_en": str(text_en),
+            })
+
+        if not summaries:
+            return
+
+        # Open a fresh session — request-scoped session is closed by the time
+        # a BackgroundTask runs. Mirrors the pattern in qa.py
+        # ``_persist_en_summaries_in_background``.
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            cache_evidence_summaries(db, summaries=summaries)
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("extract_evidence_summaries_async failed")
+
+
 def cache_evidence_summaries(
     session: Session, *, summaries: list[dict[str, str]],
 ) -> int:
@@ -695,8 +849,10 @@ __all__ = [
     "approve_review",
     "batch_generate_for_field",
     "cache_evidence_summaries",
+    "extract_evidence_summaries_async",
     "generate_for_row",
     "reject_review",
+    "translate_answer_stream",
     "translate_answer_with_evidence",
     "translate_query_zh",
 ]
