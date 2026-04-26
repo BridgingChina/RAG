@@ -4,10 +4,35 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal, Optional, TypeAlias
 
-from app.llm import ChatMessage, chat_for_task
+from app.llm import ChatMessage, chat_for_task, chat_stream_for_task
 from app.services.hybrid_retriever import HybridRetrievalResult
+from app.services.markdown_stream_parser import (
+    MarkdownStreamParser,
+    ParseDegradedError,
+)
 
 logger = logging.getLogger(__name__)
+
+
+_STREAMING_V2_PROMPT = """你是桥梁知识助手。根据以下证据用 markdown 回答问题。
+
+{evidence_text}
+
+问题：{question}
+
+输出格式严格遵循（不要输出任何 JSON、代码块、确认语，直接开始回答）：
+
+# 要点
+- 第一个要点摘要 [1,3]
+- 第二个要点摘要 [2]
+- ...（共 3-7 个）
+
+## 要点 1
+第一个要点的展开段落，证据用 [证据 1] 这样标引……
+
+## 要点 2
+第二个要点的展开段落……
+"""
 
 
 @dataclass
@@ -314,3 +339,29 @@ class Generator:
         events.append(("sources", {"sources": sources}))
 
         return events
+
+    async def generate_streaming_v2(
+        self,
+        question: str,
+        evidence: HybridRetrievalResult,
+    ):
+        """True-streaming generator. Yields (event_type, payload) tuples.
+
+        Raises ParseDegradedError when the LLM produces text without recognizable
+        markdown structure — caller should yield a single fallback `detail`
+        event from `exc.fallback_payload` plus a `degraded` event.
+        """
+        from app.services.hybrid_retriever import format_evidence_for_llm
+
+        prompt = _STREAMING_V2_PROMPT.format(
+            evidence_text=format_evidence_for_llm(evidence),
+            question=question,
+        )
+        messages = [ChatMessage(role="user", content=prompt)]
+
+        parser = MarkdownStreamParser()
+        async for token in chat_stream_for_task(self.TASK_KEY, messages):
+            for event in parser.feed(token):
+                yield event
+        for event in parser.flush():
+            yield event

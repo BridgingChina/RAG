@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import random
 
@@ -246,6 +247,55 @@ class ZhipuProvider(LLMProvider):
             usage=data.get("usage", {}),
             model=actual_model,  # A5: fill so downstream audit/metrics have truth
         )
+
+    async def chat_stream(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str | None = None,
+    ):
+        """Stream GLM completion tokens via Zhipu /chat/completions stream:true.
+
+        Yields delta.content strings as they arrive. Skips keepalive/event
+        lines. Closes the upstream connection on GeneratorExit.
+        """
+        actual_model = model or self.chat_model
+        base = self.CHAT_BASE_URL or self.BASE_URL
+        payload = {
+            "model": actual_model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": True,
+        }
+        async with _zhipu_semaphore:
+            async with httpx.AsyncClient(timeout=_chat_timeout()) as client:
+                async with client.stream(
+                    "POST",
+                    f"{base}/chat/completions",
+                    headers=self._headers(),
+                    json=payload,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                "Zhipu stream: dropping unparseable line: %r",
+                                raw[:200],
+                            )
+                            continue
+                        delta = (
+                            chunk.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content", "")
+                        )
+                        if delta:
+                            yield delta
 
     async def list_models(self) -> list[ModelInfo]:
         """Fetch the Zhipu upstream model list.

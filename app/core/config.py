@@ -100,5 +100,12 @@ class Settings(BaseSettings):
     # new code. Default True; production starts with it on.
     i18n_enabled: bool = True
 
+    # --- QA real streaming (Phase: 2026-04-26) ---
+    # When True, /v1/qa/ask streams GLM tokens via chat_stream_for_task and the
+    # markdown stream parser. When False, falls back to the legacy single-shot
+    # `Generator.generate_streaming()` (伪流式). Set `QA_REAL_STREAMING_ENABLED=false`
+    # in the environment for an instant revert without shipping new code.
+    qa_real_streaming_enabled: bool = True
+
 
 settings = Settings()

@@ -46,6 +46,25 @@ class LLMProvider(ABC):
         """
 
     @abstractmethod
+    async def chat_stream(
+        self,
+        messages: list["ChatMessage"],
+        *,
+        model: str | None = None,
+    ):
+        """Stream chat completion tokens.
+
+        Implementations MUST yield individual delta strings as they arrive
+        from the upstream model. Implementations MUST NOT wrap with tenacity
+        retry decorators — async generators are incompatible with tenacity;
+        retry semantics live at the call site.
+
+        Returns: AsyncGenerator[str, None]
+        """
+        if False:
+            yield ""  # marker so static type checkers see this as async generator
+
+    @abstractmethod
     async def list_models(self) -> list[ModelInfo]:
         """Fetch upstream-available models.
 

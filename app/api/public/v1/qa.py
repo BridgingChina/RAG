@@ -25,7 +25,6 @@ from app.api.public.v1.schemas.qa import QARequest
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.rate_limit import limiter
-from app.models import Chunk, TaxonomyNode
 from app.models.knowledge_point import KnowledgePoint
 from app.providers import get_provider
 from app.services.facet_extractor import FacetExtractor
@@ -39,6 +38,8 @@ from app.services.hybrid_retriever import (
 from app.services.tokenizer import Tokenizer, default_user_dict_path
 from app.services.translation_service import (
     cache_evidence_summaries,
+    extract_evidence_summaries_async,
+    translate_answer_stream,
     translate_answer_with_evidence,
     translate_query_zh,
 )
@@ -194,21 +195,24 @@ async def ask_sse(
             # Chinese pipeline. Users see Chinese answers instead of a 500 —
             # this is the declared safe degrade path.
             if locale == "en-US" and settings.i18n_enabled:
-                en_events, degraded, reason = await _run_en_qa_flow(
+                final_meta = {"degraded": False, "reason": None}
+                async for evt_type, evt_data in _run_en_qa_flow(
                     db=db,
                     body=body,
                     retriever=retriever,
                     provider=provider,
                     background_tasks=background_tasks,
-                )
-                for evt_type, evt_data in en_events:
+                ):
+                    if evt_type == "done_meta":
+                        final_meta = evt_data
+                        continue
                     yield _sse_event(evt_type, evt_data)
                     _mark_event()
                 yield _sse_event("done", {
                     "qa_id": qa_id,
                     "locale": "en-US",
-                    "degraded": degraded,
-                    "reason": reason,
+                    "degraded": final_meta["degraded"],
+                    "reason": final_meta["reason"],
                 })
                 return
 
@@ -295,30 +299,104 @@ async def ask_sse(
                 return
 
             # ── Phase 3: LLM generation ──
-            try:
-                events = await asyncio.wait_for(
-                    generator.generate_streaming(body.question, evidence),
-                    timeout=_GENERATE_TIMEOUT,
-                )
-            except asyncio.TimeoutError:
-                logger.error("Generation timed out after %ds for question=%r", _GENERATE_TIMEOUT, body.question)
-                yield _sse_event("error", {
-                    "code": "TIMEOUT",
-                    "message": "生成超时，请稍后重试",
-                })
-                yield _sse_event("done", {"qa_id": qa_id})
-                return
+            from app.services.markdown_stream_parser import ParseDegradedError
 
-            for event_type, data in events:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_seconds:
-                    yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+            FIRST_TOKEN_TIMEOUT = 12
+            INTER_TOKEN_TIMEOUT = 20
+            stream_failed = False
+            saw_degraded = False
+            degraded_reason: str | None = None
+            last_token_at = time.monotonic()
+
+            async def _streaming_with_retry():
+                nonlocal last_token_at, saw_degraded, degraded_reason
+                for attempt in range(2):
+                    stream_iter = generator.generate_streaming_v2(body.question, evidence)
+                    try:
+                        first_event = await asyncio.wait_for(
+                            stream_iter.__anext__(),
+                            timeout=FIRST_TOKEN_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        if attempt == 0:
+                            logger.warning("First-token timeout, retrying once")
+                            continue
+                        raise
+                    except StopAsyncIteration:
+                        return
+                    except ParseDegradedError as exc:
+                        yield ("detail", exc.fallback_payload)
+                        saw_degraded = True
+                        degraded_reason = "parse_degraded"
+                        return
+                    last_token_at = time.monotonic()
+                    yield first_event
+                    try:
+                        async for ev in stream_iter:
+                            last_token_at = time.monotonic()
+                            yield ev
+                    except ParseDegradedError as exc:
+                        yield ("detail", exc.fallback_payload)
+                        saw_degraded = True
+                        degraded_reason = "parse_degraded"
+                    return
+
+            if settings.qa_real_streaming_enabled:
+                try:
+                    async for event_type, data in _streaming_with_retry():
+                        if time.monotonic() - last_token_at > INTER_TOKEN_TIMEOUT:
+                            yield _sse_event("degraded", {"reason": "stream_broken"})
+                            saw_degraded = True
+                            degraded_reason = "stream_broken"
+                            break
+                        yield _sse_event(event_type, data)
+                        _mark_event()
+                        ping = _maybe_ping()
+                        if ping:
+                            yield ping
+                    if saw_degraded and degraded_reason in ("parse_degraded",):
+                        yield _sse_event("degraded", {"reason": degraded_reason})
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "QA streaming failed twice on first-token; falling back to pseudo-streaming"
+                    )
+                    stream_failed = True
+                except Exception:
+                    logger.exception("QA streaming raised; falling back to pseudo-streaming")
+                    stream_failed = True
+
+            if (not settings.qa_real_streaming_enabled) or stream_failed:
+                fallback_timeout = 45 if stream_failed else _GENERATE_TIMEOUT
+                try:
+                    events = await asyncio.wait_for(
+                        generator.generate_streaming(body.question, evidence),
+                        timeout=fallback_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "Generation timed out after %ds for question=%r",
+                        fallback_timeout,
+                        body.question,
+                    )
+                    yield _sse_event("error", {"code": "TIMEOUT", "message": "生成超时，请稍后重试"})
                     yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
                     return
-                yield _sse_event(event_type, data)
-                _mark_event()
 
-            yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
+                for event_type, data in events:
+                    elapsed = time.monotonic() - start_time
+                    if elapsed > timeout_seconds:
+                        yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                        yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
+                        return
+                    yield _sse_event(event_type, data)
+                    _mark_event()
+
+            yield _sse_event("done", {
+                "qa_id": qa_id,
+                "locale": locale,
+                "degraded": saw_degraded,
+                "reason": degraded_reason,
+            })
 
         except Exception:
             logger.error("SSE QA stream failed", exc_info=True)
@@ -331,6 +409,26 @@ async def ask_sse(
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
+def _build_sources_payload(merged, summary_by_chunk=None):
+    """Construct the sources_payload list used by both streaming and legacy paths.
+
+    ``summary_by_chunk`` is an optional ``{chunk_id_str: english_summary}`` map.
+    Streaming path leaves it empty (summaries are generated async after the
+    stream completes); the legacy fallback path passes the inline summaries.
+    """
+    summary_by_chunk = summary_by_chunk or {}
+    payload = []
+    for chunk in merged:
+        cid_str = str(chunk.chunk_id)
+        payload.append({
+            "chunk_id": cid_str,
+            "text_en": summary_by_chunk.get(cid_str, ""),
+            "text_zh": chunk.content[:400] if chunk.content else "",
+            "source_title": chunk.bridge_name or "",
+        })
+    return payload
+
+
 async def _run_en_qa_flow(
     *,
     db: Session,
@@ -338,19 +436,25 @@ async def _run_en_qa_flow(
     retriever: HybridRetriever,
     provider,
     background_tasks: BackgroundTasks,
-) -> tuple[list[tuple[str, dict]], bool, str | None]:
-    """Run the translate-around English QA flow.
+):
+    """Run the translate-around English QA flow as an async generator.
 
-    Returns ``(events, degraded, reason)`` — ``events`` is the list of
-    ``(event_type, payload)`` tuples the caller should emit, ``degraded`` is
-    whether the JSON answer fell back, ``reason`` is the short string code
-    when degraded.
+    Yields ``(event_type, payload)`` tuples. The final event is always
+    ``('done_meta', {'degraded': bool, 'reason': str | None})`` — the caller
+    converts that to the actual SSE ``done`` event including locale + qa_id.
 
     Phase 4.F emits a structured ``qa.en_metrics`` log line at the end with
     per-stage timings (query_translate / retrieval / generate / total) and
-    the cached_en_summary hit rate, for offline P50/P95 aggregation.
+    the cached_en_summary hit rate, for offline P50/P95 aggregation. Task 9
+    streams Step 3 via :func:`translate_answer_stream` + ``MarkdownStreamParser``;
+    on stream failure we fall back to the legacy
+    :func:`translate_answer_with_evidence` non-streaming path.
     """
-    events: list[tuple[str, dict]] = []
+    from app.services.markdown_stream_parser import (
+        MarkdownStreamParser,
+        ParseDegradedError,
+    )
+
     question_en = body.question
     # Phase 4.F: per-stage stopwatch. Stored in ms (int) so JSON log lines
     # are friendly to grep / jq without float-precision nuisance.
@@ -372,14 +476,15 @@ async def _run_en_qa_flow(
         stage_ms["query_translate_ms"] = int((time.monotonic() - stage1_start) * 1000)
         stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
         logger.exception("qa.en_generation_failed stage=query_translate metrics=%s", stage_ms)
-        events.append(("error", {
+        yield ("error", {
             "code": "TIMEOUT",
             "message": "Query translation failed; please retry.",
-        }))
-        return events, True, "query_translation_failed"
+        })
+        yield ("done_meta", {"degraded": True, "reason": "query_translation_failed"})
+        return
     stage_ms["query_translate_ms"] = int((time.monotonic() - stage1_start) * 1000)
 
-    events.append(("translated_query", {"zh": zh_query}))
+    yield ("translated_query", {"zh": zh_query})
 
     # Step 2 — Chinese hybrid search on translated query
     stage2_start = time.monotonic()
@@ -415,97 +520,104 @@ async def _run_en_qa_flow(
     if not merged:
         stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
         logger.info("qa.en_metrics reason=no_evidence metrics=%s", stage_ms)
-        events.append(("error", {
+        yield ("error", {
             "code": "INSUFFICIENT_EVIDENCE",
             "message": "No relevant evidence found. Try rephrasing.",
-        }))
-        return events, True, "no_evidence"
+        })
+        yield ("done_meta", {"degraded": True, "reason": "no_evidence"})
+        return
 
-    # Step 3 — English answer generation (reuses cached_en_summary where
-    # available to keep prompt size sane).
-    cached_by_id = {
-        chunk.chunk_id: db.query(Chunk.cached_en_summary).filter(
-            Chunk.id == chunk.chunk_id
-        ).scalar()
-        for chunk in merged
-    }
-    # Phase 4.F.3: cache hit rate — how many merged chunks already have a
-    # cached English summary from a prior run. Target > 70% after warm-up.
-    cache_total = len(cached_by_id)
-    cache_hits = sum(1 for v in cached_by_id.values() if v)
-    stage_ms["cache_total"] = cache_total
-    stage_ms["cache_hits"] = cache_hits
+    # Phase 4.F.3: cache hit rate accounting — Task 9 no longer pre-fetches
+    # per-chunk cached_en_summary because summaries are generated async after
+    # the stream completes (cache misses on first request are expected).
+    # Keep counters at zero so the metrics line still emits all keys.
+    stage_ms["cache_total"] = len(merged)
+    stage_ms["cache_hits"] = 0
 
+    # Step 3 — Stream the English answer.
     stage3_start = time.monotonic()
-    answer_result = await translate_answer_with_evidence(
-        question_en, merged,
-    )
-    stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
-    if answer_result.get("degraded"):
-        # Degrade to a Chinese answer via existing generator.
+    parser = MarkdownStreamParser()
+    try:
+        async for token in translate_answer_stream(question_en, merged):
+            for event in parser.feed(token):
+                yield event
+        for event in parser.flush():
+            yield event
+    except ParseDegradedError as exc:
+        stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
         stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
         logger.warning(
-            "qa.en_generation_failed stage=translate_answer degraded=1 metrics=%s",
+            "qa.en_generation_failed stage=translate_answer reason=parse_degraded metrics=%s",
             stage_ms,
         )
+        yield ("detail", exc.fallback_payload)
+        yield ("degraded", {"reason": "parse_degraded"})
+        yield ("sources", {"sources": _build_sources_payload(merged)})
+        yield ("done_meta", {"degraded": True, "reason": "translate_answer_failed"})
+        return
+    except Exception:
+        logger.exception(
+            "translate_answer_stream failed; falling back to legacy translate_answer_with_evidence"
+        )
+        # Legacy fallback — call the original synchronous translator.
         try:
-            zh_answer_events = await asyncio.wait_for(
-                Generator().generate_streaming(question_en, zh_result),
-                timeout=_GENERATE_TIMEOUT,
-            )
+            answer_result = await translate_answer_with_evidence(question_en, merged)
         except Exception:
-            logger.exception("en-US Chinese fallback also failed")
-            events.append(("error", {
+            stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
+            stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
+            logger.exception(
+                "qa.en_generation_failed stage=translate_answer_legacy metrics=%s",
+                stage_ms,
+            )
+            yield ("error", {
                 "code": "ANSWER_FAILED",
                 "message": "English answer generation failed.",
-            }))
-            return events, True, "translate_answer_failed"
-        events.extend(zh_answer_events)
-        return events, True, "translate_answer_failed"
-
-    answer_text = answer_result.get("answer", "")
-    summaries = answer_result.get("evidence_summaries", [])
-
-    # Merge cache hits into summaries for chunks the LLM skipped.
-    summary_by_chunk = {s["chunk_id"]: s["text_en"] for s in summaries if s.get("chunk_id")}
-    for chunk in merged:
-        cid_str = str(chunk.chunk_id)
-        if cid_str not in summary_by_chunk and cached_by_id.get(chunk.chunk_id):
-            summary_by_chunk[cid_str] = cached_by_id[chunk.chunk_id]
-
-    sources_payload = []
-    for chunk in merged:
-        cid_str = str(chunk.chunk_id)
-        sources_payload.append({
-            "chunk_id": cid_str,
-            "text_en": summary_by_chunk.get(cid_str, ""),
-            "text_zh": chunk.content[:400] if chunk.content else "",
-            "source_title": chunk.bridge_name or "",
-        })
-
-    # Single-outline rendering of the English answer (伪流式).
-    outline_id = str(uuid.uuid4())
-    events.append(("outline", {
-        "key_points": [{
+            })
+            yield ("done_meta", {"degraded": True, "reason": "translate_answer_failed"})
+            return
+        stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
+        answer_text = answer_result.get("answer", "")
+        summaries = answer_result.get("evidence_summaries", [])
+        summary_by_chunk = {
+            s["chunk_id"]: s["text_en"] for s in summaries if s.get("chunk_id")
+        }
+        outline_id = str(uuid.uuid4())
+        yield ("outline", {"key_points": [{
             "id": outline_id,
             "summary": answer_text[:200] if answer_text else "",
             "order": 1,
-        }],
-    }))
-    events.append(("detail", {
-        "key_point_id": outline_id,
-        "explanation": answer_text,
-        "citations": list(range(1, len(sources_payload) + 1)),
-    }))
-    events.append(("sources", {"sources": sources_payload}))
+        }]})
+        yield ("detail", {
+            "key_point_id": outline_id,
+            "explanation": answer_text,
+            "citations": list(range(1, len(merged) + 1)),
+        })
+        yield ("sources", {"sources": _build_sources_payload(merged, summary_by_chunk)})
+        if summaries:
+            background_tasks.add_task(_persist_en_summaries_in_background, summaries)
+        stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
+        logger.warning(
+            "qa.en_metrics ok=0 reason=translate_answer_failed_legacy metrics=%s",
+            stage_ms,
+        )
+        yield ("done_meta", {"degraded": True, "reason": "translate_answer_failed_legacy"})
+        return
 
-    # Background: persist evidence summaries so future requests cache-hit.
-    if summaries:
-        background_tasks.add_task(_persist_en_summaries_in_background, summaries)
+    stage_ms["generate_ms"] = int((time.monotonic() - stage3_start) * 1000)
 
-    # Phase 4.F: emit the success-path structured metrics line for offline
-    # aggregation (P50 / P95 / P99, cache hit rate, degradation rate).
+    # Sources (post-stream success) — text_en empty until background task
+    # writes summaries; subsequent requests will hit the cache.
+    yield ("sources", {"sources": _build_sources_payload(merged)})
+
+    # Background: generate evidence summaries (non-blocking) and cache them.
+    background_tasks.add_task(
+        extract_evidence_summaries_async,
+        answer_text=parser.full_text(),
+        merged=merged,
+    )
+
+    # Phase 4.F: emit the success-path structured metrics line.
     stage_ms["total_ms"] = int((time.monotonic() - flow_start) * 1000)
     logger.info("qa.en_metrics ok=1 metrics=%s", stage_ms)
 
-    return events, False, None
+    yield ("done_meta", {"degraded": False, "reason": None})

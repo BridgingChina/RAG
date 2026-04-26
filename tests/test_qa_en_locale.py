@@ -49,6 +49,10 @@ class _FakeProvider(LLMProvider):
             usage={},
         )
 
+    async def chat_stream(self, messages, *, model=None):  # pragma: no cover — not exercised
+        if False:
+            yield ""
+
     async def list_models(self):
         return []
 
@@ -104,9 +108,31 @@ def _make_body(question: str):
     return SimpleNamespace(question=question, context=None)
 
 
-def _run_flow(*, responses, zh_chunks, en_chunks, question="Zhaozhou Bridge arch", monkeypatch=None):
+def _run_flow(
+    *,
+    responses,
+    zh_chunks,
+    en_chunks,
+    question="Zhaozhou Bridge arch",
+    monkeypatch=None,
+    stream_tokens: list[str] | None = None,
+    stream_exc: Exception | None = None,
+):
     """Drive the en-qa flow with a single shared ``_ChatStub`` servicing both
-    the translation service and the generator fallback."""
+    the translation service and the generator fallback.
+
+    Task 9: ``_run_en_qa_flow`` is now an async generator. We collect every
+    yielded ``(event_type, payload)`` tuple, peel off the trailing
+    ``done_meta`` sentinel, and return a tuple shaped like the legacy
+    ``(events, degraded, reason)`` so existing assertions still apply.
+
+    ``stream_tokens`` / ``stream_exc`` control the streamed answer path
+    (Step 3): ``stream_tokens`` is the list of markdown tokens
+    ``translate_answer_stream`` should yield; ``stream_exc`` short-circuits the
+    stream by raising and exercising the legacy
+    ``translate_answer_with_evidence`` fallback (which then consumes the next
+    queued ``responses`` entry).
+    """
     stub = _ChatStub(responses)
 
     if monkeypatch is not None:
@@ -114,24 +140,34 @@ def _run_flow(*, responses, zh_chunks, en_chunks, question="Zhaozhou Bridge arch
         monkeypatch.setattr(generator_module, "chat_for_task", stub)
     else:
         # Fallback for tests that don't accept monkeypatch — swap directly.
-        # pytest.MonkeyPatch works similarly, but we avoid importing it here
-        # to keep the test style consistent with the rest of the suite.
         import pytest as _pytest  # local import
         mp = _pytest.MonkeyPatch()
         mp.setattr(svc, "chat_for_task", stub)
         mp.setattr(generator_module, "chat_for_task", stub)
-        # Caller is responsible for undo — test fixtures usually handle this,
-        # but since these helpers run outside a fixture we leak the patch for
-        # the test's lifetime (process-local, no cross-test bleed because
-        # each call installs fresh).
+
+    # Stub translate_answer_stream: yield tokens or raise. Default is a no-op
+    # stream that immediately raises ParseDegradedError on flush (no '## '
+    # heading) — tests that don't pass stream_tokens / stream_exc expect to
+    # exercise the legacy fallback path (translate_answer_with_evidence
+    # pops the next response from the shared stub).
+    if stream_exc is not None:
+        async def _stream_iter(*_args, **_kwargs):
+            raise stream_exc
+            if False:  # pragma: no cover — make this an async generator
+                yield ""
+    else:
+        tokens = list(stream_tokens or [])
+
+        async def _stream_iter(*_args, **_kwargs):
+            for tok in tokens:
+                yield tok
+
+    if monkeypatch is not None:
+        monkeypatch.setattr(qa_module, "translate_answer_stream", _stream_iter)
 
     provider = _FakeProvider()
     retriever = _FakeRetriever(zh_chunks, en_chunks)
     db = MagicMock()
-
-    # DB lookup used by the en-flow's cache-hit check — make every chunk a miss.
-    scalar_mock = MagicMock(return_value=None)
-    db.query.return_value.filter.return_value.scalar = scalar_mock
 
     # Reset the module-level query cache so ordering is deterministic.
     svc._query_translation_cache.clear()
@@ -139,13 +175,25 @@ def _run_flow(*, responses, zh_chunks, en_chunks, question="Zhaozhou Bridge arch
     background_tasks = MagicMock()
     background_tasks.add_task = MagicMock()
 
-    return asyncio.run(qa_module._run_en_qa_flow(
-        db=db,
-        body=_make_body(question),
-        retriever=retriever,
-        provider=provider,
-        background_tasks=background_tasks,
-    )), stub, background_tasks
+    async def _drain():
+        events: list[tuple[str, dict]] = []
+        degraded = False
+        reason: str | None = None
+        async for evt_type, payload in qa_module._run_en_qa_flow(
+            db=db,
+            body=_make_body(question),
+            retriever=retriever,
+            provider=provider,
+            background_tasks=background_tasks,
+        ):
+            if evt_type == "done_meta":
+                degraded = payload["degraded"]
+                reason = payload["reason"]
+                continue
+            events.append((evt_type, payload))
+        return events, degraded, reason
+
+    return asyncio.run(_drain()), stub, background_tasks
 
 
 def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded(monkeypatch):
@@ -153,18 +201,26 @@ def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded(monkeypatch):
     en_chunks = []
     chunk_id = zh_chunks[0].chunk_id
 
-    answer_json = json.dumps({
-        "answer": "Zhaozhou Bridge is a Sui-era stone arch bridge.",
-        "evidence_summaries": [
-            {"chunk_id": str(chunk_id), "text_en": "Sui-era arch bridge summary."},
-        ],
-    })
-    # Query-translate first, then answer-generate.
-    responses = ["赵州桥的拱结构", answer_json]
+    # Task 9: streaming path — translate_answer_stream yields markdown tokens
+    # that MarkdownStreamParser can parse into outline + detail events.
+    # Per-chunk English summaries are produced asynchronously after the stream
+    # completes, so on the first request ``text_en`` will be empty (cache miss
+    # is the expected steady state for a fresh request).
+    stream_md = (
+        "# 要点\n"
+        "- Zhaozhou Bridge is a Sui-era stone arch bridge. [1]\n"
+        "\n"
+        "## Sui-era stone arch bridge\n"
+        "Zhaozhou Bridge is a Sui-era stone arch bridge built circa 595 CE. [1]\n"
+    )
+    # Only the query-translate response is consumed via chat_for_task; the
+    # answer comes from the stub stream below.
+    responses = ["赵州桥的拱结构"]
 
-    (events, degraded, reason), stub, background_tasks = _run_flow(
+    (events, degraded, reason), _stub, background_tasks = _run_flow(
         responses=responses, zh_chunks=zh_chunks, en_chunks=en_chunks,
         monkeypatch=monkeypatch,
+        stream_tokens=[stream_md],
     )
     assert degraded is False
     assert reason is None
@@ -178,10 +234,12 @@ def test_en_qa_flow_emits_sources_with_text_en_and_not_degraded(monkeypatch):
     sources_event = next(data for t, data in events if t == "sources")
     src = sources_event["sources"][0]
     assert src["chunk_id"] == str(chunk_id)
-    assert "Sui-era arch bridge summary" in src["text_en"]
+    # Task 9: streaming path emits empty text_en — summaries land via the
+    # background task on a subsequent request.
+    assert src["text_en"] == ""
     # text_zh preview is preserved for the "Show original Chinese" UI.
     assert "赵州桥" in src["text_zh"]
-    # Background cache write scheduled.
+    # Background extract_evidence_summaries_async scheduled.
     assert background_tasks.add_task.called
 
 
@@ -189,24 +247,32 @@ def test_en_qa_flow_degrades_on_translate_failure(monkeypatch):
     zh_chunks = [_make_retrieved_chunk()]
     en_chunks = []
 
-    # translate_query succeeds; answer generation returns non-JSON. After
-    # degradation, the flow falls back to Generator.generate_streaming which
-    # makes its OWN chat_for_task call — queue a third response.
-    generator_fallback = json.dumps({
-        "key_points": [{"summary": "cn", "explanation": "cn", "citations": []}],
-        "deep_dive": None,
-        "confidence": {"level": "low", "reason": "fallback"},
+    # Task 9: translate_query succeeds, then translate_answer_stream raises.
+    # The flow falls back to legacy translate_answer_with_evidence, which
+    # consumes the next response from the shared stub — this one is not
+    # valid JSON, so the legacy path's degraded=True branch sets the answer
+    # to fallback content. We then check the flow surfaces the legacy
+    # done_meta reason.
+    legacy_response = json.dumps({
+        "answer": "Stone arch bridge.",
+        "evidence_summaries": [],
     })
-    responses = ["赵州桥", "absolutely not json", generator_fallback]
+    responses = ["赵州桥", legacy_response]
     (events, degraded, reason), _stub, _bg = _run_flow(
         responses=responses, zh_chunks=zh_chunks, en_chunks=en_chunks,
         monkeypatch=monkeypatch,
+        stream_exc=RuntimeError("simulated stream failure"),
     )
 
-    # degraded falls back to Chinese answer via Generator — the flow returns
-    # degraded=True with reason="translate_answer_failed".
+    # Streaming failed → legacy fallback succeeded → done_meta reports the
+    # legacy-fallback degradation marker.
     assert degraded is True
-    assert reason == "translate_answer_failed"
+    assert reason == "translate_answer_failed_legacy"
+    # Outline + detail + sources should still be emitted on the legacy path.
+    types = [t for t, _ in events]
+    assert "outline" in types
+    assert "detail" in types
+    assert "sources" in types
 
 
 def test_en_qa_flow_degrades_on_no_evidence(monkeypatch):
@@ -236,18 +302,18 @@ def test_en_qa_flow_emits_structured_metrics_log(caplog, monkeypatch):
     import logging
 
     zh_chunks = [_make_retrieved_chunk()]
-    chunk_id = zh_chunks[0].chunk_id
-    answer_json = json.dumps({
-        "answer": "Zhaozhou Bridge is a Sui-era stone arch bridge.",
-        "evidence_summaries": [
-            {"chunk_id": str(chunk_id), "text_en": "Sui-era arch."},
-        ],
-    })
-    responses = ["赵州桥", answer_json]
+    stream_md = (
+        "# 要点\n"
+        "- Sui-era stone arch. [1]\n"
+        "\n"
+        "## Sui-era stone arch\n"
+        "Zhaozhou Bridge. [1]\n"
+    )
+    responses = ["赵州桥"]
 
     with caplog.at_level(logging.INFO, logger="app.api.public.v1.qa"):
         _run_flow(responses=responses, zh_chunks=zh_chunks, en_chunks=[],
-                  monkeypatch=monkeypatch)
+                  monkeypatch=monkeypatch, stream_tokens=[stream_md])
 
     metric_records = [r for r in caplog.records if "qa.en_metrics" in r.getMessage()]
     assert metric_records, "expected a qa.en_metrics log record on success"
