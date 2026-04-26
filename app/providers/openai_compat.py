@@ -181,6 +181,27 @@ class OpenAICompatProvider(LLMProvider):
             model=model,
         )
 
+    async def chat_stream(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str | None = None,
+    ):
+        """Streaming not implemented for generic OpenAI-compat / MiniMax routes.
+
+        Loud NotImplementedError mirrors the embed() decision in MiniMaxProvider.
+        QA streaming routes via chat_stream_for_task("qa_generation"), which is
+        seeded to Zhipu in llm_task_routes (schema v13). If a future migration
+        routes a streaming task to an OpenAI-compat provider, implement here
+        following the same SSE shape used in ZhipuProvider.chat_stream.
+        """
+        raise NotImplementedError(
+            "chat_stream is not implemented for OpenAI-compatible providers; "
+            "route streaming tasks to a provider that supports it."
+        )
+        if False:  # marker for type checkers — keeps function as async generator
+            yield ""
+
     @retry(
         stop=stop_after_attempt(8),
         wait=_rate_limit_aware_wait,
