@@ -1,15 +1,19 @@
 """识景视觉识别 service — /v1/recognition 后端逻辑。"""
 import json
+import logging
 import re
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
 from app.api.public.v1.schemas.recognition import RecognitionCandidate, RecognitionFallback
 from app.api.public.v1.utils import escape_like
+from app.core.config import settings
 from app.models import Bridge
 from app.models.bridge_image import BridgeImage
+from app.providers.errors import ProviderConfigurationError, ProviderUnavailableError
 from app.services.bridge_image_service import BridgeImageService
 
 
@@ -174,3 +178,124 @@ def route_candidates(
 
     # 分支③: nothing actionable → empty
     return [], None, "fallback"
+
+
+logger = logging.getLogger(__name__)
+
+
+_SYSTEM_PROMPT_TEMPLATE = """你是中国桥梁识别助手。下方是已知桥梁名录（CSV，每行一座桥）：
+{catalog}
+
+任务：识别用户上传的图片中的桥梁。
+- 若能在名录里精确对应到某座桥，把 matched_name 填那一行的 name；
+- 若无法对应名录（包括"图中的桥不在名录里"和"图中根本不是桥"），matched_name 设为 null；
+- 当 matched_name=null 但确实是一座桥，给出 free_form 自由识别；
+- 当根本不是桥，free_form 也设为 null。
+
+只输出 JSON，不要其他文本：
+{{
+  "matched_name": string | null,
+  "free_form": {{
+    "bridge_name": string,
+    "region": string,
+    "bridge_type": string,
+    "hints": string[]
+  }} | null
+}}"""
+
+
+def _build_messages(
+    catalog_csv: str,
+    image_b64: str,
+    mime: str,
+    latitude: float | None,
+    longitude: float | None,
+) -> list[dict]:
+    if latitude is not None and longitude is not None:
+        user_text = f"可选位置：纬度 {latitude}，经度 {longitude}"
+    else:
+        user_text = "请识别这张图片中的桥梁。"
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT_TEMPLATE.format(catalog=catalog_csv)},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_text},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
+            ],
+        },
+    ]
+
+
+def _post_openrouter(model: str, messages: list[dict]) -> str:
+    """Single-shot POST. Raises httpx.HTTPStatusError on non-2xx."""
+    headers = {
+        "Authorization": f"Bearer {settings.openrouter_api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://bridgingchina.net",
+        "X-Title": "BridgingChina-Recognition",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+        "max_tokens": 512,
+    }
+    with httpx.Client(timeout=settings.recognition_request_timeout) as client:
+        resp = client.post(
+            f"{settings.openrouter_base_url.rstrip('/')}/chat/completions",
+            headers=headers,
+            json=payload,
+        )
+    resp.raise_for_status()
+    data = resp.json()
+    return data["choices"][0]["message"]["content"]
+
+
+def call_openrouter_vision(
+    image_b64: str,
+    mime: str,
+    catalog_csv: str,
+    latitude: float | None,
+    longitude: float | None,
+) -> tuple[str, str]:
+    """Call OpenRouter Qwen3-VL with primary→fallback model chain.
+
+    Returns (raw_content, model_used). Raises:
+    - ProviderConfigurationError if OPENROUTER_API_KEY is unset
+    - ProviderUnavailableError if both primary and fallback models fail
+    - httpx.HTTPStatusError if a non-retryable 4xx (not 429) occurs
+    """
+    if not settings.openrouter_api_key:
+        raise ProviderConfigurationError(
+            "OPENROUTER_API_KEY not set — /v1/recognition disabled"
+        )
+
+    messages = _build_messages(catalog_csv, image_b64, mime, latitude, longitude)
+
+    for model in (
+        settings.openrouter_vision_model,
+        settings.openrouter_vision_fallback_model,
+    ):
+        try:
+            return _post_openrouter(model, messages), model
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status < 500 and status != 429:
+                # 4xx (other than 429) means the request itself is broken
+                # — fallback model would fail the same way. Propagate.
+                raise
+            logger.warning(
+                "OpenRouter %s failed (status=%s) — trying next model",
+                model,
+                status,
+            )
+        except httpx.TransportError as exc:
+            logger.warning(
+                "OpenRouter %s transport error: %s — trying next model", model, exc
+            )
+
+    raise ProviderUnavailableError(
+        "OpenRouter vision: both primary and fallback models failed"
+    )

@@ -1,8 +1,15 @@
+import httpx
+import pytest
+import respx
+
+from app.core.config import settings
 from app.models import Bridge
+from app.providers.errors import ProviderConfigurationError, ProviderUnavailableError
 from app.services.vision_recognition import (
     VisionFreeForm,
     VisionResult,
     build_bridge_catalog,
+    call_openrouter_vision,
     parse_vision_json,
     route_candidates,
 )
@@ -190,3 +197,112 @@ def test_route_exact_via_name_en(db_session):
     candidates, fallback, branch = route_candidates(res, db_session)
     assert branch == "exact"
     assert candidates[0].name == "赵州桥"
+
+
+@respx.mock
+def test_openrouter_primary_success(monkeypatch):
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    respx.post(f"{settings.openrouter_base_url}/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": [{"message": {"content": '{"matched_name": "赵州桥", "free_form": null}'}}]})
+    )
+    raw, model_used = call_openrouter_vision(
+        image_b64="fake", mime="image/jpeg", catalog_csv="name,region,era,bridge_type\n",
+        latitude=None, longitude=None,
+    )
+    assert "赵州桥" in raw
+    assert model_used == settings.openrouter_vision_model
+
+
+@respx.mock
+def test_openrouter_falls_back_on_5xx(monkeypatch):
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    route = respx.post(f"{settings.openrouter_base_url}/chat/completions")
+    route.side_effect = [
+        httpx.Response(503, json={"error": "down"}),
+        httpx.Response(200, json={"choices": [{"message": {"content": '{"matched_name":null,"free_form":null}'}}]}),
+    ]
+    raw, model_used = call_openrouter_vision(
+        image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
+    )
+    assert model_used == settings.openrouter_vision_fallback_model
+
+
+@respx.mock
+def test_openrouter_falls_back_on_429(monkeypatch):
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    route = respx.post(f"{settings.openrouter_base_url}/chat/completions")
+    route.side_effect = [
+        httpx.Response(429, json={"error": "rate limited"}),
+        httpx.Response(200, json={"choices": [{"message": {"content": '{}'}}]}),
+    ]
+    _, model_used = call_openrouter_vision(
+        image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
+    )
+    assert model_used == settings.openrouter_vision_fallback_model
+
+
+@respx.mock
+def test_openrouter_both_models_503_raises(monkeypatch):
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    respx.post(f"{settings.openrouter_base_url}/chat/completions").respond(503, json={"error": "x"})
+    with pytest.raises(ProviderUnavailableError):
+        call_openrouter_vision(
+            image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
+        )
+
+
+@respx.mock
+def test_openrouter_4xx_propagates_without_fallback(monkeypatch):
+    """A 401/400 means the request is broken — fallback model would 4xx the same way.
+    Should propagate, not silently retry."""
+    monkeypatch.setattr(settings, "openrouter_api_key", "bad-key")
+    respx.post(f"{settings.openrouter_base_url}/chat/completions").respond(401, json={"error": "unauthorized"})
+    with pytest.raises(httpx.HTTPStatusError):
+        call_openrouter_vision(
+            image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
+        )
+
+
+def test_openrouter_missing_api_key_raises(monkeypatch):
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    with pytest.raises(ProviderConfigurationError):
+        call_openrouter_vision(
+            image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
+        )
+
+
+@respx.mock
+def test_openrouter_request_payload_shape(monkeypatch):
+    """Verify the message payload shape — system prompt with catalog + user message with image."""
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    captured = {}
+
+    def _capture(request):
+        import json as _json
+        captured["body"] = _json.loads(request.content)
+        captured["headers"] = dict(request.headers)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    respx.post(f"{settings.openrouter_base_url}/chat/completions").mock(side_effect=_capture)
+
+    call_openrouter_vision(
+        image_b64="ZmFrZQ==", mime="image/png",
+        catalog_csv="name,region,era,bridge_type\n赵州桥,河北,隋唐,石拱桥",
+        latitude=39.0, longitude=116.0,
+    )
+
+    body = captured["body"]
+    assert body["model"] == settings.openrouter_vision_model
+    assert body["response_format"] == {"type": "json_object"}
+    assert body["temperature"] == 0.1
+    assert body["max_tokens"] == 512
+    assert body["messages"][0]["role"] == "system"
+    assert "赵州桥,河北,隋唐,石拱桥" in body["messages"][0]["content"]
+    user_msg = body["messages"][1]
+    assert user_msg["role"] == "user"
+    text_part = next(p for p in user_msg["content"] if p["type"] == "text")
+    assert "39.0" in text_part["text"] and "116.0" in text_part["text"]
+    image_part = next(p for p in user_msg["content"] if p["type"] == "image_url")
+    assert image_part["image_url"]["url"] == "data:image/png;base64,ZmFrZQ=="
+    assert captured["headers"]["authorization"] == "Bearer test-key"
+    assert captured["headers"].get("http-referer") == "https://bridgingchina.net"
