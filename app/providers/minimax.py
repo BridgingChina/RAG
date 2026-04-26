@@ -9,6 +9,7 @@ a different request shape and isn't on our current rollout. Callers that
 route an embedding task to a MiniMax provider will get a loud
 NotImplementedError rather than silent fallback.
 """
+import json
 import logging
 
 import httpx
@@ -104,6 +105,80 @@ class MiniMaxProvider(OpenAICompatProvider):
             usage=data.get("usage", {}),
             model=model,
         )
+
+    async def chat_stream(
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str | None = None,
+    ):
+        """Stream MiniMax chat completion, surfacing base_resp business-level errors.
+
+        Inherits the OpenAI-compatible SSE shape from OpenAICompatProvider.chat_stream
+        (delta.content fields), but additionally inspects each frame's optional
+        base_resp envelope. A frame with status_code != 0 is a business-level error
+        (insufficient quota, model offline, etc.) — abort the stream with
+        ProviderUnavailableError, mirroring the non-streaming chat() behavior.
+
+        No tenacity retry: async generators are incompatible with tenacity. Retry
+        semantics live at the call site (see qa.py:_streaming_with_retry).
+        """
+        if not model:
+            raise ProviderConfigurationError(
+                f"model= is required for MiniMaxProvider ({self._config.provider_id}); "
+                "caller must pass an explicit model"
+            )
+        async with self._semaphore:
+            async with httpx.AsyncClient(timeout=self._chat_timeout()) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self._config.base_url.rstrip('/')}/chat/completions",
+                    headers=self._headers(),
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": m.role, "content": m.content} for m in messages
+                        ],
+                        "stream": True,
+                    },
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                "MiniMax stream (%s): dropping unparseable line: %r",
+                                self._config.provider_id,
+                                raw[:200],
+                            )
+                            continue
+
+                        # MiniMax-specific: surface base_resp business errors BEFORE
+                        # extracting delta — a malformed frame must not yield content
+                        # before raising. status_code == 0 and absent base_resp both
+                        # mean "OK" and pass through silently.
+                        base_resp = chunk.get("base_resp") or {}
+                        status_code = base_resp.get("status_code", 0)
+                        if status_code != 0:
+                            status_msg = base_resp.get("status_msg", "unknown error")
+                            raise ProviderUnavailableError(
+                                f"MiniMax ({self._config.provider_id}) stream returned "
+                                f"base_resp.status_code={status_code}: {status_msg}"
+                            )
+
+                        delta = (
+                            chunk.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content", "")
+                        )
+                        if delta:
+                            yield delta
 
     async def embed(
         self,
