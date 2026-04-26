@@ -8,6 +8,14 @@ class Settings(BaseSettings):
     zhipu_api_key: str = ""
     amap_api_key: str = ""
 
+    # OpenRouter — 识景视觉模型（/v1/recognition）
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_vision_model: str = "qwen/qwen3-vl-235b-a22b-instruct"
+    openrouter_vision_fallback_model: str = "qwen/qwen3-vl-30b-a3b-instruct"
+    recognition_max_image_bytes: int = 5 * 1024 * 1024
+    recognition_request_timeout: float = 30.0
+
     # LLM settings
     embedding_model: str = "embedding-3"
     chat_model: str = "glm-4.7"
