@@ -295,30 +295,104 @@ async def ask_sse(
                 return
 
             # ── Phase 3: LLM generation ──
-            try:
-                events = await asyncio.wait_for(
-                    generator.generate_streaming(body.question, evidence),
-                    timeout=_GENERATE_TIMEOUT,
-                )
-            except asyncio.TimeoutError:
-                logger.error("Generation timed out after %ds for question=%r", _GENERATE_TIMEOUT, body.question)
-                yield _sse_event("error", {
-                    "code": "TIMEOUT",
-                    "message": "生成超时，请稍后重试",
-                })
-                yield _sse_event("done", {"qa_id": qa_id})
-                return
+            from app.services.markdown_stream_parser import ParseDegradedError
 
-            for event_type, data in events:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_seconds:
-                    yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+            FIRST_TOKEN_TIMEOUT = 12
+            INTER_TOKEN_TIMEOUT = 20
+            stream_failed = False
+            saw_degraded = False
+            degraded_reason: str | None = None
+            last_token_at = time.monotonic()
+
+            async def _streaming_with_retry():
+                nonlocal last_token_at, saw_degraded, degraded_reason
+                for attempt in range(2):
+                    stream_iter = generator.generate_streaming_v2(body.question, evidence)
+                    try:
+                        first_event = await asyncio.wait_for(
+                            stream_iter.__anext__(),
+                            timeout=FIRST_TOKEN_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        if attempt == 0:
+                            logger.warning("First-token timeout, retrying once")
+                            continue
+                        raise
+                    except StopAsyncIteration:
+                        return
+                    except ParseDegradedError as exc:
+                        yield ("detail", exc.fallback_payload)
+                        saw_degraded = True
+                        degraded_reason = "parse_degraded"
+                        return
+                    last_token_at = time.monotonic()
+                    yield first_event
+                    try:
+                        async for ev in stream_iter:
+                            last_token_at = time.monotonic()
+                            yield ev
+                    except ParseDegradedError as exc:
+                        yield ("detail", exc.fallback_payload)
+                        saw_degraded = True
+                        degraded_reason = "parse_degraded"
+                    return
+
+            if settings.qa_real_streaming_enabled:
+                try:
+                    async for event_type, data in _streaming_with_retry():
+                        if time.monotonic() - last_token_at > INTER_TOKEN_TIMEOUT:
+                            yield _sse_event("degraded", {"reason": "stream_broken"})
+                            saw_degraded = True
+                            degraded_reason = "stream_broken"
+                            break
+                        yield _sse_event(event_type, data)
+                        _mark_event()
+                        ping = _maybe_ping()
+                        if ping:
+                            yield ping
+                    if saw_degraded and degraded_reason in ("parse_degraded",):
+                        yield _sse_event("degraded", {"reason": degraded_reason})
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "QA streaming failed twice on first-token; falling back to pseudo-streaming"
+                    )
+                    stream_failed = True
+                except Exception:
+                    logger.exception("QA streaming raised; falling back to pseudo-streaming")
+                    stream_failed = True
+
+            if (not settings.qa_real_streaming_enabled) or stream_failed:
+                fallback_timeout = 45 if stream_failed else _GENERATE_TIMEOUT
+                try:
+                    events = await asyncio.wait_for(
+                        generator.generate_streaming(body.question, evidence),
+                        timeout=fallback_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "Generation timed out after %ds for question=%r",
+                        fallback_timeout,
+                        body.question,
+                    )
+                    yield _sse_event("error", {"code": "TIMEOUT", "message": "生成超时，请稍后重试"})
                     yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
                     return
-                yield _sse_event(event_type, data)
-                _mark_event()
 
-            yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
+                for event_type, data in events:
+                    elapsed = time.monotonic() - start_time
+                    if elapsed > timeout_seconds:
+                        yield _sse_event("error", {"code": "TIMEOUT", "message": "请求超时"})
+                        yield _sse_event("done", {"qa_id": qa_id, "locale": locale})
+                        return
+                    yield _sse_event(event_type, data)
+                    _mark_event()
+
+            yield _sse_event("done", {
+                "qa_id": qa_id,
+                "locale": locale,
+                "degraded": saw_degraded,
+                "reason": degraded_reason,
+            })
 
         except Exception:
             logger.error("SSE QA stream failed", exc_info=True)
