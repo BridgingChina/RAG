@@ -91,6 +91,25 @@ async def chat_for_task(
     return resp
 
 
+async def chat_stream_for_task(
+    task_key: str, messages: list[ChatMessage]
+):
+    """Streaming variant of :func:`chat_for_task` — yields token deltas.
+
+    Resolves ``task_key`` to a concrete ``(provider, model_id)`` pair via the
+    same router as :func:`chat_for_task`, then delegates to the provider's
+    ``chat_stream`` async generator. Each upstream delta is yielded unchanged.
+
+    Unlike :func:`chat_for_task`, this helper does NOT emit an ``llm_call``
+    structured log line — token-level streaming has no single "completion"
+    moment to attribute latency / usage to. Call sites that need observability
+    should wrap the iteration themselves (Task 5's Generator does this).
+    """
+    provider, model_id = get_for_task(task_key)
+    async for token in provider.chat_stream(messages, model=model_id):
+        yield token
+
+
 async def embed(texts: list[str]) -> list[list[float]]:
     """Embedding — intentionally **not** task-routed.
 
@@ -109,6 +128,7 @@ __all__ = [
     "ChatMessage",
     "ChatResponse",
     "chat_for_task",
+    "chat_stream_for_task",
     "embed",
     "get_for_task",
     "invalidate_task",
