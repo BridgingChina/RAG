@@ -3,9 +3,14 @@ import json
 import re
 from dataclasses import dataclass
 
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session
 
+from app.api.public.v1.schemas.recognition import RecognitionCandidate, RecognitionFallback
+from app.api.public.v1.utils import escape_like
 from app.models import Bridge
+from app.models.bridge_image import BridgeImage
+from app.services.bridge_image_service import BridgeImageService
 
 
 def build_bridge_catalog(db: Session) -> str:
@@ -91,3 +96,81 @@ def parse_vision_json(raw: str) -> VisionResult:
             )
 
     return VisionResult(matched_name=matched, free_form=free_form)
+
+
+def _bridge_to_candidate(bridge: Bridge, hints: list[str], db: Session) -> RecognitionCandidate:
+    img = (
+        db.query(BridgeImage)
+        .filter(BridgeImage.bridge_id == bridge.id)
+        .order_by(BridgeImage.order_index.asc())
+        .first()
+    )
+    thumbnail = BridgeImageService.get_public_url(img.r2_key) if img else None
+    return RecognitionCandidate(
+        bridge_id=bridge.id,
+        name=bridge.name,
+        bridge_type=bridge.bridge_type or "",
+        era=bridge.era or "",
+        region=bridge.region or "",
+        thumbnail=thumbnail,
+        confidence_hints=hints,
+    )
+
+
+def route_candidates(
+    result: VisionResult,
+    db: Session,
+) -> tuple[list[RecognitionCandidate], RecognitionFallback | None, str]:
+    """Three-branch dispatcher for /v1/recognition. See design doc §4 / §7."""
+
+    # 分支①: exact match by matched_name
+    if result.matched_name:
+        bridge = (
+            db.query(Bridge)
+            .filter(or_(Bridge.name == result.matched_name, Bridge.name_en == result.matched_name))
+            .first()
+        )
+        if bridge:
+            return (
+                [_bridge_to_candidate(bridge, ["LLM 命中已知桥梁名录"], db)],
+                None,
+                "exact",
+            )
+        # matched_name set but DB miss → degrade to fuzzy on same name
+        result = VisionResult(
+            matched_name=None,
+            free_form=VisionFreeForm(
+                bridge_name=result.matched_name, region="", bridge_type="", hints=[]
+            ),
+        )
+
+    # 分支②: fuzzy ILIKE on free_form.bridge_name
+    if result.free_form and result.free_form.bridge_name:
+        ff = result.free_form
+        escaped = escape_like(ff.bridge_name)
+        like_contains = f"%{escaped}%"
+        score = case(
+            (Bridge.name.ilike(escaped), 100),
+            (Bridge.name.ilike(f"{escaped}%"), 80),
+            (Bridge.name.ilike(like_contains), 60),
+            else_=40,
+        ).label("score")
+        rows = (
+            db.query(Bridge, score)
+            .filter(or_(Bridge.name.ilike(like_contains), Bridge.name_en.ilike(like_contains)))
+            .order_by(score.desc(), Bridge.name)
+            .limit(5)
+            .all()
+        )
+        if rows:
+            hints = ff.hints if ff.hints else ["LLM 自由识别匹配"]
+            candidates = [_bridge_to_candidate(b, hints, db) for b, _ in rows]
+            return candidates, None, "fuzzy"
+        return (
+            [],
+            RecognitionFallback(search_hint=ff.bridge_name, region_hint=ff.region or None),
+            "fallback",
+        )
+
+    # 分支③: nothing actionable → empty
+    return [], None, "fallback"

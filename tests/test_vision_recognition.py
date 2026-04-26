@@ -1,8 +1,10 @@
 from app.models import Bridge
 from app.services.vision_recognition import (
+    VisionFreeForm,
     VisionResult,
     build_bridge_catalog,
     parse_vision_json,
+    route_candidates,
 )
 
 
@@ -107,3 +109,84 @@ def test_parse_free_form_string_hints_does_not_iterate_chars():
     raw = '{"matched_name": null, "free_form": {"bridge_name": "X", "region": "Y", "bridge_type": "z", "hints": "abcd"}}'
     r = parse_vision_json(raw)
     assert r.free_form.hints == []
+
+
+def test_route_branch_exact(db_session):
+    db_session.add(Bridge(name="赵州桥", region="河北", era="隋唐", bridge_type="石拱桥"))
+    db_session.flush()
+    res = VisionResult(matched_name="赵州桥", free_form=None)
+
+    candidates, fallback, branch = route_candidates(res, db_session)
+
+    assert branch == "exact"
+    assert len(candidates) == 1
+    assert candidates[0].name == "赵州桥"
+    assert candidates[0].confidence_hints == ["LLM 命中已知桥梁名录"]
+    assert fallback is None
+
+
+def test_route_branch_fuzzy(db_session):
+    db_session.add(Bridge(name="安济桥（赵州桥）", region="河北", era="隋唐", bridge_type="石拱桥"))
+    db_session.flush()
+    res = VisionResult(
+        matched_name=None,
+        free_form=VisionFreeForm(bridge_name="赵州", region="河北", bridge_type="石拱桥", hints=["跨度大", "唐代"]),
+    )
+
+    candidates, fallback, branch = route_candidates(res, db_session)
+
+    assert branch == "fuzzy"
+    assert any("安济桥" in c.name for c in candidates)
+    assert candidates[0].confidence_hints == ["跨度大", "唐代"]
+    assert fallback is None
+
+
+def test_route_branch_fuzzy_uses_default_hint_when_llm_provides_none(db_session):
+    db_session.add(Bridge(name="洛阳桥", region="福建", era="北宋", bridge_type="梁桥"))
+    db_session.flush()
+    res = VisionResult(
+        matched_name=None,
+        free_form=VisionFreeForm(bridge_name="洛阳", region="", bridge_type="", hints=[]),
+    )
+    candidates, fallback, branch = route_candidates(res, db_session)
+    assert branch == "fuzzy"
+    assert candidates[0].confidence_hints == ["LLM 自由识别匹配"]
+
+
+def test_route_branch_fallback_unknown_bridge(db_session):
+    res = VisionResult(
+        matched_name=None,
+        free_form=VisionFreeForm(bridge_name="不存在桥", region="火星", bridge_type="", hints=[]),
+    )
+    candidates, fallback, branch = route_candidates(res, db_session)
+    assert branch == "fallback"
+    assert candidates == []
+    assert fallback.search_hint == "不存在桥"
+    assert fallback.region_hint == "火星"
+
+
+def test_route_branch_fallback_not_a_bridge(db_session):
+    res = VisionResult(matched_name=None, free_form=None)
+    candidates, fallback, branch = route_candidates(res, db_session)
+    assert branch == "fallback"
+    assert candidates == []
+    assert fallback is None
+
+
+def test_route_matched_name_no_db_match_falls_through_to_fuzzy(db_session):
+    """matched_name set but DB has nothing → degrade to fuzzy on the same name."""
+    db_session.add(Bridge(name="安济桥", region="河北", era="隋唐", bridge_type="石拱桥"))
+    db_session.flush()
+    res = VisionResult(matched_name="安济", free_form=None)  # close but not exact
+    candidates, fallback, branch = route_candidates(res, db_session)
+    assert branch == "fuzzy"
+    assert any("安济桥" in c.name for c in candidates)
+
+
+def test_route_exact_via_name_en(db_session):
+    db_session.add(Bridge(name="赵州桥", name_en="Zhaozhou Bridge", region="河北", era="隋唐", bridge_type="石拱桥"))
+    db_session.flush()
+    res = VisionResult(matched_name="Zhaozhou Bridge", free_form=None)
+    candidates, fallback, branch = route_candidates(res, db_session)
+    assert branch == "exact"
+    assert candidates[0].name == "赵州桥"
