@@ -28,6 +28,10 @@ class _DummyProvider(LLMProvider):
     async def chat(self, messages, *, model=None):  # pragma: no cover — overridden
         raise NotImplementedError
 
+    async def chat_stream(self, messages, *, model=None):  # pragma: no cover — not exercised here
+        if False:
+            yield ""
+
     async def list_models(self):
         return []
 

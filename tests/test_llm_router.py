@@ -39,6 +39,10 @@ class _DummyProvider(LLMProvider):
     async def chat(self, messages, *, model=None):
         return None
 
+    async def chat_stream(self, messages, *, model=None):
+        if False:
+            yield ""
+
     async def list_models(self):
         return []
 
