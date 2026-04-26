@@ -9,6 +9,7 @@ Every chat() / embed() call MUST pass an explicit model — the task router
 (Phase C) is responsible for that.
 """
 import asyncio
+import json
 import logging
 import random
 
@@ -187,20 +188,57 @@ class OpenAICompatProvider(LLMProvider):
         *,
         model: str | None = None,
     ):
-        """Streaming not implemented for generic OpenAI-compat / MiniMax routes.
+        """Stream chat completion tokens via OpenAI-compatible /chat/completions stream:true.
 
-        Loud NotImplementedError mirrors the embed() decision in MiniMaxProvider.
-        QA streaming routes via chat_stream_for_task("qa_generation"), which is
-        seeded to Zhipu in llm_task_routes (schema v13). If a future migration
-        routes a streaming task to an OpenAI-compat provider, implement here
-        following the same SSE shape used in ZhipuProvider.chat_stream.
+        Yields delta.content strings as they arrive. Skips keepalive / event lines
+        and unparseable JSON. Raises ProviderConfigurationError when model is empty
+        (consistent with chat() — OpenAI-compat providers have no default model).
+
+        No tenacity retry: async generators are incompatible with tenacity. Retry
+        semantics live at the call site (see qa.py:_streaming_with_retry).
         """
-        raise NotImplementedError(
-            "chat_stream is not implemented for OpenAI-compatible providers; "
-            "route streaming tasks to a provider that supports it."
-        )
-        if False:  # marker for type checkers — keeps function as async generator
-            yield ""
+        if not model:
+            raise ProviderConfigurationError(
+                f"model= is required for OpenAICompatProvider ({self._config.provider_id}); "
+                "caller must pass an explicit model"
+            )
+        async with self._semaphore:
+            async with httpx.AsyncClient(timeout=self._chat_timeout()) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self._config.base_url.rstrip('/')}/chat/completions",
+                    headers=self._headers(),
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": m.role, "content": m.content} for m in messages
+                        ],
+                        "stream": True,
+                    },
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        raw = line[6:].strip()
+                        if raw == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                "OpenAI-compat stream (%s): dropping unparseable line: %r",
+                                self._config.provider_id,
+                                raw[:200],
+                            )
+                            continue
+                        delta = (
+                            chunk.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content", "")
+                        )
+                        if delta:
+                            yield delta
 
     @retry(
         stop=stop_after_attempt(8),
