@@ -29,3 +29,10 @@ class RecognitionMeta(BaseModel):
     model: str
     latency_ms: int
     branch: Literal["exact", "fuzzy", "fallback"]
+
+
+class RecognitionResponse(BaseModel):
+    """Envelope for /v1/recognition. Distinct from PublicResponse[T] because
+    we need a typed `meta` field and PublicMeta is pagination-specific."""
+    data: RecognitionData
+    meta: RecognitionMeta

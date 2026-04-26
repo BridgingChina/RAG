@@ -1,4 +1,15 @@
-"""Public API: 识景 — POST /v1/recognition."""
+"""Public API: 识景 — POST /v1/recognition.
+
+Response envelope is `RecognitionResponse` (`{data, meta}`) rather than the
+generic `PublicResponse[T]` because `meta` here is per-call telemetry
+(`model`, `latency_ms`, `branch`), not pagination.
+
+Errors opt into the public structured-error contract by raising
+`HTTPException(status, detail={"code": ..., "message": ...})`; the global
+handler in `error_handlers.py` passes the dict through verbatim, preserving
+distinctions like `vision_disabled` vs `vision_unavailable` that a generic
+`SERVICE_UNAVAILABLE` mapping would lose.
+"""
 import base64
 import logging
 import time
@@ -7,8 +18,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.public.v1.schemas.common import PublicResponse
-from app.api.public.v1.schemas.recognition import RecognitionData
+from app.api.public.v1.schemas.recognition import (
+    RecognitionData,
+    RecognitionMeta,
+    RecognitionResponse,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.providers.errors import ProviderConfigurationError, ProviderUnavailableError
@@ -19,13 +33,13 @@ router = APIRouter()
 _ALLOWED_MIME = {"image/jpeg", "image/png"}
 
 
-@router.post("", response_model=PublicResponse[RecognitionData])
+@router.post("", response_model=RecognitionResponse)
 def recognize(
     image: Annotated[UploadFile, File()],
     latitude: Annotated[float | None, Form()] = None,
     longitude: Annotated[float | None, Form()] = None,
     db: Session = Depends(get_db),
-) -> PublicResponse[RecognitionData]:
+) -> RecognitionResponse:
     # Imported lazily to avoid a circular import: vision_recognition imports
     # app.api.public.v1.schemas.recognition, which initializes the public v1
     # package (including this module).
@@ -96,9 +110,14 @@ def recognize(
         latency_ms,
     )
 
-    return PublicResponse(
+    return RecognitionResponse(
         data=RecognitionData(
             candidates=candidates,
             fallback_suggestions=fallback,
+        ),
+        meta=RecognitionMeta(
+            model=model_used,
+            latency_ms=latency_ms,
+            branch=branch,  # type: ignore[arg-type]  # branch is "exact"|"fuzzy"|"fallback"
         ),
     )
