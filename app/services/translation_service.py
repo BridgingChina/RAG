@@ -663,27 +663,32 @@ async def translate_answer_with_evidence(
 # needed in ``llm_task_routes`` — schema v13 seed already covers it).
 
 
-_STREAMING_ANSWER_PROMPT = """You are a Chinese bridge architecture expert. Answer the user's question in English markdown using the Chinese source excerpts below. Cite sources inline as [1], [2] etc. matching the numbered evidence.
+_STREAMING_ANSWER_PROMPT = """You are a Chinese bridge architecture expert. Answer the user's question entirely in English using the Chinese source excerpts below. Cite sources inline as [1], [2] etc. matching the numbered evidence. Output a single JSON object — no markdown, no code fences, no preamble.
 
 Sources (Chinese):
 {evidence_text}
 
 User question (English): {question}
 
-Output format (no JSON, no code fences, no preamble — start directly with the heading):
+Output format (strict, no commentary outside the JSON):
 
-# Key points
-- First key point summary [1,3]
-- Second key point summary [2]
-- ...(3-7 bullets total)
+{{
+  "summaries": [
+    "First key point summary [1,3]",
+    "Second key point summary [2]"
+  ],
+  "details": [
+    {{"explanation": "First key point's expanded paragraph in English, citing evidence as [1] [3].", "citations": [1, 3]}},
+    {{"explanation": "Second key point's expanded paragraph in English.", "citations": [2]}}
+  ]
+}}
 
-## Point 1
-First key point's expanded paragraph in English, citing evidence as [1]…
-
-## Point 2
-Second key point's expanded paragraph in English…
-
-(Continue with one ## section per bullet above. Body must be entirely in English — no Chinese characters in the answer prose. Do not echo the prompt, do not add commentary outside the markdown structure.)"""
+Rules:
+- The summaries array MUST come first in the output (do not reorder fields).
+- 3-7 short English summaries, each ending with [N] or [N,M] referencing source numbers.
+- details length MUST equal summaries length and order MUST match.
+- Body must be entirely in English — no Chinese characters in summary or explanation.
+- Do not wrap the output in ``` fences. Start with `{{` and end with `}}`."""
 
 
 _EVIDENCE_SUMMARIES_PROMPT = """You are a Chinese bridge architecture expert. The English answer below was generated from the numbered Chinese sources. For EACH source that was cited, produce a one-paragraph English summary capturing the relevant content.

@@ -299,7 +299,7 @@ async def ask_sse(
                 return
 
             # ── Phase 3: LLM generation ──
-            from app.services.markdown_stream_parser import ParseDegradedError
+            from app.services.json_stream_parser import ParseDegradedError
 
             FIRST_TOKEN_TIMEOUT = 12
             INTER_TOKEN_TIMEOUT = 20
@@ -446,12 +446,12 @@ async def _run_en_qa_flow(
     Phase 4.F emits a structured ``qa.en_metrics`` log line at the end with
     per-stage timings (query_translate / retrieval / generate / total) and
     the cached_en_summary hit rate, for offline P50/P95 aggregation. Task 9
-    streams Step 3 via :func:`translate_answer_stream` + ``MarkdownStreamParser``;
+    streams Step 3 via :func:`translate_answer_stream` + ``JSONStreamParser``;
     on stream failure we fall back to the legacy
     :func:`translate_answer_with_evidence` non-streaming path.
     """
-    from app.services.markdown_stream_parser import (
-        MarkdownStreamParser,
+    from app.services.json_stream_parser import (
+        JSONStreamParser,
         ParseDegradedError,
     )
 
@@ -536,7 +536,7 @@ async def _run_en_qa_flow(
 
     # Step 3 — Stream the English answer.
     stage3_start = time.monotonic()
-    parser = MarkdownStreamParser()
+    parser = JSONStreamParser()
     try:
         async for token in translate_answer_stream(question_en, merged):
             for event in parser.feed(token):

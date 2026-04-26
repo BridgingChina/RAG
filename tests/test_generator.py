@@ -221,7 +221,13 @@ async def test_generate_streaming_sources_no_bridge_name(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_generate_streaming_fallback_asserts_specific_behavior(monkeypatch):
-    """When LLM returns non-JSON, fallback produces exactly 3 events with expected structure."""
+    """When LLM returns non-JSON, fallback produces 4 events with expected structure.
+
+    Issue #185 P1: the legacy fallback path now also emits a `degraded` event
+    so the SSE consumer can mark the answer as low-confidence. Summary is
+    hard-truncated at 120 chars (first line) and explanation at 600 to
+    avoid dumping a wall of raw JSON into the UI.
+    """
     raw_content = "这不是JSON格式的响应内容"
     _patch_chat(monkeypatch, raw_content)
 
@@ -231,20 +237,18 @@ async def test_generate_streaming_fallback_asserts_specific_behavior(monkeypatch
     )
     events = await generator.generate_streaming("测试问题", evidence)
 
-    assert len(events) == 3
-    assert events[0][0] == "outline"
-    assert events[1][0] == "detail"
-    assert events[2][0] == "sources"
+    assert [e[0] for e in events] == ["outline", "detail", "degraded", "sources"]
 
-    # Outline has exactly 1 key_point with content truncated at 200 chars
     outline_kps = events[0][1]["key_points"]
     assert len(outline_kps) == 1
-    assert outline_kps[0]["summary"] == raw_content[:200]
+    # Short raw content fits under the 120-char truncation, so it survives whole.
+    assert outline_kps[0]["summary"] == raw_content
 
-    # Detail has full raw content and empty citations
     detail = events[1][1]
     assert detail["explanation"] == raw_content
     assert detail["citations"] == []
+
+    assert events[2][1] == {"reason": "legacy_parse_failed"}
 
 
 @pytest.mark.asyncio

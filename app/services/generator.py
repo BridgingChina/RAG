@@ -1,38 +1,64 @@
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Literal, Optional, TypeAlias
 
 from app.llm import ChatMessage, chat_for_task, chat_stream_for_task
 from app.services.hybrid_retriever import HybridRetrievalResult
-from app.services.markdown_stream_parser import (
-    MarkdownStreamParser,
+from app.services.json_stream_parser import (
+    JSONStreamParser,
     ParseDegradedError,
 )
 
 logger = logging.getLogger(__name__)
 
 
-_STREAMING_V2_PROMPT = """你是桥梁知识助手。根据以下证据用 markdown 回答问题。
+_JSON_FENCE_OPEN_RE = re.compile(r"```(?:json)?\s*\n?", re.IGNORECASE)
+_JSON_FENCE_CLOSE_RE = re.compile(r"\n?\s*```\s*$", re.IGNORECASE)
+
+
+def _strip_json_fences(text: str) -> str:
+    """Remove leading ``` / ```json fence + trailing ``` from an LLM response.
+
+    GLM-4.7-Flash via OpenRouter sometimes wraps JSON output in a markdown
+    fence even when the prompt forbids it. Strip both ends so downstream
+    ``find('{')..rfind('}')`` still works on responses that have stray
+    characters before/after the fence.
+    """
+    if not text:
+        return text
+    stripped = _JSON_FENCE_OPEN_RE.sub("", text, count=1)
+    stripped = _JSON_FENCE_CLOSE_RE.sub("", stripped, count=1)
+    return stripped
+
+
+_STREAMING_V2_PROMPT = """你是桥梁知识助手。根据以下证据回答问题，严格按 JSON 格式输出。
 
 {evidence_text}
 
 问题：{question}
 
-输出格式严格遵循（不要输出任何 JSON、代码块、确认语，直接开始回答）：
+只输出一个 JSON 对象，字段顺序严格如下；不要输出任何 markdown、代码块（```）、自然语言前后缀：
 
-# 要点
-- 第一个要点摘要 [1,3]
-- 第二个要点摘要 [2]
-- ...（共 3-7 个）
+{{
+  "summaries": [
+    "第一个要点摘要 [1,3]",
+    "第二个要点摘要 [2]"
+  ],
+  "details": [
+    {{"explanation": "第一个要点的展开段落，引用证据写作 [1] [3] 这样的内联标记。", "citations": [1, 3]}},
+    {{"explanation": "第二个要点的展开段落。", "citations": [2]}}
+  ]
+}}
 
-## 要点 1
-第一个要点的展开段落，证据用 [证据 1] 这样标引……
-
-## 要点 2
-第二个要点的展开段落……
-"""
+要求：
+- summaries 数组先输出，3-7 个简短中文要点，每个末尾用 [N] 或 [N,M] 标注引用证据编号（从 1 开始）
+- details 数组与 summaries 一一对应，按相同顺序排列，长度必须一致
+- citations 是整数数组，对应该要点引用的证据编号
+- 不要 deep_dive、confidence 等额外字段
+- 不要包裹任何 ``` 代码块标记，直接以 {{ 开头、以 }} 结尾"""
 
 
 @dataclass
@@ -270,13 +296,19 @@ class Generator:
         """Parse LLM JSON response into a list of SSE events."""
         events: list[tuple[str, dict]] = []
 
-        try:
-            json_start = content.find("{")
-            json_end = content.rfind("}") + 1
-            if json_start < 0 or json_end <= json_start:
-                raise json.JSONDecodeError("No JSON found", content, 0)
+        # Strip ```json ... ``` fences before brace search — issue #185 P1
+        # showed GLM via OpenRouter wrapping its JSON output in a fence
+        # which made find('{')..rfind('}') still match the JSON, but downstream
+        # newer schemas with leading text-before-fence broke. Strip first.
+        cleaned = _strip_json_fences(content)
 
-            data = json.loads(content[json_start:json_end])
+        try:
+            json_start = cleaned.find("{")
+            json_end = cleaned.rfind("}") + 1
+            if json_start < 0 or json_end <= json_start:
+                raise json.JSONDecodeError("No JSON found", cleaned, 0)
+
+            data = json.loads(cleaned[json_start:json_end])
             key_points = data.get("key_points", [])
 
             kp_entries = []
@@ -311,14 +343,19 @@ class Generator:
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("Failed to parse streaming LLM response, falling back to raw text: %s", e)
             fallback_id = str(uuid.uuid4())
+            # Issue #185 P1: don't dump entire raw JSON into outline.summary;
+            # truncate hard so the UI doesn't show a wall of `{...}` text.
+            raw_for_summary = cleaned.strip().splitlines()[0][:120] if cleaned.strip() else "(空响应)"
+            raw_for_explanation = cleaned.strip()[:600] if cleaned.strip() else "(空响应)"
             events.append(("outline", {
-                "key_points": [{"id": fallback_id, "summary": content[:200], "order": 1}],
+                "key_points": [{"id": fallback_id, "summary": raw_for_summary, "order": 1}],
             }))
             events.append(("detail", {
                 "key_point_id": fallback_id,
-                "explanation": content,
+                "explanation": raw_for_explanation,
                 "citations": [],
             }))
+            events.append(("degraded", {"reason": "legacy_parse_failed"}))
 
         # Sources event — contiguous IDs for deduplicated sources
         all_chunks = evidence.all_chunks()
@@ -348,8 +385,8 @@ class Generator:
         """True-streaming generator. Yields (event_type, payload) tuples.
 
         Raises ParseDegradedError when the LLM produces text without recognizable
-        markdown structure — caller should yield a single fallback `detail`
-        event from `exc.fallback_payload` plus a `degraded` event.
+        JSON structure — caller should yield a single fallback `detail` event
+        from `exc.fallback_payload` plus a `degraded` event.
         """
         from app.services.hybrid_retriever import format_evidence_for_llm
 
@@ -359,7 +396,7 @@ class Generator:
         )
         messages = [ChatMessage(role="user", content=prompt)]
 
-        parser = MarkdownStreamParser()
+        parser = JSONStreamParser()
         async for token in chat_stream_for_task(self.TASK_KEY, messages):
             for event in parser.feed(token):
                 yield event
