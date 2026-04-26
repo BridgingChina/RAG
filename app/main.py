@@ -37,7 +37,7 @@ async def on_startup_register_keys() -> None:
 
     # Phase A seed list. Phase B will read this from llm_providers table.
     # Keep this list small and explicit — one entry per known env name.
-    _PHASE_A_SEED_ENVS = ["ZHIPU_API_KEY"]
+    _PHASE_A_SEED_ENVS = ["ZHIPU_API_KEY", "OPENROUTER_API_KEY"]
     for env in _PHASE_A_SEED_ENVS:
         register_sensitive_key(env)
 

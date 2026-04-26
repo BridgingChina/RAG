@@ -250,7 +250,16 @@ def _post_openrouter(model: str, messages: list[dict]) -> str:
         )
     resp.raise_for_status()
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        # Malformed 2xx body — treat as upstream failure so the caller
+        # can try the fallback model instead of 5xx-ing the user.
+        raise httpx.HTTPStatusError(
+            f"OpenRouter returned 200 with unexpected body shape: {data!r}",
+            request=resp.request,
+            response=httpx.Response(502, request=resp.request),
+        ) from exc
 
 
 def call_openrouter_vision(

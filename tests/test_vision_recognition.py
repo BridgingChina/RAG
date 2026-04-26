@@ -256,11 +256,28 @@ def test_openrouter_4xx_propagates_without_fallback(monkeypatch):
     """A 401/400 means the request is broken — fallback model would 4xx the same way.
     Should propagate, not silently retry."""
     monkeypatch.setattr(settings, "openrouter_api_key", "bad-key")
-    respx.post(f"{settings.openrouter_base_url}/chat/completions").respond(401, json={"error": "unauthorized"})
+    route = respx.post(f"{settings.openrouter_base_url}/chat/completions").respond(401, json={"error": "unauthorized"})
     with pytest.raises(httpx.HTTPStatusError):
         call_openrouter_vision(
             image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
         )
+    assert route.call_count == 1, "fallback model should NOT have been tried after 4xx"
+
+
+@respx.mock
+def test_openrouter_malformed_200_falls_back(monkeypatch):
+    """OpenRouter sometimes 200s with an error body. Treat as 5xx, try fallback."""
+    monkeypatch.setattr(settings, "openrouter_api_key", "test-key")
+    route = respx.post(f"{settings.openrouter_base_url}/chat/completions")
+    route.side_effect = [
+        httpx.Response(200, json={"error": "partial outage, please retry"}),  # malformed: no choices
+        httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]}),
+    ]
+    _, model_used = call_openrouter_vision(
+        image_b64="fake", mime="image/jpeg", catalog_csv="x", latitude=None, longitude=None,
+    )
+    assert model_used == settings.openrouter_vision_fallback_model
+    assert route.call_count == 2
 
 
 def test_openrouter_missing_api_key_raises(monkeypatch):
