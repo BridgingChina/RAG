@@ -43,11 +43,23 @@ class VisionResult:
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def parse_vision_json(raw: str) -> VisionResult:
-    """Tolerant parser — extract first {...} block, return empty on any failure.
+def _coerce_str(v: object) -> str:
+    """Defensive: LLMs occasionally return non-string scalars in JSON fields.
 
-    Never raises. Invalid input → VisionResult(None, None) so the endpoint can
-    route to the 'fallback' branch instead of returning 5xx to the user.
+    Returns the stripped string if v is a str, otherwise empty string. Never
+    raises — preserves the parser's "VisionResult(None, None) on bad input"
+    invariant.
+    """
+    return v.strip() if isinstance(v, str) else ""
+
+
+def parse_vision_json(raw: str) -> VisionResult:
+    """Tolerant parser — extract the largest `{...}` envelope (greedy: first `{` to
+    last `}`), return VisionResult(None, None) on any failure.
+
+    Greedy is intentional: the dominant LLM failure pattern is one valid JSON
+    object surrounded by prose ("Sure, here is the result: {...}"). Multi-block
+    inputs intentionally degrade to fallback rather than guessing.
     """
     m = _JSON_BLOCK_RE.search(raw or "")
     if not m:
@@ -57,22 +69,25 @@ def parse_vision_json(raw: str) -> VisionResult:
     except json.JSONDecodeError:
         return VisionResult(matched_name=None, free_form=None)
 
-    matched = obj.get("matched_name")
-    if isinstance(matched, str):
-        matched = matched.strip() or None
-    else:
-        matched = None
+    matched_raw = obj.get("matched_name")
+    matched = _coerce_str(matched_raw) or None
 
     ff_raw = obj.get("free_form")
     free_form: VisionFreeForm | None = None
     if isinstance(ff_raw, dict):
-        name = (ff_raw.get("bridge_name") or "").strip()
+        name = _coerce_str(ff_raw.get("bridge_name"))
         if name:
+            hints_raw = ff_raw.get("hints")
+            hints = (
+                [h for h in hints_raw if isinstance(h, str)]
+                if isinstance(hints_raw, list)
+                else []
+            )
             free_form = VisionFreeForm(
                 bridge_name=name,
-                region=(ff_raw.get("region") or "").strip(),
-                bridge_type=(ff_raw.get("bridge_type") or "").strip(),
-                hints=[h for h in (ff_raw.get("hints") or []) if isinstance(h, str)],
+                region=_coerce_str(ff_raw.get("region")),
+                bridge_type=_coerce_str(ff_raw.get("bridge_type")),
+                hints=hints,
             )
 
     return VisionResult(matched_name=matched, free_form=free_form)

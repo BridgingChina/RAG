@@ -86,3 +86,24 @@ def test_parse_free_form_filters_non_string_hints():
     raw = '{"matched_name": null, "free_form": {"bridge_name": "X", "region": "", "bridge_type": "", "hints": ["good", 42, null, "ok"]}}'
     r = parse_vision_json(raw)
     assert r.free_form.hints == ["good", "ok"]
+
+
+def test_parse_free_form_handles_non_string_region():
+    raw = '{"matched_name": null, "free_form": {"bridge_name": "X", "region": true, "bridge_type": "y", "hints": []}}'
+    r = parse_vision_json(raw)
+    assert r.free_form is not None
+    assert r.free_form.region == ""
+
+
+def test_parse_free_form_handles_non_string_bridge_type():
+    raw = '{"matched_name": null, "free_form": {"bridge_name": "X", "region": "Y", "bridge_type": 42, "hints": []}}'
+    r = parse_vision_json(raw)
+    assert r.free_form is not None
+    assert r.free_form.bridge_type == ""
+
+
+def test_parse_free_form_string_hints_does_not_iterate_chars():
+    """If hints comes back as a string instead of list, treat as empty (not char-by-char)."""
+    raw = '{"matched_name": null, "free_form": {"bridge_name": "X", "region": "Y", "bridge_type": "z", "hints": "abcd"}}'
+    r = parse_vision_json(raw)
+    assert r.free_form.hints == []
