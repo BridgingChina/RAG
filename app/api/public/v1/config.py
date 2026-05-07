@@ -16,9 +16,9 @@ def get_config() -> PublicResponse[dict]:
 
     facets = load_facets()
     return PublicResponse(data={
-        "eras": facets.get("era", []),
-        "bridge_types": facets.get("bridge_type", []),
-        "regions": facets.get("region", []),
+        "eras": facets.get("eras", []),
+        "bridge_types": facets.get("bridge_types", []),
+        "regions": facets.get("regions", []),
         "map": {
             "provider": None,       # TODO: configure map provider
             "approval_number": None,  # TODO: configure approval number
