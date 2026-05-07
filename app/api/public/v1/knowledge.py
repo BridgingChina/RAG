@@ -38,6 +38,15 @@ def get_knowledge_tree(
     locale = _request_locale(request)
     use_en = locale == "en-US"
 
+    # i18n Phase B (v16): for lvl1/lvl2 fall back through
+    # taxonomy_nodes.name_en → TAXONOMY_NAME_EN dict → zh original.
+    from app.core.constants import TAXONOMY_NAME_EN
+
+    def _localise(zh: str, db_name_en: str | None) -> str:
+        if not use_en:
+            return zh
+        return db_name_en or TAXONOMY_NAME_EN.get(zh) or zh
+
     # 1. Skeleton: lvl1 + lvl2 rows (lvl3 rows are ignored — being retired).
     nodes = db.query(TaxonomyNode).filter(TaxonomyNode.lvl3.is_(None)).order_by(
         TaxonomyNode.lvl1,
@@ -50,7 +59,7 @@ def get_knowledge_tree(
     for node in nodes:
         name_en = node.name_en
         if node.lvl2 is None:
-            lvl1_display = name_en if (use_en and name_en) else node.lvl1
+            lvl1_display = _localise(node.lvl1, name_en)
             if node.lvl1 not in lvl1_nodes:
                 lvl1_nodes[node.lvl1] = {
                     "id": str(node.id), "name": lvl1_display,
@@ -59,15 +68,18 @@ def get_knowledge_tree(
             continue
 
         if node.lvl1 not in lvl1_nodes:
-            # lvl1 parent not yet seen (seed order); placeholder using lvl2 id
+            # lvl1 parent not yet seen (seed order); placeholder using lvl2 id.
+            # No taxonomy row yet for this lvl1 (only lvl2 rows seen) — fall back
+            # to dict only.
             lvl1_nodes[node.lvl1] = {
-                "id": str(node.id), "name": node.lvl1,
+                "id": str(node.id),
+                "name": _localise(node.lvl1, None),
                 "icon_url": None, "children": [],
             }
 
         key2 = (node.lvl1, node.lvl2)
         if key2 not in lvl2_nodes:
-            lvl2_display = name_en if (use_en and name_en) else node.lvl2
+            lvl2_display = _localise(node.lvl2, name_en)
             lvl2_node = {"id": str(node.id), "name": lvl2_display, "children": []}
             lvl2_nodes[key2] = lvl2_node
             lvl1_nodes[node.lvl1]["children"].append(lvl2_node)

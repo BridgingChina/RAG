@@ -79,8 +79,10 @@ TAXONOMY_NAME_EN: dict[str, str] = {
     "地质条件": "Geological Conditions",
     # lvl2 — 功能与社会
     "交通功能": "Transportation Function",
+    "公共生活与集会": "Public Life & Assembly",
     "军事防御": "Military Defense",
     "景观价值": "Landscape Value",
+    "泄洪功能": "Flood Discharge Function",
     # lvl2 — 历史与演变
     "建造年代": "Construction Era",
     "修缮记录": "Restoration Records",
