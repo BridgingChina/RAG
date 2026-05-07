@@ -91,4 +91,5 @@ TAXONOMY_NAME_EN: dict[str, str] = {
     "哲学意境": "Philosophical Conception",
     "文辞墨痕": "Literary Inscriptions",
     "民俗文化": "Folk Culture",
+    "艺术美感": "Artistic Aesthetics",
 }
