@@ -87,4 +87,8 @@ TAXONOMY_NAME_EN: dict[str, str] = {
     "建造年代": "Construction Era",
     "修缮记录": "Restoration Records",
     "变迁历史": "Historical Changes",
+    # lvl2 — 艺术与文化
+    "哲学意境": "Philosophical Conception",
+    "文辞墨痕": "Literary Inscriptions",
+    "民俗文化": "Folk Culture",
 }
