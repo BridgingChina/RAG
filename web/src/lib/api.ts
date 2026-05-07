@@ -751,6 +751,28 @@ export function generateTranslation(body: {
   return post<TranslationReviewItem>("/translations/generate", body)
 }
 
+/**
+ * Batched read used by inline TranslationCell — returns every审校 row for
+ * a single business row (or a comma-separated list, max 50). The backend
+ * also auto-upserts a synthetic ``human_reviewed`` record for legacy data
+ * (business row with ``*_en`` populated but no review row), so callers
+ * don't have to special-case that path.
+ *
+ * Backend: GET /api/v1/translations/by-row?table=&row_id=
+ */
+export function fetchTranslationsByRow(params: {
+  table: string
+  row_id: string | string[]
+}): Promise<TranslationReviewItem[]> {
+  const row_id = Array.isArray(params.row_id)
+    ? params.row_id.join(",")
+    : params.row_id
+  return get<TranslationReviewItem[]>("/translations/by-row", {
+    table: params.table,
+    row_id,
+  })
+}
+
 export function batchGenerateTranslations(body: {
   table_name: string
   field_name: string

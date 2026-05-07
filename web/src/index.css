@@ -170,3 +170,13 @@
     text-rendering: optimizeLegibility;
   }
 }
+
+@layer utilities {
+  /* Inline translation review: highlights the cell deep-linked from
+     /translations row click for ~2 seconds. Removed by useScrollToTr
+     after the timeout. */
+  .ring-highlight {
+    @apply ring-2 ring-yellow-400 ring-offset-2;
+    transition: box-shadow 0.3s ease;
+  }
+}
