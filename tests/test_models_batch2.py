@@ -45,6 +45,6 @@ def test_all_user_scoped_models_registered():
     assert ViewHistory.__tablename__ == "view_history"
 
 
-def test_schema_version_is_15():
+def test_schema_version_is_16():
     from app.core.database import LATEST_SCHEMA_VERSION
-    assert LATEST_SCHEMA_VERSION == 15
+    assert LATEST_SCHEMA_VERSION == 16

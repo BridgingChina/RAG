@@ -53,3 +53,36 @@ def get_taxonomy_lvl3(lvl1: str, lvl2: str) -> list[str]:
     if lvl1 in taxonomy and lvl2 in taxonomy[lvl1]:
         return taxonomy[lvl1][lvl2]
     return []
+
+
+# i18n Phase B (2026-05-08): hard-coded zh→en map for lvl1 and lvl2 taxonomy
+# names. lvl1/lvl2 are a fixed enum (4 + 13 entries today, plus a placeholder
+# for the optional "艺术与文化" lvl1 admins sometimes add). This avoids needing
+# a separate translation flow for the taxonomy enum — public endpoints fall
+# back to ``taxonomy_nodes.name_en`` first, then this map, then the zh
+# original. Keep aligned with config/taxonomy.yaml when new枝 are added.
+TAXONOMY_NAME_EN: dict[str, str] = {
+    # lvl1 (五大主线)
+    "形制与技术": "Form & Technique",
+    "地域与环境": "Region & Environment",
+    "功能与社会": "Function & Society",
+    "历史与演变": "History & Evolution",
+    "艺术与文化": "Art & Culture",
+    # lvl2 — 形制与技术
+    "结构体系": "Structural System",
+    "构造细部": "Construction Details",
+    "材料工艺": "Material & Craft",
+    "建造技术": "Construction Techniques",
+    # lvl2 — 地域与环境
+    "水文地形": "Hydrology & Terrain",
+    "气候特征": "Climate Characteristics",
+    "地质条件": "Geological Conditions",
+    # lvl2 — 功能与社会
+    "交通功能": "Transportation Function",
+    "军事防御": "Military Defense",
+    "景观价值": "Landscape Value",
+    # lvl2 — 历史与演变
+    "建造年代": "Construction Era",
+    "修缮记录": "Restoration Records",
+    "变迁历史": "Historical Changes",
+}

@@ -16,6 +16,8 @@ def test_knowledge_point_model_structure():
         "lvl1", "lvl2",
         # v12: i18n translation pair for the display name + summary
         "name_en", "summary_en",
+        # v16: aliases mirror so "Also known as:" line en-localizes
+        "aliases_en",
     }
 
 

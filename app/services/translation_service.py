@@ -84,7 +84,12 @@ TRANSLATABLE_FIELDS: dict[str, list[tuple[str, str]]] = {
     # column for symmetry. Pre-fix this triggered a 400 "bridges.description
     # is empty" on every "AI 翻译" click against bridges.description_en.
     "bridges": [("name", "name_en"), ("summary", "description_en")],
-    "knowledge_points": [("name", "name_en"), ("summary", "summary_en")],
+    "knowledge_points": [
+        ("name", "name_en"),
+        ("summary", "summary_en"),
+        # v16 (2026-05-08): aliases mirror so "Also known as:" line en-localizes
+        ("aliases", "aliases_en"),
+    ],
     "flashcards": [
         ("front_title", "front_title_en"),
         ("back_answer", "back_answer_en"),
@@ -96,18 +101,21 @@ TRANSLATABLE_FIELDS: dict[str, list[tuple[str, str]]] = {
         ("summary", "summary_en"),
         ("explanation", "explanation_en"),
     ],
+    # v16 (2026-05-08): citation titles surfaced on en-US detail pages.
+    "sources": [("title", "title_en")],
 }
 
 
 def _model_registry() -> dict[str, Any]:
     """Dynamic table lookup — keeps the fn-level branch out of hot paths."""
-    from app.models import KnowledgePointKeyPoint  # local to avoid cycles
+    from app.models import KnowledgePointKeyPoint, Source  # local to avoid cycles
     return {
         "bridges": Bridge,
         "knowledge_points": KnowledgePoint,
         "flashcards": Flashcard,
         "taxonomy_nodes": TaxonomyNode,
         "knowledge_point_key_points": KnowledgePointKeyPoint,
+        "sources": Source,
     }
 
 

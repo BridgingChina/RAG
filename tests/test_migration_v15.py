@@ -25,8 +25,9 @@ def test_migrate_db_has_v14_to_v15_fn():
     assert hasattr(migrate_db, "migrate_v14_to_v15")
 
 
-def test_latest_schema_version_is_15():
-    assert LATEST_SCHEMA_VERSION == 15
+def test_latest_schema_version_is_at_least_15():
+    """Pin lower bound — later migrations may have bumped it (e.g. v16)."""
+    assert LATEST_SCHEMA_VERSION >= 15
 
 
 def test_key_point_model_has_en_translation_columns():

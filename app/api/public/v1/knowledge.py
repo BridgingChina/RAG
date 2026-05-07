@@ -124,6 +124,15 @@ def get_knowledge_point(
 
     # Phase 3: KP carries lvl1 / lvl2 directly; resolve the corresponding
     # lvl1-only and lvl2-only taxonomy_nodes rows for their UUIDs.
+    # i18n Phase B (v16): pick localised name from
+    # taxonomy_nodes.name_en → TAXONOMY_NAME_EN dict → zh original.
+    from app.core.constants import TAXONOMY_NAME_EN
+
+    def _localise_taxon(zh_name: str, db_name_en: str | None) -> str:
+        if not use_en:
+            return zh_name
+        return db_name_en or TAXONOMY_NAME_EN.get(zh_name) or zh_name
+
     line_info = None
     category_info = None
     if kp.lvl1:
@@ -131,7 +140,10 @@ def get_knowledge_point(
             TaxonomyNode.lvl1 == kp.lvl1, TaxonomyNode.lvl2.is_(None),
         ).first()
         if lvl1_node:
-            line_info = {"id": str(lvl1_node.id), "name": lvl1_node.lvl1}
+            line_info = {
+                "id": str(lvl1_node.id),
+                "name": _localise_taxon(lvl1_node.lvl1, lvl1_node.name_en),
+            }
         if kp.lvl2:
             lvl2_node = db.query(TaxonomyNode).filter(
                 TaxonomyNode.lvl1 == kp.lvl1,
@@ -139,7 +151,10 @@ def get_knowledge_point(
                 TaxonomyNode.lvl3.is_(None),
             ).first()
             if lvl2_node:
-                category_info = {"id": str(lvl2_node.id), "name": lvl2_node.lvl2}
+                category_info = {
+                    "id": str(lvl2_node.id),
+                    "name": _localise_taxon(lvl2_node.lvl2, lvl2_node.name_en),
+                }
 
     key_points = (
         db.query(KnowledgePointKeyPoint)
@@ -161,10 +176,15 @@ def get_knowledge_point(
     ).count()
 
     display_name = kp.name_en if (use_en and kp.name_en) else kp.name
+    # v16: aliases mirror — pick aliases_en when use_en and populated.
+    aliases_src = (
+        kp.aliases_en if (use_en and kp.aliases_en) else kp.aliases
+    )
+    aliases_list = [a.strip() for a in aliases_src.split(",")] if aliases_src else []
     result: dict = {
         "id": str(kp.id),
         "name": display_name,
-        "aliases": kp.aliases.split(",") if kp.aliases else [],
+        "aliases": aliases_list,
         "line": line_info,
         "category": category_info,
         "tags": tags,
@@ -205,20 +225,26 @@ def get_knowledge_point(
     if all_chunk_ids:
         from app.models import Chunk, Source
         rows = (
-            db.query(Chunk.id, Source.id, Source.title, Source.type)
+            db.query(Chunk.id, Source.id, Source.title, Source.title_en, Source.type)
             .outerjoin(Source, Chunk.source_id == Source.id)
             .filter(Chunk.id.in_(all_chunk_ids))
             .all()
         )
-        for chunk_id, source_id, source_title, source_type in rows:
+        for chunk_id, source_id, source_title, source_title_en, source_type in rows:
             if source_id is None:
                 continue
             chunk_to_source[chunk_id] = source_id
             if source_id not in source_id_map:
                 idx = len(source_id_map) + 1
                 source_id_map[source_id] = idx
+                # v16: source title localisation
+                display_title = (
+                    source_title_en
+                    if (use_en and source_title_en)
+                    else source_title
+                )
                 sources.append({
-                    "id": idx, "title": source_title, "author": None,
+                    "id": idx, "title": display_title, "author": None,
                     "type": source_type, "excerpt": None, "location": None,
                 })
 

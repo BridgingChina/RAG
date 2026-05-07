@@ -17,6 +17,10 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
+# v16 (2026-05-08): i18n Phase B — knowledge_points.aliases_en +
+# sources.title_en so en-US KP detail pages can localise the "Also known as:"
+# line and citation titles. Combined with hard-coded lvl1/lvl2 translations
+# in app/api/public/v1/knowledge.py, closes the gap left by v15.
 # v15 (2026-05-08): Inline translation review — *_en columns on
 # knowledge_point_key_points so 要点 (summary + explanation) become
 # translatable. Backs the inline TranslationCell pattern landed in the same
@@ -30,7 +34,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # v12 (2026-04-21): i18n Phase 3 — *_en translation columns on bridges /
 # knowledge_points / flashcards / taxonomy_nodes, chunks.cached_en_summary for
 # Phase 4 translate-around evidence cache, and translation_reviews审校 table.
-LATEST_SCHEMA_VERSION = 15
+LATEST_SCHEMA_VERSION = 16
 
 
 def get_db():

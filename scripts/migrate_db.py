@@ -602,6 +602,28 @@ def migrate_v14_to_v15(conn) -> None:
     )
 
 
+def migrate_v15_to_v16(conn) -> None:
+    """v16: aliases_en on knowledge_points + title_en on sources.
+
+    Closes the en-US gap left by v15: aliases_en backs the "Also known as:"
+    line on KP detail pages, title_en backs citation titles in the sources
+    list. Both nullable, populated lazily by the translation_review审校 flow.
+    """
+    conn.execute(text("""
+        ALTER TABLE knowledge_points
+        ADD COLUMN IF NOT EXISTS aliases_en TEXT
+    """))
+    conn.execute(text("""
+        ALTER TABLE sources
+        ADD COLUMN IF NOT EXISTS title_en VARCHAR(500)
+    """))
+    set_schema_version(
+        engine, 16,
+        "i18n Phase B: aliases_en on knowledge_points + title_en on sources",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -617,6 +639,7 @@ MIGRATIONS = {
     12: migrate_v12_to_v13,
     13: migrate_v13_to_v14,
     14: migrate_v14_to_v15,
+    15: migrate_v15_to_v16,
 }
 
 

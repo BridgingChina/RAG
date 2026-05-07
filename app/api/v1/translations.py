@@ -64,6 +64,7 @@ from app.models import (
     Flashcard,
     KnowledgePoint,
     KnowledgePointKeyPoint,
+    Source,
     TaxonomyNode,
 )
 
@@ -78,6 +79,7 @@ _MODEL_BY_TABLE = {
     "flashcards": Flashcard,
     "taxonomy_nodes": TaxonomyNode,
     "knowledge_point_key_points": KnowledgePointKeyPoint,
+    "sources": Source,
 }
 
 
