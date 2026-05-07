@@ -49,7 +49,6 @@ from app.models.translation_review import (
     VALID_TRANSLATION_STATUSES,
     TranslationReview,
 )
-from app.providers import get_provider
 from app.services.audit_service import AuditService
 from app.services.translation_service import (
     TRANSLATABLE_FIELDS,
@@ -255,14 +254,12 @@ async def generate_single(
             detail=f"{body.table_name}.{source_field} is empty — nothing to translate",
         )
 
-    provider = get_provider()
     review = await generate_for_row(
         db,
         table_name=body.table_name,
         row_id=body.row_id,
         field_name=body.field_name,
         source_text=source_text,
-        zhipu_client=provider,
     )
     AuditService.log(
         db,
@@ -292,13 +289,11 @@ async def batch_generate(
     batch run — see ``translation_service.batch_generate_for_field``.
     """
     _validate_table_field(body.table_name, body.field_name)
-    provider = get_provider()
     stats = await batch_generate_for_field(
         db,
         table_name=body.table_name,
         field_name=body.field_name,
         limit=body.limit,
-        zhipu_client=provider,
     )
     AuditService.log(
         db,

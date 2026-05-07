@@ -161,6 +161,84 @@ def test_by_row_supports_multi_row_id(admin_client, db_session):
     assert {it["row_id"] for it in name_en_rows} == {str(b1.id), str(b2.id)}
 
 
+def test_generate_single_actually_calls_service_signature(admin_client, db_session, monkeypatch):
+    """Regression for the Phase C → admin-endpoint signature drift bug.
+
+    ``generate_for_row`` had its ``zhipu_client`` parameter removed when
+    Phase C migrated to ``chat_for_task``, but ``generate_single`` (this
+    endpoint) was NOT updated and continued to pass ``zhipu_client=provider``
+    — every "AI 翻译" click in production hit a TypeError → 500. The smoke
+    test that surfaced this was a user manually clicking the button against
+    a real bridge (万福桥) and seeing "Internal Server Error" inline.
+
+    This test exercises the endpoint→service boundary with a mocked LLM and
+    asserts a 200 response with the AI-generated translation persisted, so
+    any future re-introduction of an unsupported kwarg surfaces in CI.
+    """
+    from app.services import translation_service as svc
+    from app.providers.base import ChatResponse
+
+    async def fake_chat_for_task(task_key, messages):
+        assert task_key == "translation"
+        return ChatResponse(content="Wanfu Bridge", usage={}, model="stub")
+
+    monkeypatch.setattr(svc, "chat_for_task", fake_chat_for_task)
+
+    bridge = Bridge(name="万福桥", summary="测试桥梁。")
+    db_session.add(bridge)
+    db_session.flush()
+
+    resp = admin_client.post(
+        "/api/v1/translations/generate",
+        json={
+            "table_name": "bridges",
+            "row_id": str(bridge.id),
+            "field_name": "name_en",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "ai_generated"
+    assert body["ai_translation"] == "Wanfu Bridge"
+
+
+def test_generate_single_for_description_uses_summary_source(admin_client, db_session, monkeypatch):
+    """Regression for the bridges.description_en source-field mismatch.
+
+    TRANSLATABLE_FIELDS used to map ``(description, description_en)`` but the
+    Bridge model column is ``summary`` — clicking "AI 翻译" against
+    description_en returned 400 "bridges.description is empty". Source
+    column is now ``summary``; this test pins the contract."""
+    from app.services import translation_service as svc
+    from app.providers.base import ChatResponse
+
+    async def fake_chat_for_task(task_key, messages):
+        joined = "\n".join(m.content for m in messages)
+        assert "测试桥梁的中文简介。" in joined
+        return ChatResponse(
+            content="Chinese description of the test bridge.",
+            usage={}, model="stub",
+        )
+
+    monkeypatch.setattr(svc, "chat_for_task", fake_chat_for_task)
+
+    bridge = Bridge(name="测试桥", summary="测试桥梁的中文简介。")
+    db_session.add(bridge)
+    db_session.flush()
+
+    resp = admin_client.post(
+        "/api/v1/translations/generate",
+        json={
+            "table_name": "bridges",
+            "row_id": str(bridge.id),
+            "field_name": "description_en",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["ai_translation"] == "Chinese description of the test bridge."
+
+
 def test_by_row_works_for_knowledge_point_key_points(admin_client, db_session):
     """v15: knowledge_point_key_points is a translatable target."""
     from app.models import KnowledgePoint, TaxonomyNode

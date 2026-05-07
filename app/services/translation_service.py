@@ -78,7 +78,12 @@ TRANSLATION_ADVISORY_LOCK_ID = 494956381
 # Translatable business-field definitions. Keyed by ``table_name`` with the
 # list of field pairs: (source zh column, target en column).
 TRANSLATABLE_FIELDS: dict[str, list[tuple[str, str]]] = {
-    "bridges": [("name", "name_en"), ("description", "description_en")],
+    # Bridge model's long-form column is ``summary`` (not ``description``);
+    # the target *_en column is named ``description_en``. Asymmetric mapping
+    # is deliberate — kept until a schema migration renames the source
+    # column for symmetry. Pre-fix this triggered a 400 "bridges.description
+    # is empty" on every "AI 翻译" click against bridges.description_en.
+    "bridges": [("name", "name_en"), ("summary", "description_en")],
     "knowledge_points": [("name", "name_en"), ("summary", "summary_en")],
     "flashcards": [
         ("front_title", "front_title_en"),
