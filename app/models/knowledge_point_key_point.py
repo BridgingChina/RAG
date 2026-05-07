@@ -18,6 +18,10 @@ class KnowledgePointKeyPoint(Base, UUIDMixin, CreatedAtMixin):
     )
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # i18n schema v15 (2026-05-08): mirror summary / explanation in English so
+    # the inline TranslationCell UI can审校 each key_point in place.
+    summary_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    explanation_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(
         ARRAY(UUID(as_uuid=True)), nullable=True

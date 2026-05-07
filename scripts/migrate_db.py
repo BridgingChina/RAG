@@ -577,6 +577,31 @@ def migrate_v13_to_v14(conn) -> None:
     )
 
 
+def migrate_v14_to_v15(conn) -> None:
+    """Add ``knowledge_point_key_points.summary_en`` + ``.explanation_en``.
+
+    Driven by the inline translation-review redesign (2026-05-08): 要点 fields
+    become translatable so admins can审校 them in place on the KP detail page
+    instead of bouncing through the central /translations queue. The columns
+    are nullable TEXT — populated lazily by the existing translation flow
+    (`translation_service.generate_for_row` + `approve_review`). Existing rows
+    are unaffected; the new columns surface as ``pending_ai`` in the UI.
+
+    Design: ``docs/plans/2026-05-08-inline-translation-review-design.md``.
+    """
+    conn.execute(text("""
+        ALTER TABLE knowledge_point_key_points
+        ADD COLUMN IF NOT EXISTS summary_en     TEXT,
+        ADD COLUMN IF NOT EXISTS explanation_en TEXT
+    """))
+
+    set_schema_version(
+        engine, 15,
+        "Inline translation review: add *_en columns to knowledge_point_key_points",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -591,6 +616,7 @@ MIGRATIONS = {
     11: migrate_v11_to_v12,
     12: migrate_v12_to_v13,
     13: migrate_v13_to_v14,
+    14: migrate_v14_to_v15,
 }
 
 

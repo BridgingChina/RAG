@@ -25,6 +25,8 @@ def test_knowledge_point_key_point_model_structure():
     columns = {c.name for c in KnowledgePointKeyPoint.__table__.columns}
     assert columns == {
         "id", "knowledge_point_id", "summary", "explanation",
+        # v15: i18n translation pair for inline审校 of 要点
+        "summary_en", "explanation_en",
         "order_index", "chunk_ids", "illustration_urls",
         "related_term_ids", "created_at",
     }

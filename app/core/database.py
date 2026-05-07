@@ -17,6 +17,12 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Latest schema version supported by this codebase.
+# v15 (2026-05-08): Inline translation review — *_en columns on
+# knowledge_point_key_points so 要点 (summary + explanation) become
+# translatable. Backs the inline TranslationCell pattern landed in the same
+# PR. Design: docs/plans/2026-05-08-inline-translation-review-design.md.
+# v14 (2026-05-07): LLM routing — llm_task_routes.model_params JSONB so each
+# task can override upstream defaults declaratively (e.g. reasoning off).
 # v13 (2026-04-21): Multi-provider + task-level model routing — adds
 # llm_providers / llm_provider_models / llm_task_routes plus a Zhipu seed so
 # existing LLM call sites keep working after Phase C migrates them to
@@ -24,7 +30,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # v12 (2026-04-21): i18n Phase 3 — *_en translation columns on bridges /
 # knowledge_points / flashcards / taxonomy_nodes, chunks.cached_en_summary for
 # Phase 4 translate-around evidence cache, and translation_reviews审校 table.
-LATEST_SCHEMA_VERSION = 14
+LATEST_SCHEMA_VERSION = 15
 
 
 def get_db():
