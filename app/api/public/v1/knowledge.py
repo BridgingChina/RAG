@@ -178,7 +178,15 @@ def get_knowledge_point(
     if level in ("L0", "L1", "all"):
         result["l0"] = {
             "key_points": [
-                {"id": str(kp_item.id), "summary": kp_item.summary, "order": kp_item.order_index}
+                {
+                    "id": str(kp_item.id),
+                    "summary": (
+                        kp_item.summary_en
+                        if (use_en and kp_item.summary_en)
+                        else kp_item.summary
+                    ),
+                    "order": kp_item.order_index,
+                }
                 for kp_item in key_points
             ],
             "typical_bridges_count": typical_count,
@@ -219,8 +227,16 @@ def get_knowledge_point(
             "key_points": [
                 {
                     "id": str(kp_item.id),
-                    "summary": kp_item.summary,
-                    "explanation": kp_item.explanation,
+                    "summary": (
+                        kp_item.summary_en
+                        if (use_en and kp_item.summary_en)
+                        else kp_item.summary
+                    ),
+                    "explanation": (
+                        kp_item.explanation_en
+                        if (use_en and kp_item.explanation_en)
+                        else kp_item.explanation
+                    ),
                     "illustrations": [
                         {"url": url, "caption": None}
                         for url in (kp_item.illustration_urls or [])
