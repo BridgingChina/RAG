@@ -144,28 +144,33 @@ class OpenAICompatProvider(LLMProvider):
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ) -> ChatResponse:
         """Send chat completion via OpenAI-standard {base_url}/v1/chat/completions.
 
         Empty-string model is treated as unspecified; since this provider has
         no fallback default, empty/None both raise ProviderConfigurationError.
+
+        ``extra_params`` is merged into the JSON body before ``model`` /
+        ``messages`` are written, so routing-layer decisions cannot be
+        overridden by per-task knobs.
         """
         if not model:
             raise ProviderConfigurationError(
                 f"model= is required for OpenAICompatProvider ({self._config.provider_id}); "
                 "caller must pass an explicit model"
             )
+        payload: dict = {**(extra_params or {})}
+        payload["model"] = model
+        payload["messages"] = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
         async with self._semaphore:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{self._config.base_url.rstrip('/')}/chat/completions",
                     headers=self._headers(),
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": m.role, "content": m.content} for m in messages
-                        ],
-                    },
+                    json=payload,
                     timeout=self._chat_timeout(),
                 )
         resp.raise_for_status()
@@ -187,12 +192,16 @@ class OpenAICompatProvider(LLMProvider):
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ):
         """Stream chat completion tokens via OpenAI-compatible /chat/completions stream:true.
 
         Yields delta.content strings as they arrive. Skips keepalive / event lines
         and unparseable JSON. Raises ProviderConfigurationError when model is empty
         (consistent with chat() — OpenAI-compat providers have no default model).
+
+        ``extra_params`` is merged before ``model`` / ``messages`` / ``stream``,
+        so routing-layer knobs cannot override the streaming contract.
 
         No tenacity retry: async generators are incompatible with tenacity. Retry
         semantics live at the call site (see qa.py:_streaming_with_retry).
@@ -202,19 +211,19 @@ class OpenAICompatProvider(LLMProvider):
                 f"model= is required for OpenAICompatProvider ({self._config.provider_id}); "
                 "caller must pass an explicit model"
             )
+        payload: dict = {**(extra_params or {})}
+        payload["model"] = model
+        payload["messages"] = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
+        payload["stream"] = True
         async with self._semaphore:
             async with httpx.AsyncClient(timeout=self._chat_timeout()) as client:
                 async with client.stream(
                     "POST",
                     f"{self._config.base_url.rstrip('/')}/chat/completions",
                     headers=self._headers(),
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": m.role, "content": m.content} for m in messages
-                        ],
-                        "stream": True,
-                    },
+                    json=payload,
                 ) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():

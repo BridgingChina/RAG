@@ -24,7 +24,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # v12 (2026-04-21): i18n Phase 3 — *_en translation columns on bridges /
 # knowledge_points / flashcards / taxonomy_nodes, chunks.cached_en_summary for
 # Phase 4 translate-around evidence cache, and translation_reviews审校 table.
-LATEST_SCHEMA_VERSION = 13
+LATEST_SCHEMA_VERSION = 14
 
 
 def get_db():

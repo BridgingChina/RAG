@@ -54,6 +54,7 @@ class MiniMaxProvider(OpenAICompatProvider):
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ) -> ChatResponse:
         """Send chat completion via {base_url}/v1/chat/completions.
 
@@ -62,23 +63,26 @@ class MiniMaxProvider(OpenAICompatProvider):
         ProviderUnavailableError AFTER resp.raise_for_status(), which tenacity
         does NOT consider retryable (_is_retryable_http_error only matches
         httpx exceptions). Intentional: non-transient by definition.
+
+        ``extra_params`` is merged before ``model`` / ``messages``, so per-task
+        knobs cannot override routing.
         """
         if not model:
             raise ProviderConfigurationError(
                 f"model= is required for MiniMaxProvider ({self._config.provider_id}); "
                 "caller must pass an explicit model"
             )
+        payload: dict = {**(extra_params or {})}
+        payload["model"] = model
+        payload["messages"] = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
         async with self._semaphore:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{self._config.base_url.rstrip('/')}/chat/completions",
                     headers=self._headers(),
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": m.role, "content": m.content} for m in messages
-                        ],
-                    },
+                    json=payload,
                     timeout=self._chat_timeout(),
                 )
         resp.raise_for_status()
@@ -111,6 +115,7 @@ class MiniMaxProvider(OpenAICompatProvider):
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ):
         """Stream MiniMax chat completion, surfacing base_resp business-level errors.
 
@@ -120,6 +125,9 @@ class MiniMaxProvider(OpenAICompatProvider):
         (insufficient quota, model offline, etc.) — abort the stream with
         ProviderUnavailableError, mirroring the non-streaming chat() behavior.
 
+        ``extra_params`` follows the merge-before-override contract from
+        :meth:`chat`.
+
         No tenacity retry: async generators are incompatible with tenacity. Retry
         semantics live at the call site (see qa.py:_streaming_with_retry).
         """
@@ -128,19 +136,19 @@ class MiniMaxProvider(OpenAICompatProvider):
                 f"model= is required for MiniMaxProvider ({self._config.provider_id}); "
                 "caller must pass an explicit model"
             )
+        payload: dict = {**(extra_params or {})}
+        payload["model"] = model
+        payload["messages"] = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
+        payload["stream"] = True
         async with self._semaphore:
             async with httpx.AsyncClient(timeout=self._chat_timeout()) as client:
                 async with client.stream(
                     "POST",
                     f"{self._config.base_url.rstrip('/')}/chat/completions",
                     headers=self._headers(),
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": m.role, "content": m.content} for m in messages
-                        ],
-                        "stream": True,
-                    },
+                    json=payload,
                 ) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():

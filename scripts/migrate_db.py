@@ -548,6 +548,35 @@ def migrate_v12_to_v13(conn) -> None:
     )
 
 
+def migrate_v13_to_v14(conn) -> None:
+    """Add ``llm_task_routes.model_params`` JSONB for per-task payload knobs.
+
+    Driven by the DeepSeek V4 cutover (2026-05-07): V4-Flash defaults
+    reasoning ON via OpenRouter, burning ~80% of completion tokens on hidden
+    thinking traces — pure waste for a RAG answer-generation task whose
+    evidence is already retrieved. ``model_params`` lets each task override
+    upstream defaults declaratively, e.g. ``{"reasoning": {"enabled": false}}``,
+    ``{"temperature": 0.2}``, or ``{"response_format": {"type": "json_object"}}``,
+    without bloating provider call signatures or sprinkling per-task ifs in
+    business code.
+
+    The new column has ``DEFAULT '{}'::jsonb`` so existing rows keep current
+    behavior post-migration; only rows the operator updates (e.g. qa_generation)
+    pick up new payload semantics.
+    """
+    conn.execute(text("""
+        ALTER TABLE llm_task_routes
+        ADD COLUMN IF NOT EXISTS model_params JSONB
+            NOT NULL DEFAULT '{}'::jsonb
+    """))
+
+    set_schema_version(
+        engine, 14,
+        "LLM routing: add llm_task_routes.model_params for per-task payload knobs",
+        conn=conn,
+    )
+
+
 MIGRATIONS = {
     1: migrate_v1_to_v2,
     2: migrate_v2_to_v3,
@@ -561,6 +590,7 @@ MIGRATIONS = {
     10: migrate_v10_to_v11,
     11: migrate_v11_to_v12,
     12: migrate_v12_to_v13,
+    13: migrate_v13_to_v14,
 }
 
 
