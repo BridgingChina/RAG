@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useParams, useNavigate } from "react-router"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
@@ -25,14 +25,17 @@ import { BridgeForm } from "@/components/bridges/BridgeForm"
 import { BridgeImageManager } from "@/components/bridges/BridgeImageManager"
 import { BridgeMergeDialog } from "@/components/bridges/BridgeMergeDialog"
 import { MapCoordinatePicker } from "@/components/bridges/MapCoordinatePicker"
+import { TranslationCell } from "@/components/translations/TranslationCell"
 import { useApi } from "@/hooks/useApi"
+import { useScrollToTr } from "@/hooks/useScrollToTr"
 import {
   fetchBridge,
+  fetchTranslationsByRow,
   updateBridge,
   deleteBridge,
   fetchBridgeChunks,
 } from "@/lib/api"
-import type { BridgeUpdateRequest } from "@/lib/types"
+import type { BridgeUpdateRequest, TranslationReviewItem } from "@/lib/types"
 
 // Helper function for binding status badge variant
 function getBindingVariant(status: string) {
@@ -57,6 +60,8 @@ export function Component() {
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
+  useScrollToTr()
+
   const { data: bridge, loading, error, refetch } = useApi(
     () => fetchBridge(id!),
     [id],
@@ -66,6 +71,26 @@ export function Component() {
     () => fetchBridgeChunks(id!, { page_size: 100 }),
     [id],
   )
+
+  const { data: reviews, refetch: refetchReviews } = useApi(
+    () => fetchTranslationsByRow({ table: "bridges", row_id: id! }),
+    [id],
+  )
+
+  const reviewByField = useMemo(
+    () => Object.fromEntries(
+      (reviews ?? []).map((r): [string, TranslationReviewItem] => [r.field_name, r]),
+    ),
+    [reviews],
+  )
+
+  const handleReviewChange = () => {
+    // Approve / edit writes the *_en column on the business table — refetch
+    // the bridge so the Edit form sees the new state. Also refetch reviews
+    // so the cell's reviewItem reflects the new status.
+    refetch()
+    refetchReviews()
+  }
 
   const handleUpdate = async (data: BridgeUpdateRequest) => {
     if (!id) return
@@ -156,6 +181,56 @@ export function Component() {
               onSubmit={handleUpdate}
               submitLabel="保存修改"
             />
+          </CardContent>
+        </Card>
+
+        {/* Inline translation review — zh display paired with en cell.
+            Backend covers (name, name_en) + (description, description_en);
+            note Bridge.summary is the zh body for the description_en pair. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>翻译审校</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  名称 (zh)
+                </label>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  {bridge.name}
+                </div>
+              </div>
+              <TranslationCell
+                table="bridges"
+                rowId={bridge.id}
+                fieldName="name_en"
+                sourceText={bridge.name}
+                reviewItem={reviewByField["name_en"] ?? null}
+                onChange={handleReviewChange}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  简介 (zh)
+                </label>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm leading-relaxed whitespace-pre-wrap">
+                  {bridge.summary || (
+                    <em className="text-muted-foreground/60">（尚未填写中文简介）</em>
+                  )}
+                </div>
+              </div>
+              <TranslationCell
+                table="bridges"
+                rowId={bridge.id}
+                fieldName="description_en"
+                sourceText={bridge.summary ?? ""}
+                reviewItem={reviewByField["description_en"] ?? null}
+                onChange={handleReviewChange}
+              />
+            </div>
           </CardContent>
         </Card>
 

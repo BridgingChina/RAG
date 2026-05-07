@@ -357,3 +357,46 @@ def test_reject_review_flips_status_and_skips_business_write():
 
     assert result.status == TRANSLATION_STATUS_REJECTED
     assert session.execute.call_count == 0  # No business-table write
+
+
+# --- v15: knowledge_point_key_points translatable + rejected re-translation
+
+
+def test_translatable_fields_includes_key_points():
+    """v15 registers knowledge_point_key_points as translatable so 要点 审校
+    happens inline on the KP detail page."""
+    from app.models import KnowledgePointKeyPoint
+    assert "knowledge_point_key_points" in svc.TRANSLATABLE_FIELDS
+    pairs = svc.TRANSLATABLE_FIELDS["knowledge_point_key_points"]
+    assert ("summary", "summary_en") in pairs
+    assert ("explanation", "explanation_en") in pairs
+    assert svc._model_registry()["knowledge_point_key_points"] is KnowledgePointKeyPoint
+
+
+def test_generate_for_row_re_translates_rejected(monkeypatch):
+    """Rejected reviews must be re-translatable — that's the reviewer's
+    'try again' signal, not a final decision. Prior code short-circuited
+    on rejected; v15 limits short-circuit to human_reviewed only."""
+    session = _make_mock_session_with_reviews()
+    existing_id = uuid4()
+    row_id = uuid4()
+    existing = TranslationReview(
+        id=existing_id,
+        table_name="bridges", row_id=row_id, field_name="description_en",
+        source_text="赵州桥位于河北省赵县。",
+        ai_translation="OLD AI OUTPUT",
+        status=TRANSLATION_STATUS_REJECTED,
+    )
+    session._store[existing_id] = existing
+    recorder = _install(monkeypatch, _ChatRecorder(default_content="NEW TRANSLATION"))
+
+    result = asyncio.run(svc.generate_for_row(
+        session,
+        table_name="bridges", row_id=row_id, field_name="description_en",
+        source_text="赵州桥位于河北省赵县。",
+    ))
+
+    # Re-translation actually fired
+    assert len(recorder.calls) == 1
+    assert result.status == TRANSLATION_STATUS_AI_GENERATED
+    assert result.ai_translation == "NEW TRANSLATION"

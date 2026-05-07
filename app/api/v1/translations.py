@@ -2,12 +2,16 @@
 
 Mounted under ``/api/v1/translations`` and protected by
 ``get_current_user`` (admin-only) via the v1 router. See
-``docs/plans/2026-04-20-i18n-phase3-db-review.md`` §3.D for the endpoint
-contract.
+``docs/plans/2026-04-20-i18n-phase3-db-review.md`` §3.D for the original
+endpoint contract; the inline-审校 redesign
+(``docs/plans/2026-05-08-inline-translation-review-design.md``) added
+``/by-row`` for batched per-business-row reads.
 
 Endpoints:
 
 * ``GET  /translations``                 — list审校 rows with filters + pagination
+* ``GET  /translations/by-row``          — all reviews for one or more rows
+                                           (powers inline TranslationCell)
 * ``POST /translations/generate``        — AI translate a single row/field
 * ``POST /translations/batch-generate``  — batch AI translate pending rows
 * ``PUT  /translations/{id}/review``     — approve / edit / reject one review
@@ -19,10 +23,12 @@ stays thin and focuses on HTTP concerns.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.pagination import paginate
@@ -38,6 +44,7 @@ from app.api.v1.schemas.translation import (
 )
 from app.core.database import get_db
 from app.models.translation_review import (
+    TRANSLATION_STATUS_HUMAN_REVIEWED,
     TRANSLATION_STATUS_PENDING_AI,
     VALID_TRANSLATION_STATUSES,
     TranslationReview,
@@ -53,7 +60,13 @@ from app.services.translation_service import (
 )
 from app.models.current_user import CurrentUser
 from app.api.v1.dependencies import get_current_user
-from app.models import Bridge, Flashcard, KnowledgePoint, TaxonomyNode
+from app.models import (
+    Bridge,
+    Flashcard,
+    KnowledgePoint,
+    KnowledgePointKeyPoint,
+    TaxonomyNode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +78,7 @@ _MODEL_BY_TABLE = {
     "knowledge_points": KnowledgePoint,
     "flashcards": Flashcard,
     "taxonomy_nodes": TaxonomyNode,
+    "knowledge_point_key_points": KnowledgePointKeyPoint,
 }
 
 
@@ -116,6 +130,97 @@ def list_translations(
         query = query.filter(TranslationReview.field_name == field)
     query = query.order_by(TranslationReview.created_at.desc())
     return paginate(query, page, size, _to_item)
+
+
+@router.get("/by-row", response_model=list[TranslationReviewItem])
+def list_by_row(
+    table: str = Query(..., min_length=1),
+    row_id: str = Query(
+        ...,
+        description="A single UUID, or a comma-separated list of UUIDs (max 50)",
+    ),
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> list[TranslationReviewItem]:
+    """Return all translation_reviews rows for one or more business rows.
+
+    Powers the inline ``<TranslationCell>`` UX: a Bridge / KP detail page
+    fetches every review for its rows in one shot rather than N separate
+    requests. Also auto-upserts a synthetic ``human_reviewed`` review for
+    each business row whose ``*_en`` column is already populated but lacks
+    a review record (legacy data, pre-审校-table). The synthetic record is
+    persisted (not just ephemeral) under the ``(table, row, field)`` unique
+    constraint so subsequent calls don't repeat the work; ``reviewed_by``
+    is set to ``"legacy"`` so audit trails can distinguish.
+
+    See docs/plans/2026-05-08-inline-translation-review-design.md §6.1.
+    """
+    if table not in _MODEL_BY_TABLE:
+        raise HTTPException(400, detail=f"Unknown translatable table: {table}")
+
+    try:
+        ids = [UUID(s.strip()) for s in row_id.split(",") if s.strip()]
+    except ValueError:
+        raise HTTPException(400, detail="Invalid row_id — expected UUID(s)")
+    if not ids or len(ids) > 50:
+        raise HTTPException(400, detail="row_id must be 1..50 UUIDs")
+
+    existing = (
+        db.query(TranslationReview)
+        .filter(
+            TranslationReview.table_name == table,
+            TranslationReview.row_id.in_(ids),
+        )
+        .all()
+    )
+    by_key: set[tuple[UUID, str]] = {(r.row_id, r.field_name) for r in existing}
+
+    # Legacy upsert: any (row, *_en) where the business row's *_en column is
+    # populated but no translation_review row exists → create a virtual
+    # human_reviewed record so the UI renders 🟢 instead of 🔴.
+    model_cls = _MODEL_BY_TABLE[table]
+    field_pairs = TRANSLATABLE_FIELDS[table]
+    business_rows = db.query(model_cls).filter(model_cls.id.in_(ids)).all()
+
+    upserted_any = False
+    for biz in business_rows:
+        for source_field, target_field in field_pairs:
+            if (biz.id, target_field) in by_key:
+                continue
+            target_value = getattr(biz, target_field, None)
+            if not target_value:
+                continue  # truly pending — leave for the client to render 🔴
+            db.add(TranslationReview(
+                table_name=table,
+                row_id=biz.id,
+                field_name=target_field,
+                source_text=getattr(biz, source_field, None) or "",
+                ai_translation=None,
+                reviewed_translation=target_value,
+                status=TRANSLATION_STATUS_HUMAN_REVIEWED,
+                reviewed_by="legacy",
+                reviewed_at=datetime.now(timezone.utc),
+            ))
+            upserted_any = True
+
+    if upserted_any:
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another request raced us — roll back and re-read; the existing
+            # row will satisfy the read path either way.
+            db.rollback()
+
+    rows = (
+        db.query(TranslationReview)
+        .filter(
+            TranslationReview.table_name == table,
+            TranslationReview.row_id.in_(ids),
+        )
+        .order_by(TranslationReview.field_name)
+        .all()
+    )
+    return [_to_item(r) for r in rows]
 
 
 @router.post("/generate", response_model=TranslationReviewItem)

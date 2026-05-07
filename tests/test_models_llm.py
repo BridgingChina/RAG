@@ -63,6 +63,8 @@ def test_llm_task_route_fk_restrict():
         "task_key",
         "provider_id",
         "model_id",
+        # v14 (2026-05-07): per-task payload knobs (e.g. reasoning toggle)
+        "model_params",
         "updated_at",
         "updated_by",
     }

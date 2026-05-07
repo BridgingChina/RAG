@@ -85,16 +85,24 @@ TRANSLATABLE_FIELDS: dict[str, list[tuple[str, str]]] = {
         ("back_answer", "back_answer_en"),
     ],
     "taxonomy_nodes": [("lvl3", "name_en")],
+    # v15 (2026-05-08): inline TranslationCell needs 要点 fields translatable
+    # so admins can审校 each key_point in place on the KP detail page.
+    "knowledge_point_key_points": [
+        ("summary", "summary_en"),
+        ("explanation", "explanation_en"),
+    ],
 }
 
 
 def _model_registry() -> dict[str, Any]:
     """Dynamic table lookup — keeps the fn-level branch out of hot paths."""
+    from app.models import KnowledgePointKeyPoint  # local to avoid cycles
     return {
         "bridges": Bridge,
         "knowledge_points": KnowledgePoint,
         "flashcards": Flashcard,
         "taxonomy_nodes": TaxonomyNode,
+        "knowledge_point_key_points": KnowledgePointKeyPoint,
     }
 
 
@@ -323,11 +331,13 @@ async def generate_for_row(
         source_text=source_text,
     )
 
-    # Already past the AI stage — respect human decisions, don't re-invoke LLM.
-    if review.status in {
-        TRANSLATION_STATUS_HUMAN_REVIEWED,
-        TRANSLATION_STATUS_REJECTED,
-    }:
+    # Only ``human_reviewed`` short-circuits — that decision is the reviewer's
+    # final word and must not be overwritten by another AI pass. ``rejected``
+    # used to short-circuit too, but that left rejected rows as a dead end:
+    # the inline TranslationCell flow needs to be able to re-translate from
+    # rejected (the reviewer's "this AI output is wrong, try again" signal).
+    # See docs/plans/2026-05-08-inline-translation-review-design.md §7.
+    if review.status == TRANSLATION_STATUS_HUMAN_REVIEWED:
         return review
 
     try:

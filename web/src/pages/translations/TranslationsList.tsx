@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react"
+import { Link } from "react-router"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,6 +37,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+
+// Tables that have an inline TranslationCell on their detail page — clicking
+// the row deep-links there. Others fall back to the legacy modal审校 dialog
+// (which can be retired once inline support is added for them).
+const INLINE_SUPPORTED: Record<string, (rowId: string) => string> = {
+  bridges: (rowId) => `/bridges/${rowId}`,
+  knowledge_points: (rowId) => `/knowledge-points/${rowId}`,
+}
+
+function deepLinkTarget(row: TranslationReviewItem): string | null {
+  const builder = INLINE_SUPPORTED[row.table_name]
+  if (!builder) return null
+  return `${builder(row.row_id)}?tr=${encodeURIComponent(row.field_name)}`
+}
 
 const NONE = "__all__"
 
@@ -299,9 +314,23 @@ export function Component() {
                           <Badge variant={badge.variant}>{badge.label}</Badge>
                         </TableCell>
                         <TableCell className="align-top text-right">
-                          <Button variant="ghost" size="sm" onClick={() => setDialogItem(row)}>
-                            审校
-                          </Button>
+                          {(() => {
+                            const target = deepLinkTarget(row)
+                            return target ? (
+                              <Button asChild variant="ghost" size="sm">
+                                <Link to={target}>前往审校 →</Link>
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDialogItem(row)}
+                                title="该字段尚未支持就地审校，使用弹窗"
+                              >
+                                审校
+                              </Button>
+                            )
+                          })()}
                         </TableCell>
                       </TableRow>
                     )
