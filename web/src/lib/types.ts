@@ -443,6 +443,16 @@ export interface SystemStatus {
   api_key_configured: boolean
 }
 
+// Facet enums sourced from RAG/config/facets.yaml. Mirrors
+// app/api/v1/schemas/system.py:FacetsResponse — keep field names in sync.
+export interface Facets {
+  bridge_types: string[]
+  materials: string[]
+  eras: string[]
+  regions: string[]
+  functions: string[]
+}
+
 // Auth
 // Phase 2+3: the shape of the authenticated user is owned by the auth
 // Worker (Better Auth). See `src/lib/auth.ts` -> `SessionUser`. Login /

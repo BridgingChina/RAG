@@ -8,6 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useApi } from "@/hooks/useApi"
+import { fetchFacets } from "@/lib/api"
 import type { BridgeCreateRequest, BridgeDetail } from "@/lib/types"
 
 interface BridgeFormProps {
@@ -18,30 +20,6 @@ interface BridgeFormProps {
 
 // Sentinel value for "unset" — Radix Select rejects empty string as value
 const NONE = "__none__"
-
-// Facet enum values from config/facets.yaml
-const BRIDGE_TYPES = [
-  "石拱桥",
-  "木拱桥",
-  "铁桥",
-  "悬索桥",
-  "斜拉桥",
-  "梁桥",
-  "浮桥",
-  "索桥",
-]
-const MATERIALS = ["石", "木", "铁", "钢", "钢筋混凝土", "竹", "砖"]
-const ERAS = [
-  "先秦",
-  "秦汉",
-  "魏晋南北朝",
-  "隋唐",
-  "宋元",
-  "明清",
-  "近现代",
-  "当代",
-]
-const FUNCTIONS = ["交通", "军事", "景观", "水利", "铁路", "公路", "人行"]
 
 export function BridgeForm({
   initialData,
@@ -63,6 +41,11 @@ export function BridgeForm({
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { data: facets } = useApi(fetchFacets, [])
+  const bridgeTypes = facets?.bridge_types ?? []
+  const materials = facets?.materials ?? []
+  const eras = facets?.eras ?? []
+  const functions = facets?.functions ?? []
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -124,7 +107,7 @@ export function BridgeForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>无</SelectItem>
-              {BRIDGE_TYPES.map((type) => (
+              {bridgeTypes.map((type) => (
                 <SelectItem key={type} value={type}>
                   {type}
                 </SelectItem>
@@ -147,7 +130,7 @@ export function BridgeForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>无</SelectItem>
-              {MATERIALS.map((material) => (
+              {materials.map((material) => (
                 <SelectItem key={material} value={material}>
                   {material}
                 </SelectItem>
@@ -170,7 +153,7 @@ export function BridgeForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>无</SelectItem>
-              {ERAS.map((era) => (
+              {eras.map((era) => (
                 <SelectItem key={era} value={era}>
                   {era}
                 </SelectItem>
@@ -233,7 +216,7 @@ export function BridgeForm({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>无</SelectItem>
-              {FUNCTIONS.map((func) => (
+              {functions.map((func) => (
                 <SelectItem key={func} value={func}>
                   {func}
                 </SelectItem>

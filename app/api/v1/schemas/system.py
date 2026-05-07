@@ -18,3 +18,16 @@ class SystemStatus(BaseModel):
     chunk_quota: dict
     rrf_k: int
     api_key_configured: bool
+
+
+class FacetsResponse(BaseModel):
+    """Facet enums sourced from config/facets.yaml.
+
+    Keys mirror the YAML file exactly (plural). Strong typing here so a
+    rename on either side trips typecheck instead of silently returning [].
+    """
+    bridge_types: list[str]
+    materials: list[str]
+    eras: list[str]
+    regions: list[str]
+    functions: list[str]

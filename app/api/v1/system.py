@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.system import SystemStatus
+from app.api.v1.schemas.system import FacetsResponse, SystemStatus
 from app.core.config import settings
+from app.core.constants import load_facets
 from app.core.database import engine, get_current_schema_version, get_db
 from app.services.hybrid_retriever import DEFAULT_QUOTA, RRF_K
 
@@ -44,4 +45,22 @@ def system_status(db: Session = Depends(get_db)):
         },
         rrf_k=RRF_K,
         api_key_configured=bool(settings.zhipu_api_key),
+    )
+
+
+@router.get("/facets", response_model=FacetsResponse)
+def system_facets() -> FacetsResponse:
+    """Return facet enums from config/facets.yaml.
+
+    Single source of truth for admin form dropdowns (bridge_type, material,
+    era, function) and any future filter UI. Cached in-process via
+    @lru_cache on load_facets() — bumping facets.yaml requires a redeploy.
+    """
+    facets = load_facets()
+    return FacetsResponse(
+        bridge_types=facets.get("bridge_types", []),
+        materials=facets.get("materials", []),
+        eras=facets.get("eras", []),
+        regions=facets.get("regions", []),
+        functions=facets.get("functions", []),
     )

@@ -17,6 +17,7 @@ import type {
   ChunkUpdateRequest,
   DashboardStats,
   DownloadUrlResponse,
+  Facets,
   IngestResponse,
   IngestTaskCreateRequest,
   IngestTaskItem,
@@ -538,6 +539,10 @@ export function batchUpdateTaxonomy(
 
 export function fetchSystemStatus(): Promise<SystemStatus> {
   return get<SystemStatus>("/system/status")
+}
+
+export function fetchFacets(): Promise<Facets> {
+  return get<Facets>("/system/facets")
 }
 
 // --- Auth ---
