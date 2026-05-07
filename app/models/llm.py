@@ -150,6 +150,14 @@ class LLMTaskRoute(Base):
         nullable=False,
     )
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Per-task extra payload knobs merged into the upstream JSON body
+    # (e.g. ``{"reasoning": {"enabled": false}}`` for DeepSeek V4 to skip
+    # the thinking tokens, or ``{"temperature": 0.2}`` for deterministic
+    # ingest tasks). Schema v14, 2026-05-07. Cannot override ``model`` /
+    # ``messages`` — provider implementations enforce that order.
+    model_params: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb"),
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

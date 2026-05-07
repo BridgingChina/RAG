@@ -46,13 +46,15 @@ async def chat_for_task(
     INFO on success, WARNING on failure. Failure ``reason`` is sanitized by
     :func:`sanitize_error` so logs cannot leak provider API keys.
     """
-    provider, model_id = get_for_task(task_key)
+    provider, model_id, extra_params = get_for_task(task_key)
     provider_id = (
         provider._config.provider_id if hasattr(provider, "_config") else None
     )
     start = time.monotonic()
     try:
-        resp = await provider.chat(messages, model=model_id)
+        resp = await provider.chat(
+            messages, model=model_id, extra_params=extra_params
+        )
     except Exception as exc:
         latency_ms = int((time.monotonic() - start) * 1000)
         logger.warning(
@@ -105,8 +107,10 @@ async def chat_stream_for_task(
     moment to attribute latency / usage to. Call sites that need observability
     should wrap the iteration themselves (Task 5's Generator does this).
     """
-    provider, model_id = get_for_task(task_key)
-    async for token in provider.chat_stream(messages, model=model_id):
+    provider, model_id, extra_params = get_for_task(task_key)
+    async for token in provider.chat_stream(
+        messages, model=model_id, extra_params=extra_params
+    ):
         yield token
 
 

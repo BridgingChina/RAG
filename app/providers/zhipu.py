@@ -215,23 +215,29 @@ class ZhipuProvider(LLMProvider):
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ) -> ChatResponse:
         """Issue a chat completion against the Zhipu upstream.
 
         An empty-string model is treated as unspecified (falls back to the
         provider default) — pass None explicitly if that is the intent.
+
+        ``extra_params`` is merged before ``model`` / ``messages``, so per-task
+        knobs (e.g. ``{"temperature": 0.2}``) cannot override routing.
         """
         actual_model = model or self.chat_model
         base = self.CHAT_BASE_URL or self.BASE_URL
+        payload: dict = {**(extra_params or {})}
+        payload["model"] = actual_model
+        payload["messages"] = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
         async with _zhipu_semaphore:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
                     f"{base}/chat/completions",
                     headers=self._headers(),
-                    json={
-                        "model": actual_model,
-                        "messages": [{"role": m.role, "content": m.content} for m in messages],
-                    },
+                    json=payload,
                     timeout=_chat_timeout(),
                 )
         resp.raise_for_status()
@@ -253,19 +259,24 @@ class ZhipuProvider(LLMProvider):
         messages: list[ChatMessage],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ):
         """Stream GLM completion tokens via Zhipu /chat/completions stream:true.
 
         Yields delta.content strings as they arrive. Skips keepalive/event
         lines. Closes the upstream connection on GeneratorExit.
+
+        ``extra_params`` follows the same merge-before-override contract as
+        :meth:`chat`.
         """
         actual_model = model or self.chat_model
         base = self.CHAT_BASE_URL or self.BASE_URL
-        payload = {
-            "model": actual_model,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "stream": True,
-        }
+        payload: dict = {**(extra_params or {})}
+        payload["model"] = actual_model
+        payload["messages"] = [
+            {"role": m.role, "content": m.content} for m in messages
+        ]
+        payload["stream"] = True
         async with _zhipu_semaphore:
             async with httpx.AsyncClient(timeout=_chat_timeout()) as client:
                 async with client.stream(

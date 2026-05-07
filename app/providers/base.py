@@ -37,12 +37,23 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def chat(
-        self, messages: list[ChatMessage], *, model: str | None = None
+        self,
+        messages: list[ChatMessage],
+        *,
+        model: str | None = None,
+        extra_params: dict | None = None,
     ) -> ChatResponse:
         """Generate chat completion.
 
         model: None → provider falls back to self.chat_model. Phase C
         will tighten to required (kwarg, no default).
+
+        extra_params: optional dict merged into the upstream JSON payload.
+        Used by the task router to pass per-task knobs like
+        ``{"reasoning": {"enabled": False}}`` or ``{"temperature": 0.2}``
+        without bloating the call signature. Implementations MUST NOT let
+        ``model`` / ``messages`` keys be overridden by extra_params — the
+        routing layer owns those decisions.
         """
 
     @abstractmethod
@@ -51,6 +62,7 @@ class LLMProvider(ABC):
         messages: list["ChatMessage"],
         *,
         model: str | None = None,
+        extra_params: dict | None = None,
     ):
         """Stream chat completion tokens.
 
@@ -58,6 +70,8 @@ class LLMProvider(ABC):
         from the upstream model. Implementations MUST NOT wrap with tenacity
         retry decorators — async generators are incompatible with tenacity;
         retry semantics live at the call site.
+
+        ``extra_params`` follows the same contract as :meth:`chat`.
 
         Returns: AsyncGenerator[str, None]
         """

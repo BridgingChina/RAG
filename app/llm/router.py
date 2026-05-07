@@ -25,18 +25,23 @@ from app.providers.base import LLMProvider
 from app.providers.config import ProviderConfig
 from app.providers.errors import TaskRouteNotFoundError
 
-_ROUTE_CACHE: dict[str, tuple[float, LLMProvider, str]] = {}
+_ROUTE_CACHE: dict[str, tuple[float, LLMProvider, str, dict]] = {}
 _ROUTE_LOCK = threading.Lock()
 _TTL_SECONDS = 30.0
 
 
-def get_for_task(task_key: str) -> tuple[LLMProvider, str]:
-    """Resolve ``task_key`` to a concrete ``(Provider, model_id)`` pair.
+def get_for_task(task_key: str) -> tuple[LLMProvider, str, dict]:
+    """Resolve ``task_key`` to a concrete ``(Provider, model_id, model_params)`` triple.
 
     Cache hit path (hot): a single dict lookup + lock acquire.
     Cache miss path: one DB roundtrip joining ``llm_task_routes`` against
     ``llm_providers``, then delegating to :class:`ProviderRegistry` for the
     actual provider instance.
+
+    The third tuple element ``model_params`` (schema v14) is the JSONB blob
+    merged into the upstream chat payload — used for per-task knobs like
+    ``{"reasoning": {"enabled": false}}`` without bloating the call signature.
+    Empty dict when the column is unset.
 
     Raises :class:`TaskRouteNotFoundError` (subclass of ``ProviderError``) when
     no row exists for the given task_key — this is a deploy-time bug (missing
@@ -46,7 +51,7 @@ def get_for_task(task_key: str) -> tuple[LLMProvider, str]:
     with _ROUTE_LOCK:
         entry = _ROUTE_CACHE.get(task_key)
         if entry is not None and entry[0] > now:
-            return entry[1], entry[2]
+            return entry[1], entry[2], entry[3]
 
     # Cache miss or expired — fetch from DB outside the lock so concurrent
     # cold lookups for DIFFERENT task_keys don't serialise.
@@ -72,11 +77,14 @@ def get_for_task(task_key: str) -> tuple[LLMProvider, str]:
         timeout_read=provider_row.timeout_read,
     )
     provider = _registry.get_or_build(config)
+    model_params = dict(route.model_params or {})
 
     with _ROUTE_LOCK:
-        _ROUTE_CACHE[task_key] = (now + _TTL_SECONDS, provider, route.model_id)
+        _ROUTE_CACHE[task_key] = (
+            now + _TTL_SECONDS, provider, route.model_id, model_params,
+        )
 
-    return provider, route.model_id
+    return provider, route.model_id, model_params
 
 
 def invalidate(task_key: str) -> None:
