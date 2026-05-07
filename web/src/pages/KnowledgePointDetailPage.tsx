@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useParams, useNavigate } from "react-router"
 import { PageHeader } from "@/components/layout/PageHeader"
 import { Button } from "@/components/ui/button"
@@ -23,10 +23,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { TranslationCell } from "@/components/translations/TranslationCell"
+import { KeyPointTranslationRow } from "@/components/translations/KeyPointTranslationRow"
 import { useApi } from "@/hooks/useApi"
+import { useScrollToTr } from "@/hooks/useScrollToTr"
 import {
   autoAssociateChunks,
   fetchKnowledgePoint,
+  fetchTranslationsByRow,
   updateKnowledgePoint,
   deleteKnowledgePoint,
   generateKeyPoints,
@@ -40,7 +44,12 @@ import {
   deleteKeyPoint,
   reorderKeyPoints,
 } from "@/lib/api"
-import type { L2Content, KPBridgeItem, KeyPointItem } from "@/lib/types"
+import type {
+  L2Content,
+  KPBridgeItem,
+  KeyPointItem,
+  TranslationReviewItem,
+} from "@/lib/types"
 
 const DIFFICULTY_OPTIONS = [
   { value: "basic", label: "基础" },
@@ -105,6 +114,8 @@ export function Component() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  useScrollToTr()
+
   const { data: kp, loading, error, refetch } = useApi(
     () => fetchKnowledgePoint(id!),
     [id],
@@ -116,6 +127,54 @@ export function Component() {
   )
 
   const { data: taxonomyTree } = useApi(() => fetchTaxonomyTree(), [])
+
+  // Translation reviews — two batched fetches: KP-level (name_en, summary_en)
+  // and key_points-level (summary_en, explanation_en × N rows). Joined ID
+  // list is encoded in the deps so the fetch refires when key_points are
+  // added / removed.
+  const { data: kpReviews, refetch: refetchKpReviews } = useApi(
+    () => fetchTranslationsByRow({ table: "knowledge_points", row_id: id! }),
+    [id],
+  )
+  const keyPointIds = useMemo(
+    () => (kp?.key_points ?? []).map((p) => p.id).sort().join(","),
+    [kp?.key_points],
+  )
+  const { data: keyPointReviews, refetch: refetchKeyPointReviews } = useApi(
+    () => keyPointIds
+      ? fetchTranslationsByRow({
+          table: "knowledge_point_key_points",
+          row_id: keyPointIds,
+        })
+      : Promise.resolve([] as TranslationReviewItem[]),
+    [keyPointIds],
+  )
+
+  const kpReviewByField = useMemo(
+    () => Object.fromEntries(
+      (kpReviews ?? []).map((r): [string, TranslationReviewItem] => [r.field_name, r]),
+    ),
+    [kpReviews],
+  )
+
+  // Per-key_point review map: { [key_point_id]: { [field_name]: review } }
+  const keyPointReviewMap = useMemo(() => {
+    const m: Record<string, Record<string, TranslationReviewItem>> = {}
+    for (const r of keyPointReviews ?? []) {
+      if (!m[r.row_id]) m[r.row_id] = {}
+      m[r.row_id][r.field_name] = r
+    }
+    return m
+  }, [keyPointReviews])
+
+  const handleTranslationChange = () => {
+    // Approve / edit writes the *_en column on the business table — refetch
+    // KP so name / summary / key_points reflect the new state, plus the two
+    // review fetches so cells stay in sync.
+    refetch()
+    refetchKpReviews()
+    refetchKeyPointReviews()
+  }
 
   // Initialize form when data loads
   if (kp && !formInitialized) {
@@ -625,6 +684,54 @@ export function Component() {
           </CardContent>
         </Card>
 
+        {/* Card 1.5: Inline translation审校 — name_en + summary_en. */}
+        <Card>
+          <CardHeader>
+            <CardTitle>翻译审校</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  名称 (zh)
+                </label>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm">
+                  {kp.name}
+                </div>
+              </div>
+              <TranslationCell
+                table="knowledge_points"
+                rowId={kp.id}
+                fieldName="name_en"
+                sourceText={kp.name}
+                reviewItem={kpReviewByField["name_en"] ?? null}
+                onChange={handleTranslationChange}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  摘要 (zh)
+                </label>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm leading-relaxed whitespace-pre-wrap">
+                  {kp.summary || (
+                    <em className="text-muted-foreground/60">（尚未填写中文摘要）</em>
+                  )}
+                </div>
+              </div>
+              <TranslationCell
+                table="knowledge_points"
+                rowId={kp.id}
+                fieldName="summary_en"
+                sourceText={kp.summary ?? ""}
+                reviewItem={kpReviewByField["summary_en"] ?? null}
+                onChange={handleTranslationChange}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Card 2: Key Points */}
         <Card>
           <CardHeader>
@@ -643,7 +750,7 @@ export function Component() {
                 {[...kp.key_points]
                   .sort((a, b) => a.order_index - b.order_index)
                   .map((point, idx, arr) => (
-                    <div key={point.id} className="rounded-lg border p-3">
+                    <div key={point.id} className="rounded-lg border p-3 space-y-3">
                       <div className="flex items-start gap-2">
                         <Badge variant="outline" className="mt-0.5 shrink-0">
                           {idx + 1}
@@ -702,6 +809,17 @@ export function Component() {
                           </div>
                         </div>
                       </div>
+                      {/* Inline translation审校 for this 要点 (summary_en +
+                          explanation_en). The zh duplication with the row
+                          above is intentional: the upper block is the edit
+                          target for chunk linking + reorder, this block is
+                          the side-by-side translation panel. */}
+                      <KeyPointTranslationRow
+                        keyPoint={point}
+                        reviews={keyPointReviewMap[point.id] ?? {}}
+                        onChange={handleTranslationChange}
+                        anchorPrefix={`key_points.${point.id}`}
+                      />
                     </div>
                   ))}
               </div>
