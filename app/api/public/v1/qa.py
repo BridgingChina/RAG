@@ -14,6 +14,7 @@ Chinese pipeline and mark ``done`` with ``degraded=true``.
 import asyncio
 import json
 import logging
+import random
 import time
 import uuid
 
@@ -54,9 +55,85 @@ _RETRIEVE_TIMEOUT = 10   # DB queries after embedding is ready
 _GENERATE_TIMEOUT = 25   # LLM generation with evidence
 
 
+# Curated demo answers: keep the public SSE contract, but bypass retrieval/LLM
+# for questions whose wording must land exactly as authored.
+_CURATED_QA: dict[str, dict] = {
+    "人行通道在城市中的作用": {
+        "key_points": [
+            {
+                "summary": "人行通道在城市中具有重要的交通补充功能，尤其在无法通行汽车的桥梁上，为行人和特定运输需求提供便利",
+                "explanation": "本桥资料指出，安澜索桥不在公路干线上，不能行驶汽车，但对灌县行旅及都江堰岁修时的过江运输极为需要。这说明人行通道在城市中能够填补机动交通的空白，满足行人和特殊运输（如岁修物料）的通行需求，是城市交通系统中不可或缺的补充 [1]。",
+                "citations": [1],
+            },
+            {
+                "summary": "人行通道可以承载旅游观光功能，连接重要景点，促进人员流动和区域活力",
+                "explanation": "安澜索桥连接二王庙及伏龙观，解放前川西各县人民来此观光者很多，桥上交通最称繁盛。这显示人行通道能够有效连接旅游景点，承载观光人流，促进区域间的交流与活力，是城市旅游功能的重要组成部分 [1]。",
+                "citations": [1],
+            },
+            {
+                "summary": "人行通道在历史与文化遗产保护中扮演角色，如古桥本身即是文物，并承载景观、水利等综合价值",
+                "explanation": "八里桥作为古桥和全国重点文物保护单位，本身具有历史、文化和景观价值。此外，桥墩分水尖减少冲击、无栏杆让洪水漫桥而过等设计，体现了其水利功能。人行通道在城市中不仅是通行设施，还常常承载历史文化传承、景观美学以及水利防洪等多重综合功能 [2]。",
+                "citations": [2],
+            },
+        ],
+        "sources": [
+            {
+                "id": 1,
+                "title": "安澜索桥",
+                "author": None,
+                "type": None,
+                "excerpt": None,
+                "location": None,
+            },
+            {
+                "id": 2,
+                "title": "八里桥",
+                "author": None,
+                "type": None,
+                "excerpt": None,
+                "location": None,
+            },
+        ],
+    },
+}
+
+
 def _sse_event(event: str, data: dict) -> str:
     """Format a single SSE event."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _normalize_curated_question(question: str) -> str:
+    """Normalize harmless whitespace so authored demo questions stay robust."""
+    return " ".join(question.split())
+
+
+def _curated_events_for(question: str) -> list[tuple[str, dict]] | None:
+    """Build normal SSE payloads for an authored direct-answer question."""
+    curated = _CURATED_QA.get(_normalize_curated_question(question))
+    if curated is None:
+        return None
+
+    key_points = []
+    detail_events = []
+    for order, item in enumerate(curated["key_points"], 1):
+        key_point_id = str(uuid.uuid4())
+        key_points.append({
+            "id": key_point_id,
+            "summary": item["summary"],
+            "order": order,
+        })
+        detail_events.append(("detail", {
+            "key_point_id": key_point_id,
+            "explanation": item["explanation"],
+            "citations": item["citations"],
+        }))
+
+    return [
+        ("outline", {"key_points": key_points}),
+        *detail_events,
+        ("sources", {"sources": curated["sources"]}),
+    ]
 
 
 def _resolve_context(
@@ -176,6 +253,23 @@ async def ask_sse(
         _mark_event()
 
         try:
+            curated_events = _curated_events_for(body.question)
+            if curated_events is not None:
+                # Small demo jitter keeps the interaction feeling natural
+                # without dragging a deterministic answer through the full RAG
+                # path. Cap at 2s as requested.
+                await asyncio.sleep(random.uniform(0.5, 2.0))
+                for event_type, data in curated_events:
+                    yield _sse_event(event_type, data)
+                    _mark_event()
+                yield _sse_event("done", {
+                    "qa_id": qa_id,
+                    "locale": locale,
+                    "degraded": False,
+                    "reason": None,
+                })
+                return
+
             # Phase C: every LLM chat call is task-routed via
             # ``chat_for_task(task_key, messages)`` — see app/llm. The old
             # ``provider.chat_model = settings.qa_chat_model`` monkey-patch
