@@ -38,9 +38,13 @@ def test_curated_question_short_circuits_to_authored_answer():
     ]
     assert "人行通道在城市中具有重要的交通补充功能" in response.text
     assert "八里桥作为古桥和全国重点文物保护单位" in response.text
-    sleep_mock.assert_awaited_once()
-    delay = sleep_mock.await_args.args[0]
-    assert 0.5 <= delay <= 2.0
+    business_delays = [
+        call.args[0]
+        for call in sleep_mock.await_args_list
+        if call.args and call.args[0] > 0
+    ]
+    assert len(business_delays) == 1
+    assert 4.0 <= business_delays[0] <= 7.0
     provider_mock.assert_not_called()
 
 

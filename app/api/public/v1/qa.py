@@ -255,10 +255,10 @@ async def ask_sse(
         try:
             curated_events = _curated_events_for(body.question)
             if curated_events is not None:
-                # Small demo jitter keeps the interaction feeling natural
-                # without dragging a deterministic answer through the full RAG
-                # path. Cap at 2s as requested.
-                await asyncio.sleep(random.uniform(0.5, 2.0))
+                # Demo jitter keeps the interaction feeling natural without
+                # dragging a deterministic answer through the full RAG path.
+                # Aim around 5s while staying under the requested 7s cap.
+                await asyncio.sleep(random.uniform(4.0, 7.0))
                 for event_type, data in curated_events:
                     yield _sse_event(event_type, data)
                     _mark_event()
